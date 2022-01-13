@@ -1,0 +1,112 @@
+# auto refresh config
+live_config_reload: true
+start_maximized: true
+
+# Tab indent
+tabspaces: 4
+background_opacity: 0.9
+
+window:
+  # size
+  dimensions:
+    columns: 120
+    lines: 60
+
+  padding:
+    x: 10
+    y: 15
+  dynamic_padding: false
+  startup_mode: Maximized
+  # window decorations
+  # - full
+  # - none
+  decorations: none
+
+scrolling:
+  history: 10000
+
+  # scroll lines each time
+  multiplier: 20
+
+  # scroll lines when split screen
+  faux_multiplier: 100
+
+  auto_scroll: true
+
+colors:
+  primary:
+    background: '#282a36'
+    foreground: '#f8f8f2'
+    bright_foreground: '#ffffff'
+  cursor:
+    text: CellBackground
+    cursor: CellForeground
+  vi_mode_cursor:
+    text: CellBackground
+    cursor: CellForeground
+  search:
+    matches:
+      foreground: '#44475a'
+      background: '#50fa7b'
+    focused_match:
+      foreground: '#44475a'
+      background: '#ffb86c'
+    bar:
+      background: '#282a36'
+      foreground: '#f8f8f2'
+  hints:
+    start:
+      foreground: '#282a36'
+      background: '#f1fa8c'
+    end:
+      foreground: '#f1fa8c'
+      background: '#282a36'
+  line_indicator:
+    foreground: None
+    background: None
+  selection:
+    text: CellForeground
+    background: '#44475a'
+  normal:
+    black: '#21222c'
+    red: '#ff5555'
+    green: '#50fa7b'
+    yellow: '#f1fa8c'
+    blue: '#bd93f9'
+    magenta: '#ff79c6'
+    cyan: '#8be9fd'
+    white: '#f8f8f2'
+  bright:
+    black: '#6272a4'
+    red: '#ff6e6e'
+    green: '#69ff94'
+    yellow: '#ffffa5'
+    blue: '#d6acff'
+    magenta: '#ff92df'
+    cyan: '#a4ffff'
+    white: '#ffffff'
+
+font:
+  size: 18
+  normal:
+    family: 'FiraCode Nerd Font'
+    style: Regular
+  bold:
+    family: 'FiraCode Nerd Font'
+    style: Bold
+  italic:
+    family: 'FiraCode Nerd Font'
+    style: Italic
+  bold_italic:
+    family: 'FiraCode Nerd Font'
+    style: Bold Italic
+
+  use_thin_strokes: true
+
+shell:
+  program: /bin/zsh
+  args:
+    # login
+    - -l
+    - -c
+    - 'tmux attach || tmux'
