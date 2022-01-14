@@ -22,6 +22,12 @@ else
     cp $DIR/shell/config/tmux.conf ~/.tmux.conf
 fi
 
+## navi for
+if exists navi; then
+    eval "$(navi widget zsh)"
+fi
+
+
 ## FZF for fuzzy search history
 [ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
 
