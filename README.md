@@ -1,7 +1,8 @@
-## Register
-Clone this repo.
-Run `bash shell/install.sh` for one time.
-Add `source <PATH>/m-scripts/register.sh` to `~/.zshrc`.
+## Setup
+0. Clone this repo.
+1. Run `bash shell/install.sh` for one time.
+2. Add `source <PATH>/m-scripts/register.sh` to `~/.zshrc`.
+3. Run `bin/deploy.sh` to build rust cli `m` and copy to `/usr/local/bin`
 
 ## tools
 * [Alfred](https://www.alfredapp.com/)
