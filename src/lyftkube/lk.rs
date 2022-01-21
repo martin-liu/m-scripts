@@ -36,11 +36,21 @@ pub fn lk(commands: &Vec<String>) {
 #[cfg(test)]
 mod tests {
     use crate::lyftkube::lk::lk_to_kubectl;
+
     #[test]
-    fn test_lk() {
+    fn test_lk_works() {
         let expected = "--cluster some-staging-1 -e staging kubectl -- -n abc-staging get pod abc-def-xxx-yyy";
         let cmds: Vec<String> = ["get", "pod", "some-staging-1/abc-def-xxx-yyy"].iter().map(|d| d.to_string()).collect();
         let real = lk_to_kubectl(&cmds);
         assert_eq!(expected, real);
     }
+
+    #[test]
+    fn test_lk_not_work_when_no_cluster_pod() {
+        let expected = "--cluster some-staging-1 -e staging kubectl -- -n abc-staging get pod abc-def-xxx-yyy";
+        let cmds: Vec<String> = ["get", "pod", "abc-def-xxx-yyy"].iter().map(|d| d.to_string()).collect();
+        let real = lk_to_kubectl(&cmds);
+        assert_ne!(expected, real);
+    }
+
 }
