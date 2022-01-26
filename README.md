@@ -1,8 +1,8 @@
-## Setup
+## Setup [Mac only]
 0. Clone this repo.
-1. Run `bash shell/install.sh` for one time.
+1. Run `bash shell/install.sh` for one time to install tools.
 2. Add `source <PATH>/m-scripts/register.sh` to `~/.zshrc`.
-3. Run `bin/deploy.sh` to build rust cli `m` and copy to `/usr/local/bin`
+3. Run `bin/deploy.sh`, this will build rust cli `m` and copy to `/usr/local/bin`
 
 ## tools
 * [Alfred](https://www.alfredapp.com/)
@@ -11,3 +11,4 @@
 * [fzf](https://github.com/junegunn/fzf), command-line fuzzy finder (for history, files, etc)
 * [alacritty](https://github.com/alacritty/alacritty) terminal emulator
 * [Dracula Theme](https://github.com/dracula/dracula-theme)
+* [Fira Code Font][https://github.com/tonsky/FiraCode]
