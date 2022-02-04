@@ -22,6 +22,14 @@ else
     cp $DIR/shell/config/tmux.conf ~/.tmux.conf
 fi
 
+## gitconfig
+if cmp -s ~/.gitconfig "$DIR/shell/config/gitconfig" ; then
+    :
+else
+    echo "Detected change, copying $DIR/shell/config/gitconfig to ~/.gitconfig"
+    cp $DIR/shell/config/gitconfig ~/.gitconfig
+fi
+
 ## navi for snipets
 if exists navi; then
     eval "$(navi widget zsh)"
