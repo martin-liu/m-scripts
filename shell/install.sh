@@ -1,13 +1,14 @@
 #!/bin/bash
 
-brew install starship fzf bat exa navi tmux reattach-to-user-namespace
+brew install \
+     coreutils gnu-sed gnu-tar `# gnu utils` \
+     starship bat exa navi git-delta `# rust cli tools` \
+     fzf tmux reattach-to-user-namespace `# others`
 
 ## Fira Font
 brew tap homebrew/cask-fonts && brew install font-fira-code-nerd-font
 
-## delta for git diff
-brew install git-delta
-## and add below to `~/.gitconfig`
+## delta for git diff, add below to `~/.gitconfig`
 #[delta]
 #    features = side-by-side line-numbers decorations
 #    syntax-theme = Dracula
@@ -27,4 +28,8 @@ brew install git-delta
 #    line-numbers-plus-style = 28
 
 ## tmux
-git clone https://github.com/tmux-plugins/tpm ~/.tmux/plugins/tpm
+if cd ~/.tmux/plugins/tpm ; then
+    git pull
+else
+    git clone https://github.com/tmux-plugins/tpm ~/.tmux/plugins/tpm
+fi
