@@ -6,7 +6,7 @@ read -r -d '' pairs <<EOF
 ]
 EOF
 
-python - $pairs <<EoF
+python3 - $pairs <<EoF
 import sys, json, filecmp, shutil
 
 pairs = json.loads(sys.argv[1])

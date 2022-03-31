@@ -1,8 +1,17 @@
 #!/bin/bash
 
+## emacs
+brew tap d12frosted/emacs-plus && \
+    brew install emacs-plus@29 --with-native-comp --with-debug
+
+## Alacritty terminal emulator
+brew install --cask alacritty
+
+## tools
 brew install \
+     pyenv jenv \
      coreutils gnu-sed gnu-tar `# gnu utils` \
-     starship bat exa navi git-delta `# rust cli tools` \
+     starship ripgrep bat exa navi git-delta `# rust cli tools` \
      fzf tmux reattach-to-user-namespace `# others`
 
 ## Fira Font
