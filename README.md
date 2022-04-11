@@ -1,7 +1,7 @@
 ## Setup [Mac only]
 0. Clone this repo.
 1. Run `bash shell/install.sh` for install or upgrade tools.
-2. Add `source <PATH>/m-scripts/register.sh` to `~/.zshrc`.
+2. Add `source <PATH>/m-scripts/register.sh` to `~/.zshrc` and `~/.zshenv`.
 3. Run `bin/deploy.sh`, this will build rust cli `m` and copy to `/usr/local/bin`
 
 ## tools
