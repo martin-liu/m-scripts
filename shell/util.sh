@@ -100,95 +100,16 @@ function m_ansible_setup_ssh() {
 ### MAC OS
 ## trigger sidecar to ipad
 function m_sidecar() {
-  cat <<EOF > /tmp/m_sidecar.scpt
-use AppleScript version "2.4" -- Yosemite (10.10) or later
-use scripting additions
-
-set deviceName to "Martin's iPad"
-
-tell application "System Events"
-  tell its application process "ControlCenter"
-    -- Click the Control Center menu.
-    click menu bar item "Control Center" of menu bar 1
-
-    -- Give the window time to draw.
-    delay 1
-
-    -- Get all of the checkboxes in the Control Center menu.
-    set ccCheckboxes to name of (every checkbox of window "Control Center")
-
-    if ccCheckboxes contains "Connect to Sidecar" then
-      -- If one of the checkboxes is named "Connect to Sidecar," click that checkbox.
-      set sidecarToggle to checkbox "Connect to Sidecar" of window "Control Center"
-      click sidecarToggle
-
-      -- This opens a secondary window that contains the button to actually connect to Sidecar. Give the window time to draw.
-      delay 1
-
-      -- In masOS Monterey, the Sidecar device toggle (checkbox) is inside of a scroll area.
-      -- Rather than assume that it's in scroll area 1, get all of the scroll areas, loop through them, and find the device toggle.
-      set scrollAreas to (every scroll area of window "Control Center")
-      set saCounter to 1
-      set displayCheckboxes to ""
-
-      repeat with sa in scrollAreas
-        set displayCheckboxes to name of (every checkbox of sa)
-
-        if displayCheckboxes contains deviceName then
-          -- Device toggle found.
-          exit repeat
-        end if
-
-        -- We didn't find the device toggle. Try the next scroll area.
-        set saCounter to saCounter + 1
-      end repeat
-
-      if displayCheckboxes contains deviceName then
-        -- If we found the a checkbox with the iPad's name, `saCounter` tells us which scroll area contains the Sidecar toggle.
-        set deviceToggle to checkbox deviceName of scroll area saCounter of window "Control Center"
-
-        -- Click the toggle to connect Sidecar.
-        click deviceToggle
-
-        -- Click the Control Center menu to close the secondary menu and return to the main menu.
-        click menu bar item "Control Center" of menu bar 1
-
-        -- Click the Control Center menu again to close the main menu.
-        click menu bar item "Control Center" of menu bar 1
-      else
-        -- Sidecar is available, but no devices with deviceName were found.
-        display dialog "The device " & deviceName & " can't be found. Please verify the name of your iPad and update the `deviceName` variable if necessary."
-      end if
-    else
-      -- A checkbox named "Connect to Sidecar" wasn't found.
-      set isConnected to false
-      repeat with cb in ccCheckboxes
-        -- Loop through the checkboxes and determine if Sidecar is already connected.
-        if cb contains "Disconnect" then
-          -- If one of the checkboxes has "Disconnect" in its name, Sidecar is already connected.
-          -- Break out of the loop.
-          set isConnected to true
-          exit repeat
-        end if
-      end repeat
-
-      if isConnected is equal to true then
-        -- Click the checkbox to disconnect Sidecar.
-        set sidecarToggle to ((checkbox 1 of window "Control Center") whose name contains "Disconnect")
-        click sidecarToggle
-
-        -- Click the Control Center menu again to close the main menu.
-        click menu bar item "Control Center" of menu bar 1
-      else
-        -- Sidecar isn't connected, and no devices are available to connect to. Show an error message.
-        display dialog "No Sidecar devices are in range."
-      end if
-    end if
-  end tell
-end tell
-EOF
-  
-  osascript /tmp/m_sidecar.scpt
+osascript -e '
+    tell application "System Preferences"
+        activate
+        reveal pane id "com.apple.preference.displays"
+        delay 1
+        tell application "System Events" to click first pop up button of first window of application process "System Preferences" of application "System Events"
+        delay 1
+        tell application "System Events" to click last menu item of first menu of first pop up button of first window of application process "System Preferences" of application "System Events"
+        quit
+    end tell';
 }
 
 ### `lk describe pod core-prod-1/mlpsandbox-chatcanary-df6b8f765-xt6pk`

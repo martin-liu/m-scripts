@@ -1,3 +1,4 @@
+ulimit -n 10240
 export PATH=$PATH:$DIR/bin
 export TERM=screen-256color
 

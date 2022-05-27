@@ -1,5 +1,10 @@
 ### Alias
 
+## brew in M1 mac
+if [[ $(uname -p) == 'arm' || $(uname -p) == 'arm64' ]]; then
+    alias ibrew='arch -x86_64 /usr/local/bin/brew'
+fi
+
 ## The fuck
 if exists thefuck; then
     alias fuck='eval $(thefuck $(fc -ln -1 | tail -n 1)); fc -R'
