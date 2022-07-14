@@ -6,5 +6,4 @@ export TERM=screen-256color
 export PATH=${HOMEBREW_PREFIX}/bin:${HOMEBREW_PREFIX}/opt/gnu-sed/libexec/gnubin:${HOMEBREW_PREFIX}/opt/gnu-tar/libexec/gnubin:${HOMEBREW_PREFIX}/opt/coreutils/libexec/gnubin:$PATH
 
 ### GO
-export GOPATH=~/src/go
-export PATH=$PATH:$GOPATH/bin
+export PATH=$PATH:~/go/bin
