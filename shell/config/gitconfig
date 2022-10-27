@@ -5,6 +5,12 @@
 [url "https://"]
     insteadOf = git://
 
+[pull]
+    rebase = true
+
+[fetch]
+    prune = true
+
 [core]
     autocrlf = input
     pager = delta

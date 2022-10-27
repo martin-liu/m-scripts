@@ -97,19 +97,17 @@ function m_ansible_setup_ssh() {
 
 }
 
-### MAC OS
+### MAC OS (ventra)
 ## trigger sidecar to ipad
 function m_sidecar() {
 osascript -e '
-    tell application "System Preferences"
-        activate
-        reveal pane id "com.apple.preference.displays"
-        delay 1
-        tell application "System Events" to click first pop up button of first window of application process "System Preferences" of application "System Events"
-        delay 1
-        tell application "System Events" to click last menu item of first menu of first pop up button of first window of application process "System Preferences" of application "System Events"
-        quit
-    end tell';
+tell application "System Events"
+    tell process "ControlCenter"
+        click menu bar item 6 of menu bar 1
+        delay 0.5
+        click checkbox 1 of scroll area 1 of group 1 of window 1
+    end tell
+end tell';
 }
 
 ### `lk describe pod core-prod-1/mlpsandbox-chatcanary-df6b8f765-xt6pk`
@@ -123,7 +121,9 @@ i, pod_str = next((i, d) for i, d in enumerate(sys.argv) if '/' in d)
 cluster, pod = pod_str.split('/')
 sys.argv[i] = pod
 proj = pod.split('-')[0]
-env = 'staging' if 'staging' in cluster else 'production'
+if proj.startswith('realtime'):
+    proj = proj[8:]
+env = 'staging' if ('staging' in cluster or 'stg' in cluster) else 'production'
 cmd = f"lyftkube --cluster {cluster} -e {env} kubectl -- -n {proj}-{env} {' '.join(sys.argv[1:])}"
 print(cmd)
 
