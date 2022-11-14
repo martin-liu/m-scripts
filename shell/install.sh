@@ -17,6 +17,9 @@ brew install \
 ## Fira Font
 brew tap homebrew/cask-fonts && brew install font-fira-code-nerd-font
 
+## Latex
+brew install --cask basictex
+
 ## tmux
 if cd ~/.tmux/plugins/tpm ; then
     git pull

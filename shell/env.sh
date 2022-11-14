@@ -7,3 +7,6 @@ export PATH=${HOMEBREW_PREFIX}/bin:${HOMEBREW_PREFIX}/opt/gnu-sed/libexec/gnubin
 
 ### GO
 export PATH=$PATH:$HOME/go/bin
+
+### Latex
+export PATH=$PATH:/Library/TeX/texbin
