@@ -19,6 +19,7 @@ brew tap homebrew/cask-fonts && brew install font-fira-code-nerd-font
 
 ## Latex
 brew install --cask basictex
+## sudo tlmgr update --self && sudo tlmgr install dvipng
 
 ## tmux
 if cd ~/.tmux/plugins/tpm ; then
