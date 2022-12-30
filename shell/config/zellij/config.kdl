@@ -1,5 +1,5 @@
 theme "dracula"
 pane_frames false
 simplified_ui true
-
 copy_command "pbcopy"
+scroll_buffer_size: 50000
