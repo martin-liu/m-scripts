@@ -51,7 +51,7 @@ colors:
     focused_match:
       foreground: '#44475a'
       background: '#ffb86c'
-    bar:
+    footer_bar:
       background: '#282a36'
       foreground: '#f8f8f2'
   hints:
@@ -101,7 +101,7 @@ font:
     family: 'FiraCode Nerd Font'
     style: Bold Italic
 
-  use_thin_strokes: true
+  AppleFontSmoothing: true
 
 shell:
   program: /bin/zsh
@@ -109,4 +109,4 @@ shell:
     # login
     - -l
     - -c
-    - 'tmux attach || tmux'
+    - 'zellij attach --index 0 || zellij'

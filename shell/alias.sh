@@ -29,6 +29,7 @@ if exists exa; then
     unalias -m 'ls'
     alias ls='exa -G  --color auto --icons -a -s type'
     alias ll='exa -l --color always --icons -a -s new'
+    alias tree='exa -T --color always --icons -a -s new'
 fi
 
 # okta

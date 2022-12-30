@@ -1,0 +1,5 @@
+theme "dracula"
+pane_frames false
+simplified_ui true
+
+copy_command "pbcopy"

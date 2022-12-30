@@ -10,6 +10,7 @@
 * zsh, [oh my zsh](https://github.com/robbyrussell/oh-my-zsh)
 * [fzf](https://github.com/junegunn/fzf), command-line fuzzy finder (for history, files, etc)
 * [alacritty](https://github.com/alacritty/alacritty) terminal emulator
+* [Zellij](https://github.com/zellij-org/zellij), replacement of tmux
 * [Rust Alternatives](https://github.com/TaKO8Ki/awesome-alternatives-in-rust)
 * [Dracula Theme](https://github.com/dracula/dracula-theme)
 * [Fira Code Font][https://github.com/tonsky/FiraCode]
