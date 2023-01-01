@@ -11,7 +11,7 @@ brew install --cask alacritty
 brew install \
      pyenv jenv `# envs` \
      coreutils gnu-sed gnu-tar `# gnu utils` \
-     starship ripgrep bat exa navi git-delta zellij tealdeer dust bottom fd `# rust cli tools` \
+     rustup rust-analyzer starship ripgrep bat exa navi git-delta zellij tealdeer dust bottom fd `# rust cli tools` \
      fzf tmux reattach-to-user-namespace graphviz `# others`
 
 ## Fira Font
@@ -20,6 +20,9 @@ brew tap homebrew/cask-fonts && brew install font-fira-code-nerd-font
 ## Latex
 brew install --cask basictex
 ## sudo tlmgr update --self && sudo tlmgr install dvipng
+
+## Rust
+rustup-init -y && rustup component add rust-src rust-analyzer rustfmt clippy
 
 ## tmux
 if cd ~/.tmux/plugins/tpm ; then
