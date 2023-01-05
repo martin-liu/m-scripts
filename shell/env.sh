@@ -1,6 +1,7 @@
 ulimit -n 10240
 export PATH=$PATH:$DIR/bin
-export TERM=screen-256color
+# support 24-bit true color
+export TERM=alacritty-direct
 
 ### use gnu utils, ensure `brew install`
 export PATH=${HOMEBREW_PREFIX}/bin:${HOMEBREW_PREFIX}/opt/gnu-sed/libexec/gnubin:${HOMEBREW_PREFIX}/opt/gnu-tar/libexec/gnubin:${HOMEBREW_PREFIX}/opt/coreutils/libexec/gnubin:$PATH
