@@ -1,6 +1,8 @@
 ulimit -n 10240
-HISTSIZE=1000000
-SAVEHIST=1000000
+
+_force_prepend_to_path /usr/local/sbin
+_force_prepend_to_path /usr/local/bin
+_append_to_path /usr/sbin
 
 export PATH=$PATH:$DIR/bin
 # support 24-bit true color

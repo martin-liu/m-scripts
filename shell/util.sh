@@ -1,3 +1,83 @@
+## INTERNAL UTILITY FUNCTIONS
+_has() {
+  return $( whence $1 &>/dev/null )
+}
+
+# Returns whether the given statement executed cleanly. Try to avoid this
+# because this slows down shell loading.
+_try() {
+  return $( eval $* &>/dev/null )
+}
+
+# Returns the version of a command if present, or n/a if unavailable.
+_version() {
+  if _has "$1"; then
+    echo "$1 $($1 --version)"
+  else
+    echo "$1 n/a"
+  fi
+}
+
+
+## PATH MODIFICATIONS
+# Functions which modify the path given a directory, but only if the directory
+# exists and is not already in the path. (Super useful in ~/.zshlocal)
+
+_prepend_to_path() {
+  if [ -d $1 -a -z ${path[(r)$1]} ]; then
+    path=($1 $path);
+  fi
+}
+
+_append_to_path() {
+  if [ -d $1 -a -z ${path[(r)$1]} ]; then
+    path=($path $1);
+  fi
+}
+
+_force_prepend_to_path() {
+  path=($1 ${(@)path:#$1})
+}
+
+
+## Other functions
+# Generate passwords
+randpass() {
+  local len=${1:-32}
+  openssl rand -base64 256 | tr -d '\n/+='| cut -c -$len
+}
+
+# Latest file in a directory or that matches a pattern.
+latest() {
+  if _has exa ; then
+    exa -r -sold --oneline $@ | tail -n1
+  else
+    ls -ltr1 $@ | tail -n1
+  fi
+}
+
+# Commit what's been staged, use args as message.
+gc() {
+  git commit -m "$*" && \
+  git log --oneline --decorate -n 10
+}
+
+# Commit everything. Use args as a message or prompt to edit a message.
+gca() {
+  git add -A && \
+  hr staging && \
+  git status && \
+  hr committing && \
+  ( [ $# = 0 ] && git ci || git ci -m "$*" ) && \
+  hr results && \
+  git --no-pager quicklog && \
+  hr done
+}
+
+dance() {
+  perl -e'$|++;@x=qw[/ | \\  |];$_=0;do{print"\e[9D:D-$x[$_++%4]-<"}while(sleep $|)'
+}
+
 ## emacs
 e(){
     visible_frames() {
