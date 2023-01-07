@@ -12,7 +12,7 @@ brew install \
      pyenv jenv `# envs` \
      coreutils gnu-sed gnu-tar `# gnu utils` \
      rustup rust-analyzer starship ripgrep bat exa navi git-delta zellij tealdeer dust bottom fd `# rust cli tools` \
-     fzf tmux reattach-to-user-namespace graphviz `# others`
+     fzf libvterm graphviz `# others`
 
 ## Fira Font
 brew tap homebrew/cask-fonts && brew install font-fira-code-nerd-font
@@ -23,10 +23,3 @@ brew install --cask basictex
 
 ## Rust
 rustup-init -y && rustup component add rust-src rust-analyzer rustfmt clippy
-
-## tmux
-if cd ~/.tmux/plugins/tpm ; then
-    git pull
-else
-    git clone https://github.com/tmux-plugins/tpm ~/.tmux/plugins/tpm
-fi
