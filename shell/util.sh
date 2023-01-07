@@ -92,9 +92,10 @@ function m_ansible_install_docker() {
     ansible $group -a "apt-get update && apt-get install -y libltdl7 && dpkg -i docker-engine_1.13.1-0~ubuntu-xenial_amd64.deb" --sudo $option
 }
 
-
-function m_ansible_setup_ssh() {
-
+# time of shell load time
+function timesh() {
+  shell=${1-$SHELL}
+  for i in $(seq 1 10); do /usr/bin/time $shell -i -c exit; done
 }
 
 ### MAC OS (ventra)

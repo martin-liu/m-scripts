@@ -14,10 +14,10 @@ fi
 [ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
 
 ### Languages
-## Java
-if exists jenv; then
-    eval "$(jenv init -)"
-fi
+## Java, commented out due to slow
+#if exists jenv; then
+#    eval "$(jenv init - zsh)"
+#fi
 
 ## Python
 if exists pyenv; then

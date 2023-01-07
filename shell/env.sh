@@ -1,4 +1,7 @@
 ulimit -n 10240
+HISTSIZE=1000000
+SAVEHIST=1000000
+
 export PATH=$PATH:$DIR/bin
 # support 24-bit true color
 export TERM=alacritty-direct
