@@ -55,9 +55,8 @@ else
   function dut() { du -h $@ * .* | sort -rh | head -n 20 }
 fi
 
-# k8s & docker
+# k8s
 alias k='kubectl'
-alias d='docker'
 
 # What's using that TCP port?
 if [ "$(uname -s)" = "Darwin" ]; then
