@@ -1,6 +1,6 @@
 ## INTERNAL UTILITY FUNCTIONS
 _has() {
-  return $( whence $1 &>/dev/null )
+  (( $+commands[$1] ))
 }
 
 # Returns whether the given statement executed cleanly. Try to avoid this

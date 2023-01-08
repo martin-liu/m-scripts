@@ -38,6 +38,8 @@ done
 alias g='git'
 alias gb='git branch'
 alias gbd='git branch -D'
+alias gd='git diff'
+alias gdc='git diff --cached'
 alias gl='git pull'
 alias gp='git push'
 alias gr='git remote'

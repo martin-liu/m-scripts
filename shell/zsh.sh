@@ -37,8 +37,53 @@ zstyle ':completion:*:manuals' separate-sections true
 zstyle ':completion:*' use-perl true
 zstyle :compinstall filename '/Users/ian/.zshrc'
 
-autoload -Uz compinit
-compinit -u
+
+# See https://gist.github.com/ctechols/ca1035271ad134841284
+# Checking the cached .zcompdump file to see if it must be
+# regenerated adds a noticable delay to zsh startup.  This little hack restricts
+# it to once a day.  It should be pasted into your own completion file.
+#
+# The globbing is a little complicated here:
+# - '#q' is an explicit glob qualifier that makes globbing work within zsh's [[ ]] construct.
+# - 'N' makes the glob pattern evaluate to nothing when it doesn't match (rather than throw a globbing error)
+# - '.' matches "regular files"
+# - 'mh+24' matches files (or directories or whatever) that are older than 24 hours.
+() {
+    setopt local_options
+    setopt extendedglob
+
+    local zcd=${1}
+    local zcomp_hours=${2:-24} # how often to regenerate the file
+    local lock_timeout=${2:-1} # change this if compinit normally takes longer to run
+    local lockfile=${zcd}.lock
+
+    if [ -f ${lockfile} ]; then
+        if [[ -f ${lockfile}(#q.NDmm+${lock_timeout}) ]]; then
+            (
+                echo "${lockfile} has been held by $(< ${lockfile}) for longer than ${lock_timeout} minute(s)."
+                echo "This may indicate a problem with compinit"
+            ) >&2
+        fi
+        # Exit if there's a lockfile; another process is handling things
+        return
+    else
+        # Create the lockfile with this shell's PID for debugging
+        echo $$ > ${lockfile}
+        # Ensure the lockfile is removed
+        trap "rm -f ${lockfile}" EXIT
+    fi
+
+    autoload -Uz compinit
+
+    if [[ -f ${zcd}(#q.NDmh+${zcomp_hours}) ]]; then
+        # The file is old and needs to be regenerated
+        compinit
+    else
+        # The file is either new or does not exist. Either way, -C will handle it correctly
+        compinit -C
+    fi
+} ${ZDOTDIR:-$HOME}/.zcompdump
+
 # End of lines added by compinstall
 # ---------------------------------------------
 
@@ -172,6 +217,7 @@ setopt notify
 
 
 ## Directories
+setopt autocd
 alias -g ...='../..'
 alias -g ....='../../..'
 alias -g .....='../../../..'
