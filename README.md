@@ -16,4 +16,4 @@ The `setup.sh` will:
 * [Zellij](https://github.com/zellij-org/zellij), replacement of tmux/screen
 * [Rust Alternatives](https://github.com/TaKO8Ki/awesome-alternatives-in-rust)
 * [Dracula Theme](https://github.com/dracula/dracula-theme)
-* [Fira Code Font][https://github.com/tonsky/FiraCode]
+* [Fira Code Font](https://github.com/tonsky/FiraCode)
