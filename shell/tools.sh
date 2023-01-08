@@ -3,11 +3,6 @@ if _has starship; then
     eval "$(starship init zsh)"
 fi
 
-## navi for snipets
-if _has navi; then
-    eval "$(navi widget zsh)"
-fi
-
 ## FZF for fuzzy search history
 if _has fzf; then
     # To install useful key bindings and fuzzy completion:
@@ -27,9 +22,9 @@ fi
 #fi
 
 ## Python
-if _has pyenv; then
-    eval "$(pyenv init --path)"
-fi
+# if _has pyenv; then
+#     eval "$(pyenv init --path)"
+# fi
 
 ## conda
 if [ -f "$HOMEBREW_PREFIX/Caskroom/miniforge/base/etc/profile.d/conda.sh" ]; then
@@ -37,5 +32,3 @@ if [ -f "$HOMEBREW_PREFIX/Caskroom/miniforge/base/etc/profile.d/conda.sh" ]; the
 else
     export PATH="$HOMEBREW_PREFIX/Caskroom/miniforge/base/bin:$PATH"
 fi
-
-## NodeJS

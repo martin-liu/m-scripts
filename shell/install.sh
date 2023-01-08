@@ -17,7 +17,7 @@ brew install --cask alacritty
 brew install \
      pyenv jenv `# envs` \
      coreutils gnu-sed gnu-tar `# gnu utils` \
-     rustup rust-analyzer starship ripgrep bat exa navi git-delta zellij tealdeer dust bottom fd `# rust cli tools` \
+     rustup rust-analyzer starship ripgrep bat exa git-delta zellij tealdeer dust bottom fd `# rust cli tools` \
      hr git fzf zsh-syntax-highlighting libvterm graphviz `# others`
 
 ## Fira Font
