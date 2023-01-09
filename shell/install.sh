@@ -1,8 +1,7 @@
 #!/bin/bash
 
 # install homebrew
-which -s brew
-if [[ $? != 0 ]] ; then
+if [[ ! $(command -v brew) ]] ; then
      echo 'Installing Homebrew...'
      /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 else
@@ -29,6 +28,12 @@ brew install --cask basictex
 
 ## Rust
 rustup-init -y && rustup component add rust-src rust-analyzer rustfmt clippy
+
+## Python
+## link python to python3 if no python installed
+if [[ ! $(command -v python) ]] && [[ $(command -v python3) ]] ; then
+      sudo ln -s $(which python3) /usr/local/bin/python
+fi
 
 ## emacs
 brew tap d12frosted/emacs-plus && \

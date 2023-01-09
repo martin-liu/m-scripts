@@ -52,5 +52,4 @@ mod tests {
         let real = lk_to_kubectl(&cmds);
         assert_ne!(expected, real);
     }
-
 }
