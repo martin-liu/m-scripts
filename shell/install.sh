@@ -37,7 +37,8 @@ fi
 
 ## emacs
 brew tap d12frosted/emacs-plus && \
-    brew install emacs-plus@29 --with-native-comp --with-poll --with-debug
+    brew install emacs-plus@29 --with-native-comp --with-poll --with-debug && \
+    ln -sf /opt/homebrew/opt/emacs-plus@29/Emacs.app /Applications
 
 if [ -d "$HOME/.emacs.d/.git" ]; then
      echo "DoomEmacs already installed"
@@ -52,6 +53,7 @@ if [ -d "$HOME/.doom.d/.git" ]; then
 else
      echo "Checkout https://github.com/martin-liu/.doom.d"
      git clone --depth 1 https://github.com/martin-liu/.doom.d $HOME/.doom.d
+     $HOME/.emacs.d/bin/doom sync
 fi
 
 ## zsh-completion
