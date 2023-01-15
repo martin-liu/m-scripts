@@ -34,6 +34,9 @@ for c in cp rm chmod chown rename; do
   alias $c="$c -v"
 done
 
+# vim
+alias vi='TERM=xterm-256color vim'
+
 # git
 alias g='git'
 alias gb='git branch'

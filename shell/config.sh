@@ -3,6 +3,7 @@ read -r -d '' pairs <<EOF
   ["$DIR/shell/config/alacritty.yml", "$HOME/.config/alacritty/alacritty.yml"],
   ["$DIR/shell/config/zellij/config.kdl", "$HOME/.config/zellij/config.kdl"],
   ["$DIR/shell/config/zellij/layouts/default.kdl", "$HOME/.config/zellij/layouts/default.kdl"],
+  ["$DIR/shell/config/vimrc", "$HOME/.vimrc"],
   ["$DIR/shell/config/gitconfig", "$HOME/.gitconfig"]
 ]
 EOF
