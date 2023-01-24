@@ -18,6 +18,11 @@ if [ -w ~/.zsh_history -o -w ~ ]; then
   HISTFILE=~/.zsh_history
 fi
 
+# M-b and M-f (backward-word and forward-word) by default jump over an entire /path/location,
+# rather than to each word separated by a '/'.
+# Below code make it like bash
+WORDCHARS=''
+
 # ---------------------------------------------
 # The following lines were added by compinstall
 
@@ -141,15 +146,6 @@ autoload -U edit-command-line
 zle -N edit-command-line
 bindkey '\ee' edit-command-line
 bindkey '´' edit-command-line
-
-# Let ^W delete to slashes - zsh-users list, 4 Nov 2005
-# (I can't live without this)
-backward-delete-to-slash() {
-  local WORDCHARS=${WORDCHARS//\//}
-  zle .backward-delete-word
-}
-zle -N backward-delete-to-slash
-bindkey "^W" backward-delete-to-slash
 
 # AUTO_PUSHD is set so we can always use popd
 bindkey -s '\ep' '^Upopd >/dev/null; dirs -v^M'

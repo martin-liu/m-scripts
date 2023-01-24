@@ -103,7 +103,7 @@ e(){
 }
 
 et(){
-    exec emacsclient -a "" -t "$@"
+    emacsclient -a "" -t "$@"
 }
 
 function m_add_ssh_key() {

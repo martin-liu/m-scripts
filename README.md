@@ -17,3 +17,4 @@ The `setup.sh` will:
 * [Rust Alternatives](https://github.com/TaKO8Ki/awesome-alternatives-in-rust)
 * [Dracula Theme](https://github.com/dracula/dracula-theme)
 * [Fira Code Font](https://github.com/tonsky/FiraCode)
+* [Briss](https://github.com/mbaeuerle/Briss-2.0) for PDF cropping, e.g. `JAVA_HOME=/opt/homebrew/Cellar/openjdk/19.0.1/ ~/Downloads/Briss-2.0/bin/Briss-2.0 xxx.pdf`
