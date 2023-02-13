@@ -34,6 +34,8 @@ for c in cp rm chmod chown rename; do
   alias $c="$c -v"
 done
 
+# ssh
+alias ssh='TERM=xterm-256color ssh'
 # vim
 alias vi='TERM=xterm-256color vim'
 
