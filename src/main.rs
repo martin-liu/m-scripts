@@ -1,10 +1,12 @@
 mod lyftkube;
 use crate::lyftkube::lk::lk;
-use clap::{AppSettings, Parser, Subcommand};
+use clap::{ Parser, Subcommand};
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
 struct Cli {
+    #[arg(short, long, value_name = "PROJECT")]
+    project: Option<String>,
     #[clap(subcommand)]
     command: Commands,
 }
@@ -12,11 +14,11 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     #[clap(
-        setting(AppSettings::ArgRequiredElseHelp),
-        setting(AppSettings::AllowHyphenValues),
         about = "lyftkube -> kubectl commands"
     )]
+    #[command(arg_required_else_help = true)]
     Lk {
+        #[arg(allow_hyphen_values = true)]
         #[clap(required = true)]
         commands: Vec<String>,
     },
@@ -29,7 +31,7 @@ fn main() {
 
     match &args.command {
         Commands::Lk { commands } => {
-            lk(commands)
+            lk(commands, if let Some(name) = &args.project.as_deref() { name } else { "" });
         }
         Commands::External(args) => {
             println!("Calling out to {:?} with {:?}", &args[0], &args[1..]);
