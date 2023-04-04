@@ -7,14 +7,10 @@ tabspaces: 4
 
 window:
   opacity: 0.9
-  # size
-  dimensions:
-    columns: 120
-    lines: 60
 
   padding:
-    x: 10
-    y: 15
+    x: 5
+    y: 10
   dynamic_padding: false
   startup_mode: Maximized
   # window decorations
