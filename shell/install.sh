@@ -17,7 +17,7 @@ brew install \
      pyenv `# envs` \
      coreutils gnu-sed gnu-tar `# gnu utils` \
      rustup rust-analyzer starship ripgrep bat exa git-delta zellij tealdeer dust bottom fd `# rust cli tools` \
-     hr git fzf zsh-syntax-highlighting libvterm graphviz tree-sitter pandoc `# others`
+     hr git fzf zsh-syntax-highlighting libvterm graphviz tree-sitter pandoc yq `# others`
 
 ## Fira Font
 brew tap homebrew/cask-fonts && brew install font-fira-code-nerd-font

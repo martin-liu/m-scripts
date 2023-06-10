@@ -19,3 +19,6 @@ export PATH=$PATH:$HOME/go/bin
 
 ### Latex
 export PATH=$PATH:/Library/TeX/texbin
+
+### Rancher Desktop
+export PATH=$PATH:$HOME/.rd/bin
