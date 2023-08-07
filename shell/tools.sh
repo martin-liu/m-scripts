@@ -16,15 +16,13 @@ if _has zoxide; then
 fi
 
 ### Languages
-## Java, commented out due to slow
+## Java, commented out since it's slow
 #if _has jenv; then
 #    eval "$(jenv init - zsh)"
 #fi
 
-## Python
-# if _has pyenv; then
-#     eval "$(pyenv init --path)"
-# fi
+## Python - https://github.com/mitsuhiko/rye for dep management
+[ -f ~/.rye/env ] && source ~/.rye/env
 
 ## conda
 if [ -f "$HOMEBREW_PREFIX/Caskroom/miniforge/base/etc/profile.d/conda.sh" ]; then

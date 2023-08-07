@@ -14,7 +14,7 @@ brew install --cask alacritty
 
 ## tools
 brew install \
-     pyenv `# envs` \
+     rye `# envs` \
      coreutils gnu-sed gnu-tar `# gnu utils` \
      rustup rust-analyzer starship ripgrep bat exa git-delta zellij tealdeer dust bottom fd `# rust cli tools` \
      hr git fzf zsh-syntax-highlighting libvterm graphviz tree-sitter pandoc yq `# others`
