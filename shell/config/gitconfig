@@ -1,6 +1,6 @@
 [user]
     name = Martin Liu
-    email = martinliu@lyft.com
+    email = hflhmartin@gmail.com
 
 [url "https://"]
     insteadOf = git://
@@ -46,6 +46,3 @@
     includeStatusHeader = false
     includePullRequestsSection = false
     includeIssuesSection = false
-
-[init]
-    templateDir = /opt/lyft/.git-template

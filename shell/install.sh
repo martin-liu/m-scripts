@@ -20,7 +20,7 @@ brew install \
      hr git fzf zsh-syntax-highlighting libvterm graphviz tree-sitter pandoc yq `# others`
 
 ## Fira Font
-brew tap homebrew/cask-fonts && brew install font-fira-code-nerd-font
+brew tap homebrew/cask-fonts && brew install font-fira-code
 
 ## Latex
 brew install --cask basictex

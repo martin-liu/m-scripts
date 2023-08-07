@@ -9,6 +9,7 @@ export PATH=$PATH:$DIR/bin
 export TERM=alacritty-direct
 
 ### use gnu utils, ensure `brew install`
+export HOMEBREW_PREFIX=/opt/homebrew
 export PATH=${HOMEBREW_PREFIX}/bin:${HOMEBREW_PREFIX}/opt/gnu-sed/libexec/gnubin:${HOMEBREW_PREFIX}/opt/gnu-tar/libexec/gnubin:${HOMEBREW_PREFIX}/opt/coreutils/libexec/gnubin:$PATH
 
 ### Rust
