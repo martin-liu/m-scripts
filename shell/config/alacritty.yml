@@ -105,7 +105,7 @@ shell:
     # login
     - -l
     - -c
-    - 'zellij attach --index 0 || zellij'
+    - '/opt/homebrew/bin/zellij attach --index 0 || /opt/homebrew/bin/zellij'
 
 key_bindings:
   # simulating Alt key in macos
