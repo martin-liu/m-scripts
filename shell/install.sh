@@ -16,7 +16,7 @@ brew install --cask alacritty
 brew install \
      rye `# envs` \
      coreutils gnu-sed gnu-tar `# gnu utils` \
-     rustup rust-analyzer starship ripgrep bat exa git-delta zellij tealdeer dust bottom fd `# rust cli tools` \
+     rustup rust-analyzer starship zoxide ripgrep bat exa git-delta zellij tealdeer dust bottom fd `# rust cli tools` \
      pyright cmake hr git fzf zsh-syntax-highlighting libvterm graphviz tree-sitter pandoc yq `# others`
 
 ## Fira Font
