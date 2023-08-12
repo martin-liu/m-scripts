@@ -17,7 +17,7 @@ brew install \
      rye `# envs` \
      coreutils gnu-sed gnu-tar `# gnu utils` \
      rustup rust-analyzer starship zoxide ripgrep bat exa git-delta zellij tealdeer dust bottom fd `# rust cli tools` \
-     pyright cmake hr git fzf zsh-syntax-highlighting libvterm graphviz tree-sitter pandoc yq `# others`
+     pyright pnpm cmake hr git fzf zsh-syntax-highlighting libvterm graphviz tree-sitter pandoc yq `# others`
 
 ## Fira Font
 brew tap homebrew/cask-fonts && brew install font-fira-code
@@ -52,7 +52,7 @@ if [ -d "$HOME/.doom.d/.git" ]; then
      echo ".doom.d already installed"
 else
      echo "Checkout https://github.com/martin-liu/.doom.d"
-     git clone --depth 1 https://github.com/martin-liu/.doom.d $HOME/.doom.d
+     git clone https://github.com/martin-liu/.doom.d $HOME/.doom.d
      $HOME/.emacs.d/bin/doom sync
 fi
 

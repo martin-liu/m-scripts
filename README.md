@@ -6,6 +6,9 @@ The `setup.sh` will:
 * add `register.sh` to `~/.zshrc`
 * build rust cli `m` and copy to `/usr/local/bin`
 
+### Emacs
+Need one time `M-x all-the-icons-install-fonts` to ensure icons show correctly.
+
 ## tools
 * [Alfred](https://www.alfredapp.com/)
 * [Homebrew](https://brew.sh/)
