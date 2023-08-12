@@ -184,7 +184,9 @@ function m_sidecar() {
 osascript -e '
 tell application "System Events"
     tell process "ControlCenter"
-        click menu bar item 7 of menu bar 1
+        tell menu bar 1
+            click (first menu bar item whose description is "Screen Mirroring")
+        end tell
         delay 0.5
         click checkbox 1 of scroll area 1 of group 1 of window 1
     end tell
