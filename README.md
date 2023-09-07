@@ -10,7 +10,8 @@ The `setup.sh` will:
 Need one time `M-x all-the-icons-install-fonts` to ensure icons show correctly.
 
 ## tools
-* [Alfred](https://www.alfredapp.com/)
+* [Raycast](https://www.raycast.com)
+  + Add `./raycast` folder as raycast script folder
 * [Homebrew](https://brew.sh/)
 * zsh
 * [DoomEmacs](https://github.com/doomemacs/doomemacs)

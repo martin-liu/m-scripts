@@ -14,7 +14,7 @@ brew install --cask alacritty
 
 ## tools
 brew install \
-     rye `# envs` \
+     orbstack rye `# envs` \
      coreutils gnu-sed gnu-tar `# gnu utils` \
      rustup rust-analyzer starship zoxide ripgrep bat exa git-delta zellij tealdeer dust bottom fd `# rust cli tools` \
      pyright pnpm cmake hr git fzf zsh-syntax-highlighting libvterm graphviz tree-sitter pandoc yq `# others`
