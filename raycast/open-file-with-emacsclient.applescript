@@ -37,7 +37,7 @@ set theText to searchAndReplace(theText, "&", "\\&")
 set theText to searchAndReplace(theText, " ", "\\ ")
 
 -- use shell script to let the emacsclient work
-do shell script "emacsclient -c -a emacs " & theText & " "
+do shell script "emacsclient -a emacs " & theText & " "
 
 on trim(theString)
 	return (do shell script "echo \"" & theString & "\" | xargs")
