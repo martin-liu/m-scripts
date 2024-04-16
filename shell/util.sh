@@ -178,21 +178,6 @@ function timesh() {
   for i in $(seq 1 10); do /usr/bin/time $shell -i -c exit; done
 }
 
-### MAC OS (ventra)
-## trigger sidecar to ipad
-function m_sidecar() {
-osascript -e '
-tell application "System Events"
-    tell process "ControlCenter"
-        tell menu bar 1
-            click (first menu bar item whose description is "Screen Mirroring")
-        end tell
-        delay 0.5
-        click checkbox 1 of scroll area 1 of group 1 of window 1
-    end tell
-end tell';
-}
-
 ### `lk describe pod core-prod-1/mlpsandbox-chatcanary-df6b8f765-xt6pk`
 function lk() {
     cmd=$(python - $@ <<EoF
@@ -214,4 +199,30 @@ EoF
        )
     echo $cmd
     eval $cmd
+}
+
+### MAC OS (ventra)
+## trigger sidecar to ipad
+function m_sidecar() {
+osascript -e '
+tell application "System Events"
+    tell process "ControlCenter"
+        tell menu bar 1
+            click (first menu bar item whose description is "Screen Mirroring")
+        end tell
+        delay 0.5
+        click checkbox 1 of scroll area 1 of group 1 of window 1
+    end tell
+end tell';
+}
+
+runc() {
+    if [[ $1 == *.c ]]; then
+        gcc "$1" -o temp_executable && ./temp_executable && rm -f temp_executable
+    elif [[ $1 == *.cpp ]]; then
+        g++ "$1" -o temp_executable && ./temp_executable && rm -f temp_executable
+    else
+        echo "Unsupported file type."
+        return 1
+    fi
 }
