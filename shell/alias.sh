@@ -65,6 +65,7 @@ fi
 
 # k8s
 alias k='kubectl'
+alias kk='kubectl kustomize'
 
 # What's using that TCP port?
 if [ "$(uname -s)" = "Darwin" ]; then
