@@ -36,9 +36,10 @@ if [[ ! $(command -v python) ]] && [[ $(command -v python3) ]] ; then
 fi
 
 ## emacs
-brew tap d12frosted/emacs-plus && \
-    brew install emacs-plus@29 --with-native-comp --with-poll --with-debug && \
-    ln -sf /opt/homebrew/opt/emacs-plus@29/Emacs.app /Applications
+# reinstall gcc to prevent potential `ld: library not found for -lemutls_w` issue
+brew reinstall gcc && brew tap d12frosted/emacs-plus && \
+    brew install emacs-plus@30 --with-native-comp --with-poll --with-debug && \
+    ln -sf /opt/homebrew/opt/emacs-plus@30/Emacs.app /Applications
 
 if [ -d "$HOME/.emacs.d/.git" ]; then
      echo "DoomEmacs already installed"
