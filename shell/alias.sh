@@ -11,16 +11,16 @@ if _has bat; then
     alias cat='bat --paging=never --theme="Nord"'
 fi
 
-# exa <-> ls
-if _has exa; then
+# eza <-> ls
+if _has eza; then
     unalias -m 'll'
     unalias -m 'l'
     unalias -m 'la'
     unalias -m 'ls'
-    alias ls='exa -G  --color auto --icons -a -s type'
-    alias ll='exa -l --color always --icons -a -s new'
-    alias tree='exa -T --color always --icons -a -s new'
-    alias ltr='exa -lgr -sold'
+    alias ls='eza -G  --color auto --icons -a -s type'
+    alias ll='eza -l --color always --icons -a -s new'
+    alias tree='eza -T --color always --icons -a -s new'
+    alias ltr='eza -lgr -sold'
 fi
 
 # okta
