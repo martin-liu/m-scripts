@@ -16,12 +16,13 @@ url=$(pbpaste)
 
 if [[ -n $url ]]; then
     if [[ $url =~ arxiv\.org/pdf/([0-9]+\.[0-9]+) ]]; then
-        filename="${BASH_REMATCH[1]}.pdf"
+        filename="${BASH_REMATCH[1]}"
+        extension="pdf"
     else
         filename=$(basename "$url")
+        extension="${filename##*.}"
     fi
 
-    extension="${filename##*.}"
     if [[ $extension == "pdf" ]]; then
         if curl --head --silent --fail $url &> /dev/null; then
             echo "Downloading..."
