@@ -6,7 +6,7 @@ _append_to_path /usr/sbin
 
 export PATH=$PATH:$DIR/bin
 # support 24-bit true color
-export TERM=alacritty-direct
+export TERM=alacritty
 
 ### use gnu utils, ensure `brew install`
 export HOMEBREW_PREFIX=/opt/homebrew
