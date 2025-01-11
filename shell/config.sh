@@ -1,6 +1,8 @@
+# ["$DIR/shell/config/alacritty.toml", "$HOME/.config/alacritty/alacritty.toml"],
+
 read -r -d '' pairs <<EOF
 [
-  ["$DIR/shell/config/alacritty.toml", "$HOME/.config/alacritty/alacritty.toml"],
+  ["$DIR/shell/config/ghostty.config", "$HOME/.config/ghostty/config"],
   ["$DIR/shell/config/zellij/config.kdl", "$HOME/.config/zellij/config.kdl"],
   ["$DIR/shell/config/zellij/layouts/default.kdl", "$HOME/.config/zellij/layouts/default.kdl"],
   ["$DIR/shell/config/vimrc", "$HOME/.vimrc"],

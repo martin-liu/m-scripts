@@ -10,10 +10,11 @@ else
 fi
 
 ## Alacritty terminal emulator
-brew install --cask alacritty
+# brew install --cask alacritty
 
 ## tools
 brew install \
+     ghostty `# terminal emulator`
      orbstack rye `# envs` \
      coreutils gnu-sed gnu-tar `# gnu utils` \
      rustup rust-analyzer starship zoxide ripgrep bat eza git-delta zellij tealdeer dust bottom fd `# rust cli tools` \
