@@ -14,7 +14,8 @@ fi
 
 ## tools
 brew install \
-     ghostty `# terminal emulator`
+     aider `# AI` \
+     ghostty `# terminal emulator` \
      orbstack rye `# envs` \
      coreutils gnu-sed gnu-tar `# gnu utils` \
      rustup rust-analyzer starship zoxide ripgrep bat eza git-delta zellij tealdeer dust bottom fd `# rust cli tools` \
