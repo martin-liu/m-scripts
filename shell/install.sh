@@ -9,12 +9,8 @@ else
      brew update
 fi
 
-## Alacritty terminal emulator
-# brew install --cask alacritty
-
 ## tools
 brew install \
-     aider `# AI` \
      ghostty `# terminal emulator` \
      orbstack rye `# envs` \
      coreutils gnu-sed gnu-tar `# gnu utils` \
@@ -36,6 +32,9 @@ rustup-init -y && rustup component add rust-src rust-analyzer rustfmt clippy
 if [[ ! $(command -v python) ]] && [[ $(command -v python3) ]] ; then
       sudo ln -s $(which python3) /usr/local/bin/python
 fi
+
+## Python tools (AI, etc)
+rye tools install 'aider-chat' &> /dev/null
 
 ## emacs
 # reinstall gcc to prevent potential `ld: library not found for -lemutls_w` issue
