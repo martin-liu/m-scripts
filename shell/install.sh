@@ -15,7 +15,7 @@ brew install \
      orbstack rye `# envs` \
      coreutils gnu-sed gnu-tar `# gnu utils` \
      rustup rust-analyzer starship zoxide ripgrep bat eza git-delta zellij tealdeer dust bottom fd `# rust cli tools` \
-     basedpyright pnpm cmake hr git fzf zsh-syntax-highlighting libvterm graphviz tree-sitter pandoc yq `# others`
+     basedpyright pnpm cmake hr git gh fzf zsh-syntax-highlighting libvterm graphviz tree-sitter pandoc yq `# others`
 
 ## Fira Font
 brew tap homebrew/cask-fonts && brew install font-fira-code
