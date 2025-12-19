@@ -66,6 +66,11 @@ fi
 # k8s
 alias k='kubectl'
 alias kk='kubectl kustomize'
+alias ks='kubectl --context=staging'
+alias fluxs='flux --context=staging'
+alias helms='helm --kube-context=staging'
+# aws
+alias awss='aws --profile=staging'
 
 # What's using that TCP port?
 if [ "$(uname -s)" = "Darwin" ]; then
