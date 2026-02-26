@@ -12,9 +12,9 @@ fi
 ## tools
 brew install \
      ghostty `# terminal emulator` \
-     orbstack rye `# envs` \
+     orbstack uv `# envs` \
      coreutils gnu-sed gnu-tar `# gnu utils` \
-     rustup rust-analyzer starship zoxide ast-grep ripgrep bat eza git-delta zellij tealdeer dust bottom fd `# rust cli tools` \
+     rustup rust-analyzer just starship zoxide ast-grep ripgrep bat eza git-delta zellij tealdeer dust bottom fd `# rust cli tools` \
      basedpyright pnpm cmake hr git gh fzf zsh-syntax-highlighting libvterm graphviz tree-sitter pandoc jq yq `# others`
 
 ## Fira Font
@@ -33,14 +33,11 @@ if [[ ! $(command -v python) ]] && [[ $(command -v python3) ]] ; then
       sudo ln -s $(which python3) /usr/local/bin/python
 fi
 
-## Python tools (AI, etc)
-rye tools install 'aider-chat' &> /dev/null
-
 ## emacs
 # reinstall gcc to prevent potential `ld: library not found for -lemutls_w` issue
 brew reinstall gcc && brew tap d12frosted/emacs-plus && \
-    brew install emacs-plus@30 --with-native-comp --with-poll --with-debug && \
-    ln -sf /opt/homebrew/opt/emacs-plus@30/Emacs.app /Applications
+    brew install emacs-plus@31 --with-native-comp --with-poll --with-debug && \
+    ln -sf /opt/homebrew/opt/emacs-plus@31/Emacs.app /Applications
 
 if [ -d "$HOME/.emacs.d/.git" ]; then
      echo "DoomEmacs already installed"

@@ -21,8 +21,6 @@ fi
 #    eval "$(jenv init - zsh)"
 #fi
 
-## Python - https://github.com/mitsuhiko/rye for dep management
-[ -f ~/.rye/env ] && source ~/.rye/env
 
 ## conda
 if [ -f "$HOMEBREW_PREFIX/Caskroom/miniforge/base/etc/profile.d/conda.sh" ]; then

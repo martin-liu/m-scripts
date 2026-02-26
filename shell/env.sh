@@ -15,9 +15,6 @@ export PATH=${HOMEBREW_PREFIX}/bin:${HOMEBREW_PREFIX}/opt/gnu-sed/libexec/gnubin
 ### Rust
 export PATH=$PATH:$HOME/.cargo/bin
 
-### Python
-export PATH=$PATH:$HOME/.local/bin
-
 ### GO
 export PATH=$PATH:$HOME/go/bin
 
@@ -29,3 +26,6 @@ export PATH=$PATH:$HOME/.rd/bin
 
 ### Pnpm
 export PATH=$PATH:$PNPM_HOME
+
+### Python
+export PATH=$PATH:$HOME/.local/bin
