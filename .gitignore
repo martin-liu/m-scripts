@@ -12,3 +12,4 @@ pom.xml.asc
 .vscode/
 bin/
 .DS_Store
+/.agent-shell/

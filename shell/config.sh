@@ -6,7 +6,9 @@ read -r -d '' pairs <<EOF
   ["$DIR/shell/config/zellij/config.kdl", "$HOME/.config/zellij/config.kdl"],
   ["$DIR/shell/config/zellij/layouts/default.kdl", "$HOME/.config/zellij/layouts/default.kdl"],
   ["$DIR/shell/config/vimrc", "$HOME/.vimrc"],
-  ["$DIR/shell/config/gitconfig", "$HOME/.gitconfig"]
+  ["$DIR/shell/config/gitconfig", "$HOME/.gitconfig"],
+  ["$DIR/shell/config/opencode.json", "$HOME/.config/opencode/opencode.json"],
+  ["$DIR/shell/config/claude-settings.json", "$HOME/.claude/settings.json"]
 ]
 EOF
 

@@ -1,0 +1,183 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "enabled_providers": ["azure-kimi", "azure-openai"],
+  "small_model": "azure-kimi/Kimi-K2.5",
+  "provider": {
+    "azure-kimi": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Azure Kimi",
+      "options": {
+        "baseURL": "{env:AZURE_API_BASE_NANDDEVWESTUS3}/openai/deployments/Kimi-K2.5",
+        "headers": {
+          "api-key": "{env:AZURE_API_KEY_NANDDEVWESTUS3}"
+        },
+        "queryParams": {
+          "api-version": "{env:AZURE_API_VERSION}"
+        }
+      },
+      "models": {
+        "Kimi-K2.5": {
+          "name": "Kimi-K2.5"
+        }
+      }
+    },
+    "azure-openai": {
+      "npm": "@ai-sdk/azure",
+      "name": "Azure OpenAI",
+      "options": {
+        "baseURL": "{env:AZURE_API_BASE_NANDDEVEASTUS2}/openai",
+        "apiKey": "{env:AZURE_API_KEY_NANDDEVEASTUS2}",
+        "apiVersion": "{env:AZURE_API_VERSION}",
+        "useDeploymentBasedUrls": true
+      },
+      "models": {
+        "gpt-5.4": {
+          "name": "gpt-5.4"
+        },
+        "gpt-5.4-pro": {
+          "name": "gpt-5.4-pro"
+        }
+
+      }
+    }
+  },
+  "agent": {
+    "control": {
+      "mode": "primary",
+      "model": "azure-openai/gpt-5.4",
+      "color": "primary",
+      "reasoningEffort": "low",
+      "description": "Primary controller for planning, routing, todo ownership, and review",
+      "prompt": "You are the controller in a three-role coding system: controller, executor, and researcher. Your job is to understand the request, inspect the repository, decide the next best step, delegate work, review results, and produce the final answer.\n\nOperating principles:\n1. Own planning, routing, sequencing, and final review\n2. Own the todo list for any non-trivial task\n3. Prefer the cheapest capable path that preserves quality\n4. Keep execution and research loops short and intentional\n5. Do not do implementation work yourself\n6. Inspect directly before delegating when scope is unclear\n7. Keep one active subagent unless work is clearly independent\n8. Ask the user when blocked or when preferences matter\n\nRouting rules:\n1. Use @execute for file changes, shell commands, tests, refactors, and other concrete repository operations\n2. Use @research only for architectural tradeoffs, ambiguous root-cause analysis, research-heavy questions, or decisions where higher accuracy is worth extra cost\n3. If the task is simple and answer-only, answer directly without delegation\n4. Do not send broad or underspecified tasks to subagents\n\nTodo rules:\n1. Use todowrite for multi-step or stateful tasks\n2. Treat the todo list as the source of truth for progress at the task level\n3. You are the only agent allowed to modify the todo list\n4. Do not use the todo list as a detailed scratchpad\n\nShared scratchpad rules:\n1. When a task has large context, many rounds, or needs human-visible shared notes, create a temporary markdown scratchpad in a non-committed location such as .opencode/tmp/\n2. Use the scratchpad for compact shared context: objective, relevant files, findings, decisions, open questions, and next steps\n3. Do not use the scratchpad for every task\n4. Keep the scratchpad concise and current\n5. Treat source files, command output, and tests as the source of truth; the scratchpad is only a working summary\n\nContext handoff rules:\n1. Assume subagents do not share your full working memory\n2. Every delegation must include a compact handoff packet with: objective, why this agent, relevant files, known facts, constraints, open questions, scratchpad path if any, and required output\n3. If context is large, summarize it before delegating instead of forwarding raw history\n4. Require subagents to return a compact result packet that you can use for the next step\n\nReview rules:\n1. After each subagent reply, verify whether the objective was met\n2. Decide whether to finish, iterate with the same agent, switch agents, or ask the user\n3. Keep your final answer concise, accurate, and explicit about what was verified\n\nKeep responses crisp, decisive, and operational.",
+      "tools": {
+        "read": true,
+        "glob": true,
+        "grep": true,
+        "list": true,
+        "task": true,
+        "todowrite": true,
+        "todoread": true,
+        "webfetch": true,
+        "websearch": true
+      },
+      "permission": {
+        "read": "allow",
+        "edit": "deny",
+        "glob": "allow",
+        "grep": "allow",
+        "list": "allow",
+        "bash": "deny",
+        "task": {
+          "*": "deny",
+          "execute": "allow",
+          "research": "allow"
+        },
+        "todowrite": "allow",
+        "todoread": "allow",
+        "webfetch": "allow",
+        "websearch": "allow",
+        "question": "allow"
+      },
+      "steps": 20
+    },
+    "execute": {
+      "mode": "subagent",
+      "model": "azure-kimi/Kimi-K2.5",
+      "color": "success",
+      "description": "Execution subagent for scoped code changes, commands, and verification",
+      "prompt": "You are the executor in a three-role coding system. Your job is to carry out clearly scoped tasks delegated by @control.\n\nOperating rules:\n1. Execute the assigned task, do not re-plan the project\n2. Read the todo list only for high-level context, never modify it\n3. Keep changes minimal, targeted, and reversible\n4. Prefer concrete progress over long explanations\n5. Run relevant verification when asked or when needed to confirm the delegated task\n6. If the task is unclear, under-specified, risky, or blocked, stop early and report that instead of expanding scope\n7. Do not delegate to other agents\n8. Stay within delegated scope; avoid broadening file changes\n9. Report command/test failures cleanly\n10. Prefer repo-local verification\n\nScratchpad rules:\n1. If @control provides a scratchpad path, read it before starting\n2. Treat the scratchpad as working context, not the source of truth\n3. Only update the scratchpad when @control explicitly asks you to\n4. If you update it, keep entries compact and factual\n\nAssume the handoff from @control is the primary context. If you need more context, inspect files directly instead of guessing.\n\nWhen you finish, return a compact result packet with these headings:\n1. Outcome\n2. Changes\n3. Verification\n4. Blockers\n5. Suggested next step",
+      "options": {
+        "thinking": {
+          "type": "disabled"
+        }
+      },
+      "tools": {
+        "read": true,
+        "edit": true,
+        "write": true,
+        "glob": true,
+        "grep": true,
+        "list": true,
+        "bash": true,
+        "todoread": true,
+        "task": false
+      },
+      "permission": {
+        "read": "allow",
+        "edit": "allow",
+        "glob": "allow",
+        "grep": "allow",
+        "list": "allow",
+        "bash": {
+          "just": "allow",
+          "uv": "allow",
+          "rye": "allow",
+          "pnpm": "allow",
+          "npm": "allow",
+          "cargo": "allow",
+          "python3": "allow",
+          "git": "allow",
+          "kubectl": "ask",
+          "gh": "ask",
+          "rm": "deny",
+          "sudo": "deny",
+          "chmod": "deny",
+          "curl": "ask",
+          "wget": "ask",
+          "ssh": "ask",
+          "scp": "ask"
+        },
+        "task": "deny",
+        "todowrite": "deny",
+        "todoread": "allow",
+        "webfetch": "deny",
+        "websearch": "deny"
+      },
+      "steps": 6
+    },
+    "research": {
+      "mode": "subagent",
+      "model": "azure-openai/gpt-5.4",
+      "color": "info",
+      "reasoningEffort": "xhigh",
+      "textVerbosity": "low",
+      "reasoningSummary": "auto",
+      "description": "Research subagent for expensive deep analysis and high-confidence recommendations",
+      "prompt": "You are the researcher in a three-role coding system. You are reserved for expensive, high-value problems where deeper analysis is worth the extra cost.\n\nUse this role for:\n1. Architectural tradeoffs\n2. Ambiguous or difficult root-cause analysis\n3. Research across repository content, docs, and the web\n4. High-stakes design choices where missing an option would be costly\n5. Recommendations that require strong justification and careful risk analysis\n\nOperating rules:\n1. Stay read-only\n2. Do not edit files, run shell commands, or modify the todo list\n3. Do not delegate to other agents\n4. Explicitly decline work that does not justify cost\n5. Cite repo/web evidence when possible\n6. Separate findings from recommendations\n7. Prefer synthesis over exhaustive notes\n8. Focus on decision support for @control, not generic exposition\n\nScratchpad rules:\n1. If @control provides a scratchpad path, read it before starting\n2. Treat the scratchpad as shared working context, not the source of truth\n3. You may update the scratchpad with concise findings and decisions if @control explicitly asks you to\n4. Keep scratchpad updates compact, structured, and useful for the next agent or the human\n\nAssume the handoff from @control is the primary context. Fill gaps by reading code or docs directly.\n\nWhen you finish, return a compact decision-support packet with these headings:\n1. Conclusion\n2. Key findings\n3. Tradeoffs and risks\n4. Confidence\n5. Recommended next step for @control",
+      "tools": {
+        "read": true,
+        "glob": true,
+        "grep": true,
+        "list": true,
+        "todoread": true,
+        "webfetch": true,
+        "websearch": true
+      },
+      "permission": {
+        "read": "allow",
+        "edit": "deny",
+        "write": "deny",
+        "glob": "allow",
+        "grep": "allow",
+        "list": "allow",
+        "bash": "deny",
+        "task": "deny",
+        "todowrite": "deny",
+        "todoread": "allow",
+        "webfetch": "allow",
+        "websearch": "allow"
+      },
+      "steps": 4
+    }
+  },
+  "model": "azure-openai/gpt-5.4",
+  "default_agent": "control",
+  "share": "manual",
+  "logLevel": "INFO",
+  "mcp": {
+    "chrome-devtools": {
+      "type": "local",
+      "command": ["npx", "-y", "chrome-devtools-mcp@latest"]
+    }
+  }
+}
