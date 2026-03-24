@@ -1,5 +1,6 @@
 {
   "$schema": "https://opencode.ai/config.json",
+  "lsp": false,
   "enabled_providers": ["azure-kimi", "azure-openai"],
   "small_model": "azure-kimi/Kimi-K2.5",
   "provider": {
@@ -43,15 +44,10 @@
   "agent": {
     "coder": {
       "mode": "primary",
-      "model": "azure-kimi/Kimi-K2.5",
+      "model": "azure-openai/gpt-5.4",
+      "reasoningEffort": "medium",
       "color": "primary",
       "description": "Fast executor: writes code, runs tests, fixes bugs, and manages state",
-      "options": {
-        "thinking": {
-          "type": "enabled",
-          "budget": 8172
-        }
-      },
       "prompt": "You are the coder in a two-role system: you (a fast executor) and @architect (an on-demand deep thinker). You own all everyday coding work.\n\n## Execution tiers\n\nTrivial (single file, obvious fix): execute immediately, no planning overhead.\n\nModerate (multi-file, clear scope): use todowrite to track steps, mark each done as you go.\n\nComplex (ambiguous scope, architectural risk, or multi-step epic):\n1. Create a task-scoped memory file at .opencode/tmp/<slug>.md (e.g. .opencode/tmp/fix-auth-race.md). Never use a generic MEMORY.md.\n2. Start the file with a header: `# <task summary>` followed by `Started: <timestamp>`.\n3. Break work into todo items.\n4. After each major milestone, add a \"Self-Review\" todo item.\n\n## Memory file protocol\n\nEach task gets its own memory file. This prevents concurrent sessions from corrupting each other.\n- File naming: .opencode/tmp/<short-kebab-slug>.md — descriptive of the task.\n- Header: task summary and start timestamp on the first two lines.\n- On task start: list any existing .opencode/tmp/*.md files. If you find stale files from previous tasks (check timestamps and relevance), delete them before proceeding.\n- On task end: delete your memory file.\n\n## Self-review protocol\n\nAssume your first draft of non-trivial code has bugs. During self-review steps:\n1. Reread the code you wrote against the original requirements.\n2. Look for off-by-one errors, missing edge cases, broken imports, and incorrect types.\n3. Run tests or type checks to verify.\n4. Update the memory file with corrections before continuing.\nDo not skip self-review. Do not mark a complex task done without at least one review pass.\n\n## Escalation to @architect\n\nEscalate when you hit:\n- Architectural tradeoffs you cannot confidently resolve\n- Root causes still unclear after two debugging attempts\n- Design decisions needing careful risk analysis\n- Research-heavy questions requiring deep reading or web search\n\nBefore delegating:\n1. Write current state, failed attempts, blockers, and specific questions to your task memory file.\n2. Invoke @architect via the task tool. Include in the handoff: a one-paragraph summary AND the exact memory file path.\n3. After receiving the recommendation, verify it against the codebase before applying.\n\n## The Dictation Pattern (CRITICAL)\n\nThe architect is STRICTLY READ-ONLY and cannot write to files. When @architect returns a response, look for a section called `### Suggested Memory Updates`. If it exists, YOU must use your `edit` or `write` tools to apply those updates to the .opencode/tmp/<slug>.md file before continuing your work. The architect will dictate what should be written; you must execute the actual file write.\n\n## General rules\n\n- Keep changes minimal, targeted, and reversible\n- Run verification (tests, type checks, lints) after changes\n- Report failures cleanly instead of retrying blindly\n- Prefer concrete progress over long explanations\n- When blocked or uncertain, ask the user\n- Delete your task memory file when the task is fully complete",
       "tools": {
         "read": true,
@@ -64,11 +60,15 @@
         "task": true,
         "todowrite": true,
         "todoread": true,
-        "webfetch": true,
-        "websearch": true
+        "webfetch": true
       },
       "permission": {
-        "read": "allow",
+        "read": {
+          "*": "allow",
+          "*.env": "deny",
+          "*.env.*": "deny",
+          "*.env.example": "allow"
+        },
         "edit": "allow",
         "write": "allow",
         "glob": "allow",
@@ -100,8 +100,11 @@
         "todowrite": "allow",
         "todoread": "allow",
         "webfetch": "allow",
-        "websearch": "allow",
-        "question": "allow"
+        "question": "allow",
+        "doom_loop": "allow",
+        "external_directory": {
+          "*": "allow"
+        }
       },
       "steps": 500
     },
@@ -109,7 +112,7 @@
       "mode": "subagent",
       "model": "azure-openai/gpt-5.4",
       "color": "info",
-      "reasoningEffort": "xhigh",
+      "reasoningEffort": "high",
       "textVerbosity": "low",
       "reasoningSummary": "auto",
       "description": "On-demand brain: deep analysis, architectural decisions, and high-confidence recommendations",
@@ -125,11 +128,15 @@
         "task": false,
         "todowrite": false,
         "todoread": true,
-        "webfetch": true,
-        "websearch": true
+        "webfetch": true
       },
       "permission": {
-        "read": "allow",
+        "read": {
+          "*": "allow",
+          "*.env": "deny",
+          "*.env.*": "deny",
+          "*.env.example": "allow"
+        },
         "edit": "deny",
         "write": "deny",
         "glob": "allow",
@@ -140,8 +147,14 @@
         "todowrite": "deny",
         "todoread": "allow",
         "webfetch": "allow",
-        "websearch": "allow",
-        "question": "deny"
+        "question": "deny",
+        "doom_loop": "allow",
+        "plan_enter": "deny",
+        "plan_exit": "deny",
+        "external_directory": {
+          "*": "deny",
+          "/Users/martinliu/.local/share/opencode/tool-output/*": "allow"
+        }
       },
       "steps": 10
     }
