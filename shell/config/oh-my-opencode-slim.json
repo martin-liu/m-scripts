@@ -1,0 +1,83 @@
+{
+  "$schema": "https://unpkg.com/oh-my-opencode-slim@latest/oh-my-opencode-slim.schema.json",
+  "preset": "azure-openai",
+  "presets": {
+    "azure-openai": {
+      "orchestrator": {
+        "model": "azure-openai/gpt-5.4",
+        "skills": [
+          "*"
+        ],
+        "mcps": [
+          "websearch"
+        ]
+      },
+      "oracle": {
+        "model": "azure-openai/gpt-5.4",
+        "variant": "high",
+        "skills": [
+          "simplify"
+        ],
+        "mcps": []
+      },
+      "librarian": {
+        "model": "azure-openai/gpt-5.4-mini",
+        "variant": "low",
+        "skills": [],
+        "mcps": [
+          "websearch",
+          "context7",
+          "grep_app"
+        ]
+      },
+      "explorer": {
+        "model": "azure-openai/gpt-5.4-mini",
+        "variant": "low",
+        "skills": [],
+        "mcps": []
+      },
+      "designer": {
+        "model": "azure-openai/gpt-5.4-mini",
+        "variant": "medium",
+        "skills": [
+          "agent-browser"
+        ],
+        "mcps": []
+      },
+      "fixer": {
+        "model": "azure-openai/gpt-5.4-mini",
+        "variant": "low",
+        "skills": [],
+        "mcps": []
+      }
+    }
+  },
+  "tmux": {
+    "enabled": false,
+    "layout": "main-vertical",
+    "main_pane_size": 60
+  },
+  "council": {
+    "master": {
+      "model": "azure-openai/gpt-5.4",
+      "variant": "high"
+    },
+    "default_preset": "default",
+    "presets": {
+      "default": {
+        "strategic": {
+          "model": "azure-openai/gpt-5.4",
+          "variant": "low"
+        },
+        "balanced": {
+          "model": "azure-openai/gpt-5.4-mini",
+          "variant": "high"
+        },
+        "fast": {
+          "model": "azure-openai/gpt-5.4-mini",
+          "variant": "low"
+        }
+      }
+    }
+  }
+}

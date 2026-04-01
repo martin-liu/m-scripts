@@ -8,6 +8,7 @@ read -r -d '' pairs <<EOF
   ["$DIR/shell/config/vimrc", "$HOME/.vimrc"],
   ["$DIR/shell/config/gitconfig", "$HOME/.gitconfig"],
   ["$DIR/shell/config/opencode.json", "$HOME/.config/opencode/opencode.json"],
+  ["$DIR/shell/config/oh-my-opencode-slim.json", "$HOME/.config/opencode/oh-my-opencode-slim.json"],
   ["$DIR/shell/config/claude-settings.json", "$HOME/.claude/settings.json"]
 ]
 EOF
