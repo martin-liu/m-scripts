@@ -5,6 +5,7 @@
     "oh-my-opencode-slim@latest"
   ],
   "enabled_providers": [
+    "openrouter",
     "azure",
     "azure-openai"
   ],
@@ -175,15 +176,5 @@
   "model": "azure-openai/gpt-5.4",
   "default_agent": "orchestrator",
   "share": "manual",
-  "logLevel": "DEBUG",
-  "mcp": {
-    "chrome-devtools": {
-      "type": "local",
-      "command": [
-        "npx",
-        "-y",
-        "chrome-devtools-mcp@latest"
-      ]
-    }
-  }
+  "logLevel": "DEBUG"
 }
