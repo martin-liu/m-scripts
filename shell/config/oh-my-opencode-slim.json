@@ -21,7 +21,7 @@
         "mcps": []
       },
       "librarian": {
-        "model": "azure-openai/gpt-5.4-mini",
+        "model": "azure/kimi-k2.5",
         "variant": "low",
         "skills": [],
         "mcps": [
@@ -31,13 +31,13 @@
         ]
       },
       "explorer": {
-        "model": "azure-openai/gpt-5.4-mini",
+        "model": "azure/kimi-k2.5",
         "variant": "low",
         "skills": [],
         "mcps": []
       },
       "designer": {
-        "model": "azure-openai/gpt-5.4-mini",
+        "model": "azure/kimi-k2.5",
         "variant": "medium",
         "skills": [
           "agent-browser"
@@ -45,7 +45,7 @@
         "mcps": []
       },
       "fixer": {
-        "model": "azure-openai/gpt-5.4-mini",
+        "model": "azure/kimi-k2.5",
         "variant": "low",
         "skills": [],
         "mcps": []
@@ -74,8 +74,7 @@
           "variant": "high"
         },
         "fast": {
-          "model": "azure-openai/gpt-5.4-mini",
-          "variant": "low"
+          "model": "azure/kimi-k2.5"
         }
       }
     }

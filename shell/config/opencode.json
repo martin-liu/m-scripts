@@ -2,19 +2,19 @@
   "$schema": "https://opencode.ai/config.json",
   "lsp": false,
   "plugin": [
-    "oh-my-opencode-slim"
+    "oh-my-opencode-slim@latest"
   ],
   "enabled_providers": [
-    "azure-kimi",
+    "azure",
     "azure-openai"
   ],
-  "small_model": "azure-kimi/Kimi-K2.5",
+  "small_model": "azure/kimi-k2.5",
   "provider": {
-    "azure-kimi": {
+    "azure": {
       "npm": "@ai-sdk/openai-compatible",
       "name": "Azure Kimi",
       "options": {
-        "baseURL": "{env:AZURE_API_BASE_NANDDEVWESTUS3}/openai/deployments/Kimi-K2.5",
+        "baseURL": "{env:AZURE_API_BASE_NANDDEVWESTUS3}/openai/deployments/kimi-k2.5",
         "headers": {
           "api-key": "{env:AZURE_API_KEY_NANDDEVWESTUS3}"
         },
@@ -23,19 +23,17 @@
         }
       },
       "models": {
-        "Kimi-K2.5": {
-          "name": "Kimi-K2.5"
+        "kimi-k2.5": {
+          "name": "kimi-k2.5"
         }
       }
     },
     "azure-openai": {
-      "npm": "@ai-sdk/azure",
+      "npm": "@ai-sdk/openai",
       "name": "Azure OpenAI",
       "options": {
-        "baseURL": "{env:AZURE_API_BASE_NANDDEVEASTUS2}/openai",
-        "apiKey": "{env:AZURE_API_KEY_NANDDEVEASTUS2}",
-        "apiVersion": "{env:AZURE_API_VERSION}",
-        "useDeploymentBasedUrls": true
+        "baseURL": "{env:AZURE_API_BASE_NANDDEVEASTUS2}/openai/v1",
+        "apiKey": "{env:AZURE_API_KEY_NANDDEVEASTUS2}"
       },
       "models": {
         "gpt-5.4": {
