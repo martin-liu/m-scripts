@@ -24,6 +24,20 @@ Full mode additionally:
 ### Emacs
 Need one time `M-x all-the-icons-install-fonts` to ensure icons show correctly.
 
+---
+
+## Standalone: opencode quick setup
+
+A self-contained script for setting up opencode with shell essentials on a fresh Mac. No dependency on this repo — can be run independently.
+
+```sh
+bash <(curl -fsSL https://raw.githubusercontent.com/martin-liu/m-scripts/master/bin/setup-opencode.sh)
+```
+
+Includes: Homebrew, shell tools (starship, bat, eza, fzf, zellij, etc.), Ghostty + Dracula theme, Fira Code font, opencode, and agent-browser skill. Writes all configs and shell setup directly to `~/.zshrc`.
+
+---
+
 ## tools
 * [Raycast](https://www.raycast.com)
   + Add `./raycast` folder as raycast script folder
