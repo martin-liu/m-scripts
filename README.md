@@ -1,10 +1,25 @@
 ## Setup [Mac only]
-Clone this repo and run `bin/setup.sh` in terminal, once it finish, then open Alacritty for terminal, open Emacs for coding.
+Clone this repo and run `bin/setup.sh` in terminal, once it finish, then open Ghostty for terminal, open Emacs for coding.
 
-The `setup.sh` will:
-* install tools
+### Full setup
+```sh
+bin/setup.sh
+```
+Installs everything: shell tools, AI coding tools, Rust toolchain, Emacs, LaTeX, etc.
+
+### Lite setup
+```sh
+bin/setup.sh --lite
+```
+Installs only shell essentials, theme/look-and-feel, and AI coding tools (opencode, Claude Code, oh-my-opencode-slim). Skips Emacs, LaTeX, Rust build, and heavy dependencies.
+
+Both modes will:
 * add `register.sh` to `~/.zshrc`
-* build rust cli `m` and copy to `/usr/local/bin`
+* sync config files (Ghostty, Zellij, Git, opencode, Claude Code settings)
+
+Full mode additionally:
+* install Rust toolchain and build the `m` CLI
+* install and configure DoomEmacs
 
 ### Emacs
 Need one time `M-x all-the-icons-install-fonts` to ensure icons show correctly.
@@ -17,9 +32,9 @@ Need one time `M-x all-the-icons-install-fonts` to ensure icons show correctly.
 * [DoomEmacs](https://github.com/doomemacs/doomemacs)
 * [fzf](https://github.com/junegunn/fzf), command-line fuzzy finder (for history, files, etc)
 * [Ghostty](https://github.com/ghostty-org/ghostty) terminal emulator
-* ~~[Alacritty](https://github.com/alacritty/alacritty) terminal emulator~~
 * [Zellij](https://github.com/zellij-org/zellij), replacement of tmux/screen
-* [Dracula Theme](https://github.com/dracula/dracula-theme)
 * [Fira Code Font](https://github.com/tonsky/FiraCode)
-* [Briss](https://github.com/mbaeuerle/Briss-2.0) for PDF cropping, e.g. `JAVA_HOME=/opt/homebrew/Cellar/openjdk/19.0.1/ ~/Downloads/Briss-2.0/bin/Briss-2.0 xxx.pdf`
+* [opencode](https://opencode.ai), AI coding assistant (TUI)
+* [Claude Code](https://claude.ai/code), AI coding assistant (CLI)
+* [oh-my-opencode-slim](https://github.com/alvinunreal/oh-my-opencode-slim), opencode plugin for multi-agent orchestration
 * [Rust Alternatives](https://github.com/TaKO8Ki/awesome-alternatives-in-rust)

@@ -1,5 +1,14 @@
 #!/bin/bash
 
+# Usage: install.sh [--lite]
+# --lite: install only shell essentials, AI coding tools, and theme/look-and-feel
+# (no args): full install including emacs, latex, orbstack, etc.
+
+LITE_MODE=false
+if [[ "$1" == "--lite" ]]; then
+    LITE_MODE=true
+fi
+
 # install homebrew
 if [[ ! $(command -v brew) ]] ; then
      echo 'Installing Homebrew...'
@@ -9,16 +18,46 @@ else
      brew update
 fi
 
-## tools
+## core tools (always installed)
 brew install \
      ghostty `# terminal emulator` \
-     orbstack uv `# envs` \
      coreutils gnu-sed gnu-tar `# gnu utils` \
-     rustup rust-analyzer just starship zoxide ast-grep ripgrep bat eza git-delta zellij tealdeer dust bottom fd `# rust cli tools` \
-     basedpyright pnpm cmake hr git gh fzf zsh-syntax-highlighting libvterm graphviz tree-sitter pandoc jq yq `# others`
+     starship zoxide ripgrep bat eza git-delta zellij fd `# rust cli tools` \
+     node pnpm bun `# js runtimes` \
+     git gh fzf zsh-syntax-highlighting jq yq `# others`
 
 ## Fira Font
-brew tap homebrew/cask-fonts && brew install font-fira-code
+brew install font-fira-code
+
+## zsh-completion
+echo "Updating common Zsh completions..."
+rm -rf ~/.zsh-completions ~/.zcompdump
+git clone --quiet --depth=1 https://github.com/zsh-users/zsh-completions ~/.zsh-completions
+
+## AI coding tools
+echo "Installing/updating opencode..."
+pnpm install -g opencode@latest
+
+echo "Installing/updating Claude Code..."
+npm install -g @anthropic-ai/claude-code@latest
+
+# oh-my-opencode-slim plugin (generates default configs; custom configs
+# in shell/config/ are synced over by config.sh on shell load)
+echo "Installing/updating oh-my-opencode-slim plugin..."
+bunx oh-my-opencode-slim@latest install --no-tui --tmux=no --skills=yes
+
+if [[ "$LITE_MODE" == true ]]; then
+    echo "Lite install complete"
+    exit 0
+fi
+
+## --- Full install below ---
+
+## additional tools
+brew install \
+     orbstack uv `# envs` \
+     rustup rust-analyzer just ast-grep tealdeer dust bottom `# rust cli tools` \
+     basedpyright cmake hr libvterm graphviz tree-sitter pandoc `# others`
 
 ## Latex
 brew install --cask basictex
@@ -54,8 +93,3 @@ else
      git clone https://github.com/martin-liu/.doom.d $HOME/.doom.d
      $HOME/.emacs.d/bin/doom sync
 fi
-
-## zsh-completion
-echo "Updating common Zsh completions..."
-rm -rf ~/.zsh-completions ~/.zcompdump
-git clone --quiet --depth=1 https://github.com/zsh-users/zsh-completions ~/.zsh-completions
