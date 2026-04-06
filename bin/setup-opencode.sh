@@ -33,11 +33,17 @@ git clone --quiet --depth=1 https://github.com/zsh-users/zsh-completions ~/.zsh-
 
 ## opencode
 echo "Installing/updating opencode..."
-pnpm install -g opencode@latest
+pnpm install -g opencode-ai@latest
+pnpm approve-builds -g opencode-ai 2>/dev/null || true
 
-## opencode skills
-echo "Installing opencode skills..."
-npx -y skillsadd vercel-labs/agent-browser
+## opencode skills (agent-browser)
+echo "Installing agent-browser skill..."
+mkdir -p ~/.config/opencode/skills
+TMPDIR_AB=$(mktemp -d)
+git clone --quiet --depth=1 https://github.com/vercel-labs/agent-browser "$TMPDIR_AB"
+rm -rf ~/.config/opencode/skills/agent-browser
+cp -r "$TMPDIR_AB/skills/agent-browser" ~/.config/opencode/skills/agent-browser
+rm -rf "$TMPDIR_AB"
 
 ## Ghostty config
 mkdir -p ~/.config/ghostty
