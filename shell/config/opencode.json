@@ -25,7 +25,11 @@
       },
       "models": {
         "kimi-k2.5": {
-          "name": "kimi-k2.5"
+          "name": "kimi-k2.5",
+          "cost": {
+            "input": 0.6,
+            "output": 3
+          }
         }
       }
     },
@@ -38,13 +42,36 @@
       },
       "models": {
         "gpt-5.4": {
-          "name": "gpt-5.4"
+          "name": "gpt-5.4",
+          "cost": {
+            "input": 2.5,
+            "output": 15,
+            "cache_read": 0.25,
+            "context_over_200k": {
+              "input": 5,
+              "output": 22.5,
+              "cache_read": 0.5
+            }
+          }
         },
         "gpt-5.4-mini": {
-          "name": "gpt-5.4-mini"
+          "name": "gpt-5.4-mini",
+          "cost": {
+            "input": 0.75,
+            "output": 4.5,
+            "cache_read": 0.075
+          }
         },
         "gpt-5.4-pro": {
-          "name": "gpt-5.4-pro"
+          "name": "gpt-5.4-pro",
+          "cost": {
+            "input": 30,
+            "output": 180,
+            "context_over_200k": {
+              "input": 60,
+              "output": 270
+            }
+          }
         }
       }
     }
