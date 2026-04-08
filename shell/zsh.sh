@@ -59,24 +59,22 @@ zstyle :compinstall filename '/Users/ian/.zshrc'
 
     local zcd=${1}
     local zcomp_hours=${2:-24} # how often to regenerate the file
-    local lock_timeout=${2:-1} # change this if compinit normally takes longer to run
+    local lock_timeout=${3:-5} # change this if compinit normally takes longer to run
     local lockfile=${zcd}.lock
 
     if [ -f ${lockfile} ]; then
         if [[ -f ${lockfile}(#q.NDmm+${lock_timeout}) ]]; then
-            (
-                echo "${lockfile} has been held by $(< ${lockfile}) for longer than ${lock_timeout} minute(s)."
-                echo "This may indicate a problem with compinit"
-            ) >&2
+            command rm -f -- "${lockfile}" >/dev/null 2>&1
+        else
+            # Another shell is still handling compinit
+            return
         fi
-        # Exit if there's a lockfile; another process is handling things
-        return
-    else
-        # Create the lockfile with this shell's PID for debugging
-        echo $$ > ${lockfile}
-        # Ensure the lockfile is removed
-        trap "rm -f ${lockfile}" EXIT
     fi
+
+    # Create the lockfile with this shell's PID for debugging
+    echo $$ > ${lockfile}
+    # Ensure the lockfile is removed
+    trap "command rm -f -- ${lockfile:q} >/dev/null 2>&1" EXIT
 
     autoload -Uz compinit
 

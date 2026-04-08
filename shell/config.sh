@@ -9,6 +9,7 @@ read -r -d '' pairs <<EOF
   ["$DIR/shell/config/gitconfig", "$HOME/.gitconfig"],
   ["$DIR/shell/config/opencode.json", "$HOME/.config/opencode/opencode.json"],
   ["$DIR/shell/config/oh-my-opencode-slim.json", "$HOME/.config/opencode/oh-my-opencode-slim.json"],
+  ["$DIR/shell/config/oh-my-opencode-slim/orchestrator_append.md", "$HOME/.config/opencode/oh-my-opencode-slim/orchestrator_append.md"],
   ["$DIR/shell/config/claude-settings.json", "$HOME/.claude/settings.json"]
 ]
 EOF
@@ -21,5 +22,5 @@ for source, target in pairs:
     if not os.path.exists(target) or not filecmp.cmp(source, target):
         print("Detected change, copying {} to {}".format(source, target))
         os.makedirs(os.path.dirname(target), exist_ok=True)
-        shutil.copyfile(source, target)
+        shutil.copy2(source, target)
 EoF
