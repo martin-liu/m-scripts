@@ -38,7 +38,29 @@ Includes: Homebrew, shell tools (starship, bat, eza, fzf, zellij, etc.), Ghostty
 
 ---
 
-## tools
+## Skills
+
+AI agent skills that can be installed with the [skills CLI](https://github.com/vercel-labs/skills):
+
+```sh
+npx skills add git@github.com:martin-liu/m-scripts.git
+```
+
+To update installed skills to the latest version:
+
+```sh
+npx skills update
+```
+
+### Available skills
+
+| Skill | Description |
+|-------|-------------|
+| **linkedin-sourcing** | LinkedIn Recruiter (paid product) sourcing assistant. Automates candidate outreach with Excel-driven state, phased execution, and browser automation. Requires macOS + Google Chrome. |
+
+---
+
+## Tools
 * [Raycast](https://www.raycast.com)
   + Add `./raycast` folder as raycast script folder
 * [Homebrew](https://brew.sh/)
