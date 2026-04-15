@@ -7,10 +7,29 @@
   "enabled_providers": [
     "openrouter",
     "azure",
-    "azure-openai"
+    "azure-openai",
+    "ollama"
   ],
+  "permission": {
+    "external_directory": {
+      "/tmp/**": "allow"
+    }
+  },
   "small_model": "azure/kimi-k2.5",
   "provider": {
+    "ollama": {
+      "models": {
+        "qwen3.5:35b": {
+          "_launch": true,
+          "name": "qwen3.5:35b"
+        }
+      },
+      "name": "Ollama",
+      "npm": "@ai-sdk/openai-compatible",
+      "options": {
+        "baseURL": "http://127.0.0.1:11434/v1"
+      }
+    },
     "azure": {
       "npm": "@ai-sdk/openai-compatible",
       "name": "Azure Kimi",

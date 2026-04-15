@@ -1,0 +1,7 @@
+Hi {FirstName},
+
+Just wanted to follow up on my message from earlier this week about the {POSITION_TITLE} role on our {TEAM_NAME} team at ByteDance in {LOCATION}.
+
+I know you're likely busy, but I'd love to share more about the work we're doing on {CORE_FUNCTION} and how your background in {relevant_skills} could be a great fit.
+
+Would you have 15 minutes for a quick chat this week?

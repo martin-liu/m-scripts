@@ -1,0 +1,13 @@
+Subject: {FirstName}, Invitation to Join TikTok / ByteDance - {POSITION_TITLE} Role
+
+Hi {FirstName},
+
+Your experience as a {current_title} at {Company} really stood out to me. {1 personalized sentence on why their background impressed you}.
+
+I'm reaching out regarding a {POSITION_TITLE} opening on the TikTok / ByteDance {TEAM_NAME} team in {LOCATION}. Our team is dedicated to {CORE_FUNCTION}, and we aim to {BUSINESS_IMPACT} for TikTok/ByteDance and our global users. Your background in {relevant_skills} aligns perfectly with the work we're doing and the needs of this role.
+
+This role is open to candidates of all professional levels, and we warmly welcome recent graduates (including new PhD graduates) to apply. We offer a highly competitive compensation package, access to world-class resources and cutting-edge industry insights, and a fast-paced, growth-focused environment that accelerates your career development.
+
+If you're interested in learning more about this opportunity, please share your updated resume to {USER_EMAIL}. We will respond within 2 business days if your profile is selected for further review.
+
+Would you be open to a quick conversation this week to discuss this role and your fit in more detail?

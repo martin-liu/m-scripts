@@ -43,13 +43,27 @@ Includes: Homebrew, shell tools (starship, bat, eza, fzf, zellij, etc.), Ghostty
 AI agent skills that can be installed with the [skills CLI](https://github.com/vercel-labs/skills):
 
 ```sh
+# Install all skills from this repo
+npx skills add martin-liu/m-scripts
+
+# Install all skills from this repo over SSH
 npx skills add git@github.com:martin-liu/m-scripts.git
+
+# Install only linkedin-sourcing
+npx skills add martin-liu/m-scripts --skill linkedin-sourcing
+
+# Install only linkedin-sourcing over SSH
+npx skills add git@github.com:martin-liu/m-scripts.git --skill linkedin-sourcing
 ```
 
 To update installed skills to the latest version:
 
 ```sh
+# Update all installed skills
 npx skills update
+
+# Update only linkedin-sourcing
+npx skills update linkedin-sourcing
 ```
 
 ### Available skills

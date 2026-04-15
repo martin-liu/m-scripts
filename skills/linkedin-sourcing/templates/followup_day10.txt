@@ -1,0 +1,7 @@
+Hi {FirstName},
+
+This will be my last message so I don't clutter your inbox.
+
+If the {POSITION_TITLE} role at ByteDance isn't of interest right now, I completely understand. If things change in the future, please don't hesitate to reach out.
+
+Wishing you all the best in your current work at {Company}!

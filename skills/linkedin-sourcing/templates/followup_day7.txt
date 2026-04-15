@@ -1,0 +1,7 @@
+Hi {FirstName},
+
+I don't want to be a bother, but I didn't want you to miss out on this opportunity.
+
+The {POSITION_TITLE} role on our {TEAM_NAME} team in {LOCATION} is still open, and your profile remains one of the strongest matches we've seen.
+
+If you're even slightly curious, I'd be happy to share more details — no commitment needed.

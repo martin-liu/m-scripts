@@ -1,0 +1,7 @@
+Hi {FirstName},
+
+Thank you for getting back to me — I completely understand and appreciate you letting me know.
+
+I'll keep your profile on file and may reach out in the future if another opportunity aligns with your background. In the meantime, feel free to connect with me on LinkedIn.
+
+Wishing you continued success at {Company}!

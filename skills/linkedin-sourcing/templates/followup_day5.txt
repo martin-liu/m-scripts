@@ -1,0 +1,7 @@
+Hi {FirstName},
+
+I wanted to check in one more time regarding the {POSITION_TITLE} opportunity at ByteDance.
+
+Our {TEAM_NAME} team is actively growing, and given your experience with {specific_skill}, I truly believe this could be an exciting next step for you.
+
+If now isn't the right time, no worries at all — just let me know and I'll circle back in a few months.

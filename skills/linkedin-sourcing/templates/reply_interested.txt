@@ -1,0 +1,9 @@
+Hi {FirstName},
+
+Great to hear from you! I'd love to set up a time to chat about the {POSITION_TITLE} role on our {TEAM_NAME} team.
+
+Here's a quick overview: {1-2 sentences about team's core work}.
+
+Would you be available for a 20-30 minute call this week? I'm flexible — just let me know what works. If you could share your updated resume beforehand, that would be helpful.
+
+Looking forward to connecting!

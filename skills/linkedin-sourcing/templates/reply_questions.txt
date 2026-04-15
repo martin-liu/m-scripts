@@ -1,0 +1,5 @@
+Hi {FirstName},
+
+Great question! {Direct answer based on your guidance}.
+
+Would you like to hop on a quick call to discuss this in more detail? Happy to answer any other questions.

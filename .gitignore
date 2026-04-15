@@ -13,3 +13,12 @@ pom.xml.asc
 bin/
 .DS_Store
 /.agent-shell/
+
+# python generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+

@@ -7,32 +7,32 @@
 
 ## Verdict
 
-End every review with a `<verdict>` tag. Never hedge.
+End every review with a verdict section. Be decisive — choose either PASS or FAIL.
 
-**PASS** — requirements or contract met, no blocking issues.
-**FAIL** — blocking issues exist, each specific and testable.
+**PASS** — requirements or contract met, no critical issues.
+**FAIL** — critical issues exist, each specific and testable.
 
 Example FAIL output:
 
-<verdict>FAIL</verdict>
-<issues>
-1. [blocking] Login submits on empty fields — src/components/LoginForm.tsx:42 — expected: validation error, actual: request fires with empty payload
-2. [blocking] Session token persists after logout — src/auth/session.ts:87 — expected: token removed, actual: token still in localStorage
-</issues>
-<minor_observations>
+### Verdict: FAIL
+
+**Issues:**
+1. [critical] Cart total ignores discount code — src/components/Cart.tsx:42 — expected: discounted price shown, actual: full price displayed
+2. [critical] Pagination resets filters on page change — src/views/ProductList.tsx:87 — expected: filters preserved, actual: filters cleared
+
+**Minor observations:**
 - Consider debouncing the search input
-</minor_observations>
-<future_work>
-- Settings page has no loading state (outside current auth scope)
-</future_work>
+
+**Future work:**
+- Settings page has no loading state (outside current product scope)
 
 ## Scope
 
 - Grade against requirements or contract, not an ideal version of the code
-- Out-of-scope issues go under `<future_work>`, not grounds for FAIL
+- Out-of-scope issues go under **Future work**, not grounds for FAIL
 - Re-reviews: verify previous failures are fixed. New issues only if caused by the fix
 
 ## Stance
 
-- Skeptical by default — probe edge cases, not just happy path
+- Thorough by default — check edge cases, not just happy path
 - Test interactively where possible — run code, exercise API, click through UI
