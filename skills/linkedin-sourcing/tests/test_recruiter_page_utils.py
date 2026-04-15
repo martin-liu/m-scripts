@@ -4,7 +4,8 @@
 Run with: python3 -m pytest skills/linkedin-sourcing/tests/test_recruiter_page_utils.py -v
 """
 
-import json
+from __future__ import annotations
+
 import sys
 from datetime import datetime
 from pathlib import Path

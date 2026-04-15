@@ -4,6 +4,8 @@
 Run with: python3 -m pytest skills/linkedin-sourcing/tests/test_reachout_automation.py -v
 """
 
+from __future__ import annotations
+
 import sys
 import tempfile
 from pathlib import Path

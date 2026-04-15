@@ -4,8 +4,8 @@
 Run with: python3 -m pytest skills/linkedin-sourcing/tests/test_extract_candidates.py -v
 """
 
-import json
-import subprocess
+from __future__ import annotations
+
 import sys
 from pathlib import Path
 from unittest.mock import Mock, patch, call

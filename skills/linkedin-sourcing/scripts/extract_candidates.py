@@ -22,6 +22,8 @@ Exit codes:
     3 - Selector mismatch (page loaded but expected elements not found)
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import re

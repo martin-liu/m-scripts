@@ -10,6 +10,8 @@ Fail-closed semantics:
 - Never guess
 """
 
+from __future__ import annotations
+
 import re
 import sys
 from pathlib import Path

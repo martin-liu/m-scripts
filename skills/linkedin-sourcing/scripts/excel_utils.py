@@ -9,6 +9,8 @@ Usage:
     python3 excel_utils.py count    <path> [--filter status=Sent,date_sent=2026-04-09]
 """
 
+from __future__ import annotations
+
 import sys
 import json
 from pathlib import Path

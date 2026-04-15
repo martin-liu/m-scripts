@@ -22,6 +22,8 @@ Exit codes:
     3 - Configuration or setup error
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import os

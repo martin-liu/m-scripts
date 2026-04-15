@@ -9,6 +9,8 @@ It also provides a unified browser abstraction that supports both:
 - Agent-browser mode: managed session with saved auth state via --session <name>
 """
 
+from __future__ import annotations
+
 import json
 import subprocess
 import sys

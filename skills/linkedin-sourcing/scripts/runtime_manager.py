@@ -19,6 +19,8 @@ Usage:
     print(ctx["current_release"]["scripts_dir"])  # Path to active scripts
 """
 
+from __future__ import annotations
+
 import hashlib
 import json
 import os

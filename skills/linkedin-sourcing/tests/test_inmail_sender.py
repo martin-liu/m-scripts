@@ -4,8 +4,8 @@
 Run with: python3 -m pytest skills/linkedin-sourcing/tests/test_inmail_sender.py -v
 """
 
-import json
-import subprocess
+from __future__ import annotations
+
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, Mock, patch

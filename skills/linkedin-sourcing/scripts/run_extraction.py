@@ -31,6 +31,8 @@ Exit codes:
     2 - Workbook I/O error
 """
 
+from __future__ import annotations
+
 import argparse
 import hashlib
 import json

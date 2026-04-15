@@ -14,6 +14,8 @@ Commands:
     summary  - Print counts by status and next_action
 """
 
+from __future__ import annotations
+
 import json
 import re
 import sys

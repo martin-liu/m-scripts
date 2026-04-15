@@ -8,6 +8,8 @@ Supports both CDP mode (direct Chrome connection) and agent-browser mode
 (managed session with saved auth state).
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import os

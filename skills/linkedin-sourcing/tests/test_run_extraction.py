@@ -4,6 +4,8 @@
 Run with: python3 -m pytest skills/linkedin-sourcing/tests/test_run_extraction.py -v
 """
 
+from __future__ import annotations
+
 import json
 import sys
 import tempfile

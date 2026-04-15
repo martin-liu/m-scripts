@@ -52,6 +52,8 @@ Examples:
     python3 init_runtime.py --work-dir ~/custom/workdir
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import sys

@@ -4,6 +4,8 @@
 Run with: python3 -m pytest skills/linkedin-sourcing/tests/test_project_ref_utils.py -v
 """
 
+from __future__ import annotations
+
 import sys
 from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock

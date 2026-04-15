@@ -16,6 +16,8 @@ Usage:
     result = recovery.attempt_recovery(target_url="https://...")
 """
 
+from __future__ import annotations
+
 import json
 import subprocess
 import sys

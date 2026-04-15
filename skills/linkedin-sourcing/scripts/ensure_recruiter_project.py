@@ -30,6 +30,8 @@ Notes:
     - If creation lands on "Untitled Project", it performs inline rename
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import subprocess

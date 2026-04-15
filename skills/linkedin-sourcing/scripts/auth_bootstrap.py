@@ -13,6 +13,8 @@ The auth flow:
 - Otherwise: launch temp Chrome, let user login, export auth, bootstrap agent-browser session
 """
 
+from __future__ import annotations
+
 import json
 import os
 import platform

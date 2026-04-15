@@ -4,6 +4,8 @@
 Run with: python3 -m pytest skills/linkedin-sourcing/tests/test_auth_bootstrap.py -v
 """
 
+from __future__ import annotations
+
 import json
 import subprocess
 import sys
