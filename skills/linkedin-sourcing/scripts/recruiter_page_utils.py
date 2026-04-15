@@ -9,10 +9,10 @@ timeouts with structured recovery attempts before giving up.
 Usage:
     from recruiter_page_utils import PageStateProbe, RecoveryHelper
 
-    probe = PageStateProbe(cdp_port="9230")
+    probe = PageStateProbe("9230")
     state = probe.classify_state()
 
-    recovery = RecoveryHelper(cdp_port="9230", work_dir="/path/to/work")
+    recovery = RecoveryHelper("9230", work_dir="/path/to/work")
     result = recovery.attempt_recovery(target_url="https://...")
 """
 
@@ -31,7 +31,7 @@ from urllib.parse import urlparse
 # Import shared browser utilities
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
-from browser_utils import check_dialog_status, run_browser_command
+from browser_utils import BrowserMode, check_dialog_status, run_browser_command
 
 
 class PageState(Enum):
@@ -201,13 +201,13 @@ CLASSIFY_PAGE_STATE_JS = """
 class PageStateProbe:
     """Probes and classifies the current state of a LinkedIn Recruiter page."""
 
-    def __init__(self, cdp_port: str):
+    def __init__(self, browser_mode: "BrowserMode | str"):
         """Initialize the page state probe.
 
         Args:
-            cdp_port: Chrome DevTools Protocol port number
+            browser_mode: BrowserMode instance or CDP port string for browser operations
         """
-        self.cdp_port = cdp_port
+        self.browser_mode = browser_mode
 
     def classify_state(self) -> dict[str, Any]:
         """Classify the current page state.
@@ -219,7 +219,7 @@ class PageStateProbe:
             - timestamp: ISO timestamp of classification
         """
         # First check for blocking dialogs
-        dialog_info = check_dialog_status(self.cdp_port)
+        dialog_info = check_dialog_status(self.browser_mode)
 
         if dialog_info.get("has_dialog"):
             return {
@@ -231,7 +231,7 @@ class PageStateProbe:
 
         # Run page state detection
         result = run_browser_command(
-            self.cdp_port, "eval", CLASSIFY_PAGE_STATE_JS, timeout=15
+            self.browser_mode, "eval", CLASSIFY_PAGE_STATE_JS, timeout=15
         )
 
         if result.get("error"):
@@ -316,21 +316,21 @@ class RecoveryHelper:
 
     def __init__(
         self,
-        cdp_port: str,
+        browser_mode: "BrowserMode | str",
         work_dir: str | Path | None = None,
         max_attempts: int = DEFAULT_MAX_RECOVERY_ATTEMPTS,
     ):
         """Initialize the recovery helper.
 
         Args:
-            cdp_port: Chrome DevTools Protocol port number
+            browser_mode: BrowserMode instance or CDP port string for browser operations
             work_dir: Working directory for incident reporting (optional)
             max_attempts: Maximum recovery attempts before giving up
         """
-        self.cdp_port = cdp_port
+        self.browser_mode = browser_mode
         self.work_dir = Path(work_dir) if work_dir else None
         self.max_attempts = max_attempts
-        self.probe = PageStateProbe(cdp_port)
+        self.probe = PageStateProbe(browser_mode)
         self.attempt_count = 0
         self.recovery_log: list[dict] = []
 
@@ -492,8 +492,8 @@ class RecoveryHelper:
 
     def _navigate_to_url(self, url: str) -> None:
         """Navigate to the specified URL."""
-        # Use guarded browser command to ensure CDP is available
-        result = run_browser_command(self.cdp_port, "goto", url, timeout=30)
+        # Use guarded browser command to ensure browser is available
+        result = run_browser_command(self.browser_mode, "goto", url, timeout=30)
         if result.get("error"):
             # Log error but continue (best effort for recovery)
             pass
@@ -501,9 +501,9 @@ class RecoveryHelper:
 
     def _refresh_page(self) -> None:
         """Refresh the current page."""
-        # Use guarded browser command to ensure CDP is available
+        # Use guarded browser command to ensure browser is available
         result = run_browser_command(
-            self.cdp_port, "eval", "location.reload()", timeout=15
+            self.browser_mode, "eval", "location.reload()", timeout=15
         )
         if result.get("error"):
             # Log error but continue (best effort for recovery)
@@ -524,9 +524,14 @@ class RecoveryHelper:
         try:
             incidents_dir.mkdir(parents=True, exist_ok=True)
 
+            # Extract mode info for incident reporting
+            mode_info = self.browser_mode
+            if hasattr(self.browser_mode, "to_dict"):
+                mode_info = self.browser_mode.to_dict()
+
             incident = {
                 "timestamp": datetime.now(timezone.utc).isoformat(),
-                "cdp_port": self.cdp_port,
+                "browser_mode": mode_info,
                 "context": context,
                 "state": state_info.get("state"),
                 "state_details": state_info.get("details"),
@@ -547,7 +552,7 @@ class RecoveryHelper:
 
 
 def with_recovery(
-    cdp_port: str,
+    browser_mode: "BrowserMode | str",
     work_dir: str | Path | None = None,
     target_url: str | None = None,
     context: str | None = None,
@@ -556,7 +561,7 @@ def with_recovery(
     """Convenience function to run recovery and return result.
 
     Args:
-        cdp_port: Chrome DevTools Protocol port number
+        browser_mode: BrowserMode instance or CDP port string for browser operations
         work_dir: Working directory for incident reporting
         target_url: URL to navigate to if recovery involves navigation
         context: Optional context for logging
@@ -566,7 +571,7 @@ def with_recovery(
         Recovery result dict
     """
     helper = RecoveryHelper(
-        cdp_port=cdp_port,
+        browser_mode=browser_mode,
         work_dir=work_dir,
         max_attempts=max_attempts,
     )
@@ -602,7 +607,7 @@ def urls_match_allowing_params(url1: str, url2: str) -> bool:
 
 
 def _validate_target_url_match(
-    cdp_port: str,
+    browser_mode: "BrowserMode | str",
     target_url: str,
     context: str | None = None,
 ) -> dict[str, Any]:
@@ -617,7 +622,7 @@ def _validate_target_url_match(
     - Current URL can have additional query params (trackingId, etc.)
 
     Args:
-        cdp_port: Chrome DevTools Protocol port number
+        browser_mode: BrowserMode instance or CDP port string for browser operations
         target_url: The expected URL (may include query params like ?start=25)
         context: Optional context for error messages
 
@@ -630,7 +635,9 @@ def _validate_target_url_match(
     """
     from urllib.parse import urlparse, parse_qs, urlencode
 
-    result = run_browser_command(cdp_port, "eval", "({ url: window.location.href })")
+    result = run_browser_command(
+        browser_mode, "eval", "({ url: window.location.href })"
+    )
 
     if result.get("error"):
         return {
@@ -693,7 +700,7 @@ def _validate_target_url_match(
 
 
 def assert_page_identity(
-    cdp_port: str,
+    browser_mode: "BrowserMode | str",
     expected_url_patterns: list[str] | None = None,
     expected_path_patterns: list[str] | None = None,
     context: str | None = None,
@@ -704,7 +711,7 @@ def assert_page_identity(
     not just any ready /talent/ page.
 
     Args:
-        cdp_port: Chrome DevTools Protocol port number
+        browser_mode: BrowserMode instance or CDP port string for browser operations
         expected_url_patterns: List of URL substrings that must match (e.g., ["/talent/hire/", "/discover/recruiterSearch"])
         expected_path_patterns: List of path patterns that must match (e.g., ["/talent/projects"])
         context: Optional context for error messages
@@ -716,7 +723,9 @@ def assert_page_identity(
             - expected_patterns: list - the patterns that were checked
             - error: str | None - error message if identity mismatch
     """
-    result = run_browser_command(cdp_port, "eval", "({ url: window.location.href })")
+    result = run_browser_command(
+        browser_mode, "eval", "({ url: window.location.href })"
+    )
 
     if result.get("error"):
         return {
@@ -774,7 +783,7 @@ def assert_page_identity(
 
 
 def ensure_page_ready(
-    cdp_port: str,
+    browser_mode: "BrowserMode | str" = None,
     work_dir: str | Path | None = None,
     target_url: str | None = None,
     context: str | None = None,
@@ -782,21 +791,13 @@ def ensure_page_ready(
     require_page_identity: bool = True,
     expected_url_patterns: list[str] | None = None,
     _recursion_depth: int = 0,
+    *,
+    cdp_port: str | None = None,
 ) -> dict[str, Any]:
     """Ensure the page is ready, attempting recovery if needed.
 
     This is a higher-level helper that combines state checking with recovery.
     Optionally validates page identity to ensure we're on the intended page.
-
-    Args:
-        cdp_port: Chrome DevTools Protocol port number
-        work_dir: Working directory for incident reporting
-        target_url: URL to navigate to if recovery involves navigation
-        context: Optional context for logging
-        max_wait_seconds: Maximum time to wait for page to be ready
-        _recursion_depth: Internal recursion guard (do not use)
-        require_page_identity: Whether to validate page identity after ready
-        expected_url_patterns: URL patterns to validate if require_page_identity is True
 
     Returns:
         Dict with:
@@ -808,11 +809,19 @@ def ensure_page_ready(
     """
     import time
 
+    # Backwards compatibility: cdp_port is an alias for browser_mode
+    if cdp_port is not None and browser_mode is None:
+        browser_mode = cdp_port
+    if browser_mode is None:
+        raise TypeError(
+            "ensure_page_ready() requires either browser_mode or cdp_port argument"
+        )
+
     # Recursion guard for wrong-page navigation retries
     MAX_RECURSION_DEPTH = 2
 
     start_time = time.time()
-    probe = PageStateProbe(cdp_port)
+    probe = PageStateProbe(browser_mode)
 
     # Quick check if already ready
     if probe.is_ready():
@@ -821,19 +830,19 @@ def ensure_page_ready(
         if require_page_identity:
             if expected_url_patterns:
                 identity_result = assert_page_identity(
-                    cdp_port,
+                    browser_mode,
                     expected_url_patterns=expected_url_patterns,
                     context=context,
                 )
                 if not identity_result["matches"]:
                     # Wrong page: navigate to target and re-validate (if not too deep)
                     if target_url and _recursion_depth < MAX_RECURSION_DEPTH:
-                        recovery = RecoveryHelper(cdp_port, work_dir)
+                        recovery = RecoveryHelper(browser_mode, work_dir)
                         recovery._navigate_to_url(target_url)
                         time.sleep(2)  # Allow page to load
                         # Re-check readiness and identity after navigation
                         return ensure_page_ready(
-                            cdp_port=cdp_port,
+                            browser_mode=browser_mode,
                             work_dir=work_dir,
                             target_url=target_url,
                             context=context,
@@ -853,19 +862,19 @@ def ensure_page_ready(
             elif target_url:
                 # Validate target_url matches current URL, allowing extra query params
                 identity_result = _validate_target_url_match(
-                    cdp_port,
+                    browser_mode,
                     target_url=target_url,
                     context=context,
                 )
                 if not identity_result["matches"]:
                     # Wrong page: navigate to target and re-validate (if not too deep)
                     if _recursion_depth < MAX_RECURSION_DEPTH:
-                        recovery = RecoveryHelper(cdp_port, work_dir)
+                        recovery = RecoveryHelper(browser_mode, work_dir)
                         recovery._navigate_to_url(target_url)
                         time.sleep(2)  # Allow page to load
                         # Re-check readiness and identity after navigation
                         return ensure_page_ready(
-                            cdp_port=cdp_port,
+                            browser_mode=browser_mode,
                             work_dir=work_dir,
                             target_url=target_url,
                             context=context,
@@ -885,12 +894,12 @@ def ensure_page_ready(
                 if not identity_result["matches"]:
                     # Wrong page: navigate to target and re-validate
                     if target_url:
-                        recovery = RecoveryHelper(cdp_port, work_dir)
+                        recovery = RecoveryHelper(browser_mode, work_dir)
                         recovery._navigate_to_url(target_url)
                         time.sleep(2)  # Allow page to load
                         # Re-check readiness and identity after navigation
                         return ensure_page_ready(
-                            cdp_port=cdp_port,
+                            browser_mode=browser_mode,
                             work_dir=work_dir,
                             target_url=target_url,
                             context=context,
@@ -909,18 +918,18 @@ def ensure_page_ready(
             elif target_url:
                 # Validate target_url matches current URL, allowing extra query params
                 identity_result = _validate_target_url_match(
-                    cdp_port,
+                    browser_mode,
                     target_url=target_url,
                     context=context,
                 )
                 if not identity_result["matches"]:
                     # Wrong page: navigate to target and re-validate
-                    recovery = RecoveryHelper(cdp_port, work_dir)
+                    recovery = RecoveryHelper(browser_mode, work_dir)
                     recovery._navigate_to_url(target_url)
                     time.sleep(2)  # Allow page to load
                     # Re-check readiness and identity after navigation
                     return ensure_page_ready(
-                        cdp_port=cdp_port,
+                        browser_mode=browser_mode,
                         work_dir=work_dir,
                         target_url=target_url,
                         context=context,
@@ -949,7 +958,7 @@ def ensure_page_ready(
         }
 
     # Attempt recovery
-    recovery = RecoveryHelper(cdp_port, work_dir)
+    recovery = RecoveryHelper(browser_mode, work_dir)
     recovery_result = recovery.attempt_recovery(
         target_url=target_url,
         context=context,
@@ -970,7 +979,7 @@ def ensure_page_ready(
     if is_ready and require_page_identity:
         if expected_url_patterns:
             identity_result = assert_page_identity(
-                cdp_port,
+                browser_mode,
                 expected_url_patterns=expected_url_patterns,
                 context=context,
             )
@@ -979,7 +988,7 @@ def ensure_page_ready(
         elif target_url:
             # Validate target_url matches current URL, allowing extra query params
             identity_result = _validate_target_url_match(
-                cdp_port,
+                browser_mode,
                 target_url=target_url,
                 context=context,
             )

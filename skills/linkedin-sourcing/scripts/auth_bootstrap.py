@@ -4,13 +4,11 @@
 This module provides functionality to:
 1. Check if a CDP browser is authenticated to LinkedIn Recruiter
 2. Launch isolated Chrome for manual login when needed
-3. Export and import auth state for agent-browser managed sessions using official capabilities:
-   - Export auth with `agent-browser --cdp <port> state save <auth.json>`
-   - Start managed session with `agent-browser --session <name> --state <auth.json> --headed open <url>`
+3. Keep the authenticated Chrome running for subsequent operations (CDP-persistent mode)
 
 The auth flow:
 - If configured CDP browser is reachable AND Recruiter-authenticated: use it
-- Otherwise: launch temp Chrome, let user login, export auth, bootstrap agent-browser session
+- Otherwise: launch headed Chrome with CDP, let user login, keep Chrome running
 """
 
 from __future__ import annotations
@@ -38,6 +36,48 @@ AUTH_PROBE_TIMEOUT = 10  # seconds
 CHROME_LAUNCH_TIMEOUT = 30  # seconds
 CHROME_SHUTDOWN_TIMEOUT = 5  # seconds
 
+# Agent-browser session startup constants
+SESSION_STARTUP_POLL_INTERVAL = 0.5  # seconds
+SESSION_STARTUP_MAX_WAIT = 5  # seconds
+AUTH_PROBE_RETRY_INTERVAL = 1.0  # seconds
+AUTH_PROBE_MAX_RETRIES = 10  # ~10 seconds total
+
+# JavaScript snippet for generic auth detection
+# Returns page state signals without requiring exact URL matching
+AUTH_DETECTION_JS = r"""
+(() => {
+    const url = window.location.href;
+    const path = window.location.pathname;
+    const title = document.title;
+    const html = document.body.innerHTML.toLowerCase();
+
+    // Login/unauthenticated indicators
+    const hasLoginForm = !!document.querySelector('form[action*="login"], input[name="session_key"], input[name="password"]');
+    const hasLoginText = /sign\s*in|log\s*in|enter\s*password/i.test(title) ||
+                         html.includes('sign in') || html.includes('log in');
+    const hasCheckpoint = path.includes('/checkpoint') || path.includes('/challenge');
+    const hasCaptcha = path.includes('/cap') || html.includes('captcha');
+
+    // Recruiter/talent authenticated indicators
+    const isTalentPath = path.startsWith('/talent');
+    const hasRecruiterShell = !!document.querySelector('[data-test-id="recruiter-nav"], .recruiter-nav, [class*="talent"], nav[role="navigation"]');
+    const hasUserMenu = !!document.querySelector('[data-test-id="user-menu"], .global-nav__me, [class*="profile-menu"]');
+
+    return {
+        url: url,
+        path: path,
+        title: title,
+        isTalentPath: isTalentPath,
+        hasLoginForm: hasLoginForm,
+        hasLoginText: hasLoginText,
+        hasCheckpoint: hasCheckpoint,
+        hasCaptcha: hasCaptcha,
+        hasRecruiterShell: hasRecruiterShell,
+        hasUserMenu: hasUserMenu
+    };
+})()
+"""
+
 
 def check_cdp_available(cdp_port: str) -> bool:
     """Check if Chrome DevTools Protocol is available on the given port.
@@ -57,11 +97,150 @@ def check_cdp_available(cdp_port: str) -> bool:
         return False
 
 
+def is_port_in_use(port: int) -> bool:
+    """Check if a TCP port is already in use by any process.
+
+    This checks for any TCP listener on the port, regardless of whether
+    it's a CDP process or not. Used for port selection before launching
+    Chrome to avoid "address already in use" errors.
+
+    Args:
+        port: Port number to check
+
+    Returns:
+        True if the port is occupied by any process, False otherwise
+    """
+    import socket
+
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.settimeout(1)
+            result = sock.connect_ex(("localhost", port))
+            return result == 0  # Port is in use if connection succeeds
+    except Exception:
+        return False
+
+
+def _evaluate_auth_js(cdp_port: str | None, session_name: str | None) -> dict[str, Any]:
+    """Evaluate auth detection JS and return parsed result.
+
+    Args:
+        cdp_port: CDP port (for CDP mode) - mutually exclusive with session_name
+        session_name: Session name (for agent-browser mode) - mutually exclusive with cdp_port
+
+    Returns:
+        Dict with page state and auth determination:
+        - url: str | None - current URL
+        - page_state: dict | None - raw JS evaluation result
+        - is_authenticated: bool - determined auth status
+        - error: str | None - error message if evaluation failed
+    """
+    if cdp_port:
+        cmd = ["agent-browser", "--cdp", cdp_port, "eval", AUTH_DETECTION_JS]
+    elif session_name:
+        cmd = ["agent-browser", "--session", session_name, "eval", AUTH_DETECTION_JS]
+    else:
+        return {
+            "url": None,
+            "page_state": None,
+            "is_authenticated": False,
+            "error": "Either cdp_port or session_name required",
+        }
+
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+
+        if result.returncode != 0:
+            return {
+                "url": None,
+                "page_state": None,
+                "is_authenticated": False,
+                "error": f"JS eval failed: {result.stderr}",
+            }
+
+        # Parse JSON output
+        try:
+            page_state = json.loads(result.stdout.strip())
+            # Handle double-encoded JSON
+            if isinstance(page_state, str):
+                page_state = json.loads(page_state)
+        except json.JSONDecodeError:
+            return {
+                "url": None,
+                "page_state": None,
+                "is_authenticated": False,
+                "error": f"Invalid JSON from eval: {result.stdout[:200]}",
+            }
+
+        url = page_state.get("url")
+        path = page_state.get("path", "")
+
+        # Determine authentication status
+        # Authenticated if on talent path AND no unauthenticated indicators
+        is_talent = page_state.get("isTalentPath", False)
+        has_login_form = page_state.get("hasLoginForm", False)
+        has_login_text = page_state.get("hasLoginText", False)
+        has_checkpoint = page_state.get("hasCheckpoint", False)
+        has_captcha = page_state.get("hasCaptcha", False)
+
+        # URL-based fallback check for non-talent paths
+        parsed = urlparse(url) if url else None
+        host = parsed.netloc.lower() if parsed else ""
+        path_lower = parsed.path.lower() if parsed else ""
+
+        # Auth indicators in URL path
+        auth_indicators = [
+            "/login",
+            "/login-cap",
+            "/signin",
+            "/challenge",
+            "/checkpoint",
+            "/uas/login",
+            "/uas/checkpoint",
+            "/auth",
+            "/cap",
+        ]
+        has_auth_in_url = any(ind in path_lower for ind in auth_indicators)
+
+        # Determine auth status
+        is_authenticated = False
+        if is_talent and not (has_login_form or has_checkpoint or has_captcha):
+            # On talent path without obvious login indicators
+            is_authenticated = True
+        elif host.endswith("linkedin.com") and path_lower.startswith("/talent"):
+            # URL-based check as fallback
+            if not has_auth_in_url and not has_login_form:
+                is_authenticated = True
+
+        return {
+            "url": url,
+            "page_state": page_state,
+            "is_authenticated": is_authenticated,
+            "error": None,
+        }
+
+    except subprocess.TimeoutExpired:
+        return {
+            "url": None,
+            "page_state": None,
+            "is_authenticated": False,
+            "error": "JS eval timed out",
+        }
+    except Exception as e:
+        return {
+            "url": None,
+            "page_state": None,
+            "is_authenticated": False,
+            "error": f"JS eval error: {e}",
+        }
+
+
 def probe_recruiter_auth(cdp_port: str) -> dict[str, Any]:
     """Probe whether the CDP browser is authenticated to LinkedIn Recruiter.
 
-    This checks if the browser can access the Recruiter home page without
-    being redirected to a login page.
+    Uses JS-based page state detection to determine authentication status
+    without requiring exact URL matching. Checks for login forms, checkpoint
+    pages, and recruiter shell presence.
 
     Args:
         cdp_port: Chrome DevTools Protocol port number
@@ -79,7 +258,7 @@ def probe_recruiter_auth(cdp_port: str) -> dict[str, Any]:
             "error": f"CDP not available on port {cdp_port}",
         }
 
-    # Use agent-browser to navigate to Recruiter home and check result
+    # Use agent-browser to navigate to Recruiter home
     cmd = [
         "agent-browser",
         "--cdp",
@@ -89,40 +268,15 @@ def probe_recruiter_auth(cdp_port: str) -> dict[str, Any]:
     ]
 
     try:
-        result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=AUTH_PROBE_TIMEOUT
-        )
+        subprocess.run(cmd, capture_output=True, text=True, timeout=AUTH_PROBE_TIMEOUT)
 
-        # Get current URL after navigation
-        url_cmd = ["agent-browser", "--cdp", cdp_port, "get", "url"]
-        url_result = subprocess.run(url_cmd, capture_output=True, text=True, timeout=5)
-        current_url = url_result.stdout.strip() if url_result.returncode == 0 else None
-
-        # Check actual URL path, not query params like session_redirect=/talent/...
-        is_authenticated = False
-        if current_url:
-            parsed = urlparse(current_url)
-            host = parsed.netloc.lower()
-            path = parsed.path.lower()
-            auth_indicators = [
-                "/login",
-                "/login-cap",
-                "/signin",
-                "/challenge",
-                "/checkpoint",
-                "/uas/login",  # LinkedIn's unified auth system login paths
-                "/uas/checkpoint",
-                "/auth",
-                "/cap",  # captcha/challenge pages
-            ]
-            if host.endswith("linkedin.com") and path.startswith("/talent/"):
-                if not any(indicator in path for indicator in auth_indicators):
-                    is_authenticated = True
+        # Use JS-based detection for auth status
+        eval_result = _evaluate_auth_js(cdp_port=cdp_port, session_name=None)
 
         return {
-            "authenticated": is_authenticated,
-            "url": current_url,
-            "error": None,
+            "authenticated": eval_result["is_authenticated"],
+            "url": eval_result["url"],
+            "error": eval_result["error"],
         }
 
     except subprocess.TimeoutExpired:
@@ -410,6 +564,7 @@ def start_agent_browser_session(
     - agent-browser --session <name> --state <auth.json> --headed open <url>
 
     After starting, verifies Recruiter authentication before returning success.
+    Uses bounded retry to allow restored session state to settle.
 
     Args:
         auth_file: Path to exported auth state JSON
@@ -456,30 +611,62 @@ def start_agent_browser_session(
             stderr=subprocess.PIPE,
         )
 
-        # Wait a moment for session to initialize
-        time.sleep(2)
+        # Phase 1: Wait for session startup to settle (watch for early exit)
+        startup_deadline = time.time() + SESSION_STARTUP_MAX_WAIT
+        while time.time() < startup_deadline:
+            poll_result = process.poll()
+            if poll_result is not None:
+                # Process exited - check if clean (0) or error
+                if poll_result != 0:
+                    stderr = process.stderr.read().decode() if process.stderr else ""
+                    result["error"] = (
+                        f"agent-browser exited with code {poll_result}: {stderr}"
+                    )
+                    return result
+                # Clean exit (0) - proceed to auth probe
+                break
+            time.sleep(SESSION_STARTUP_POLL_INTERVAL)
 
-        # Check if process is still running or exited cleanly (returncode 0)
-        poll_result = process.poll()
-        if poll_result is not None and poll_result != 0:
-            stderr = process.stderr.read().decode() if process.stderr else ""
-            result["error"] = f"agent-browser exited with code {poll_result}: {stderr}"
-            return result
+        # Phase 2: Probe Recruiter auth with bounded retry
+        # Restored cookies/session may need time to settle
+        last_url = "unknown"
+        last_error = None
 
-        # CRITICAL: Verify Recruiter authentication before returning success
-        # Process may be running but session might not be authenticated
-        auth_check = probe_agent_browser_auth(session_name)
-        if not auth_check["authenticated"]:
-            current_url = auth_check.get("url", "unknown")
-            error_msg = auth_check.get("error", "Not authenticated")
-            result["error"] = (
-                f"Session started but not authenticated to Recruiter. "
-                f"URL: {current_url}, Error: {error_msg}"
-            )
-            return result
+        for attempt in range(AUTH_PROBE_MAX_RETRIES):
+            auth_check = probe_agent_browser_auth(session_name)
 
-        result["success"] = True
-        result["message"] = f"Agent-browser session '{session_name}' started"
+            if auth_check["authenticated"]:
+                result["success"] = True
+                result["message"] = f"Agent-browser session '{session_name}' started"
+                return result
+
+            # Capture last known state for error reporting
+            last_url = auth_check.get("url", "unknown")
+            last_error = auth_check.get("error")
+
+            # Check if process died during probe
+            poll_result = process.poll()
+            if poll_result is not None and poll_result != 0:
+                stderr = process.stderr.read().decode() if process.stderr else ""
+                result["error"] = (
+                    f"agent-browser exited during auth probe (code {poll_result}): {stderr}"
+                )
+                return result
+
+            # Wait before next retry (unless this was the last attempt)
+            if attempt < AUTH_PROBE_MAX_RETRIES - 1:
+                time.sleep(AUTH_PROBE_RETRY_INTERVAL)
+
+        # All retries exhausted - session never became authenticated
+        error_detail = (
+            f"Error: {last_error}"
+            if last_error
+            else "Auth probe returned not authenticated"
+        )
+        result["error"] = (
+            f"Session started but not authenticated to Recruiter after {AUTH_PROBE_MAX_RETRIES} attempts. "
+            f"URL: {last_url}, {error_detail}"
+        )
 
     except FileNotFoundError:
         result["error"] = "agent-browser not found in PATH"
@@ -492,6 +679,9 @@ def start_agent_browser_session(
 def probe_agent_browser_auth(session_name: str) -> dict[str, Any]:
     """Probe whether an agent-browser session is authenticated to LinkedIn Recruiter.
 
+    Uses JS-based page state detection to determine authentication status
+    without requiring exact URL matching.
+
     Args:
         session_name: The agent-browser session name
 
@@ -503,47 +693,20 @@ def probe_agent_browser_auth(session_name: str) -> dict[str, Any]:
     """
     try:
         # Navigate to Recruiter home
-        result = subprocess.run(
+        subprocess.run(
             ["agent-browser", "--session", session_name, "open", RECRUITER_HOME_URL],
             capture_output=True,
             text=True,
             timeout=10,
         )
 
-        # Get current URL after navigation
-        url_result = subprocess.run(
-            ["agent-browser", "--session", session_name, "get", "url"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        current_url = url_result.stdout.strip() if url_result.returncode == 0 else None
-
-        # Check actual URL path for auth indicators
-        is_authenticated = False
-        if current_url:
-            parsed = urlparse(current_url)
-            host = parsed.netloc.lower()
-            path = parsed.path.lower()
-            auth_indicators = [
-                "/login",
-                "/login-cap",
-                "/signin",
-                "/challenge",
-                "/checkpoint",
-                "/uas/login",
-                "/uas/checkpoint",
-                "/auth",
-                "/cap",
-            ]
-            if host.endswith("linkedin.com") and path.startswith("/talent/"):
-                if not any(indicator in path for indicator in auth_indicators):
-                    is_authenticated = True
+        # Use JS-based detection for auth status
+        eval_result = _evaluate_auth_js(cdp_port=None, session_name=session_name)
 
         return {
-            "authenticated": is_authenticated,
-            "url": current_url,
-            "error": None,
+            "authenticated": eval_result["is_authenticated"],
+            "url": eval_result["url"],
+            "error": eval_result["error"],
         }
 
     except subprocess.TimeoutExpired:
@@ -670,6 +833,28 @@ def _ensure_permission_probe(work_dir: Path) -> bool:
     return True
 
 
+def _load_saved_browser_mode(work_dir: Path) -> dict[str, Any] | None:
+    """Load saved browser mode from runtime state file.
+
+    Args:
+        work_dir: Working directory for runtime data
+
+    Returns:
+        Dict with browser mode data if file exists and is valid, None otherwise
+    """
+    mode_file = work_dir / "runtime" / "browser_mode.json"
+    if not mode_file.exists():
+        return None
+
+    try:
+        data = json.loads(mode_file.read_text())
+        if data.get("mode") == "cdp" and data.get("cdp_port"):
+            return data
+        return None
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
 def bootstrap_auth_session(
     work_dir: Path,
     preferred_cdp_port: str = "9230",
@@ -680,14 +865,13 @@ def bootstrap_auth_session(
 
     This is the main entry point for the auth bootstrap flow:
     1. Ensure permission probe file exists at WORK_DIR root (macOS permission trigger)
-    2. Check if preferred CDP port is available and authenticated
-    3. If yes, return success with that port
-    4. If no, launch Chrome with configured profile for manual login
+    2. Check saved browser mode for existing CDP port (fallback reuse)
+    3. Check if preferred CDP port is available and authenticated
+    4. If yes, return success with that port
+    5. If no, launch Chrome with configured profile for manual login
        (only with explicit allow_browser_launch=True AND interactive session)
-    5. After user completes login, export auth state using agent-browser state save
-    6. Close Chrome
-    7. Start headed agent-browser session from auth.json
-    8. Persist browser mode metadata
+    6. After user completes login, save CDP mode metadata
+    7. Keep Chrome running for subsequent operations (CDP-persistent mode)
 
     Args:
         work_dir: Working directory for runtime data
@@ -700,10 +884,10 @@ def bootstrap_auth_session(
     Returns:
         Dict with bootstrap result:
         - success: bool
-        - mode: "cdp" | "agent-browser" | "failed"
+        - mode: "cdp" | "failed"
         - cdp_port: str | None - port to use for browser operations (CDP mode)
-        - session_name: str | None - session name (agent-browser mode)
-        - auth_file: str | None - path to exported auth state
+        - session_name: str | None - session name (legacy, always None now)
+        - auth_file: str | None - path to exported auth state (legacy, always None now)
         - message: str - human-readable status message
         - error: str | None - error details if failed
     """
@@ -717,11 +901,37 @@ def bootstrap_auth_session(
         "cdp_port": None,
         "session_name": None,
         "auth_file": None,
+        "headed": None,
         "message": "",
         "error": None,
     }
 
-    # Step 1: Check if preferred CDP is available and authenticated
+    # Step 1: Check saved browser mode for existing CDP port (fallback reuse)
+    # This handles the case where bootstrap previously launched Chrome on a non-preferred port
+    saved_mode = _load_saved_browser_mode(work_dir)
+    if saved_mode:
+        saved_port = saved_mode.get("cdp_port")
+        if saved_port and check_cdp_available(saved_port):
+            auth_check = probe_recruiter_auth(saved_port)
+            if auth_check["authenticated"]:
+                # Update timestamp on saved mode
+                save_browser_mode(
+                    work_dir,
+                    mode="cdp",
+                    cdp_port=saved_port,
+                    headed=True,
+                )
+
+                result["success"] = True
+                result["mode"] = "cdp"
+                result["cdp_port"] = saved_port
+                result["headed"] = True
+                result["message"] = (
+                    f"Using existing authenticated browser on saved port {saved_port}"
+                )
+                return result
+
+    # Step 2: Check if preferred CDP is available and authenticated
     if check_cdp_available(preferred_cdp_port):
         auth_check = probe_recruiter_auth(preferred_cdp_port)
         if auth_check["authenticated"]:
@@ -736,82 +946,16 @@ def bootstrap_auth_session(
             result["success"] = True
             result["mode"] = "cdp"
             result["cdp_port"] = preferred_cdp_port
+            result["headed"] = True
             result["message"] = (
                 f"Using existing authenticated browser on port {preferred_cdp_port}"
             )
             return result
 
-    # Step 2: Need to bootstrap - check for existing auth file
-    auth_dir = work_dir / "runtime" / "auth"
-    auth_file = auth_dir / "linkedin-auth.json"
-
-    if auth_file.exists():
-        # Try to validate the auth file is recent and usable
-        try:
-            auth_data = json.loads(auth_file.read_text())
-            exported_at = auth_data.get("exported_at", "")
-            # Check if auth is less than 7 days old
-            if exported_at:
-                from datetime import datetime, timezone
-
-                export_time = datetime.fromisoformat(exported_at.replace("Z", "+00:00"))
-                age_days = (datetime.now(timezone.utc) - export_time).days
-                if age_days < 7:
-                    # CRITICAL: Starting a headed agent-browser session from saved auth
-                    # requires explicit opt-in AND interactive session (same as manual login)
-                    if not allow_browser_launch:
-                        result["error"] = (
-                            "Browser launch not allowed without explicit opt-in"
-                        )
-                        result["message"] = (
-                            "Saved auth file exists but starting a browser session "
-                            "requires allow_browser_launch=True. "
-                            "Use --bootstrap flag for explicit opt-in."
-                        )
-                        return result
-
-                    if not is_interactive_session():
-                        result["error"] = (
-                            "Browser launch requires an interactive terminal session"
-                        )
-                        result["message"] = (
-                            "Saved auth file exists but starting a headed browser "
-                            "requires an interactive terminal. "
-                            "Please run from an interactive terminal."
-                        )
-                        return result
-
-                    # Start agent-browser session from saved auth
-                    session_name = f"linkedin-{int(time.time())}"
-                    session_result = start_agent_browser_session(
-                        auth_file, session_name, headed=True
-                    )
-
-                    if session_result["success"]:
-                        # Save agent-browser mode
-                        save_browser_mode(
-                            work_dir,
-                            mode="agent-browser",
-                            session_name=session_name,
-                            auth_file=str(auth_file),
-                            headed=True,
-                        )
-
-                        result["success"] = True
-                        result["mode"] = "agent-browser"
-                        result["session_name"] = session_name
-                        result["auth_file"] = str(auth_file)
-                        result["message"] = (
-                            f"Using saved auth state ({age_days} days old)"
-                        )
-                        return result
-                    else:
-                        # Session start failed, will proceed with fresh login
-                        result["message"] = (
-                            f"Saved auth session failed: {session_result.get('error')}"
-                        )
-        except Exception:
-            pass  # Auth file invalid, will proceed with fresh login
+    # Step 2: Check for existing auth file (legacy - no longer used for normal flow)
+    # Note: Saved auth files are no longer used to start agent-browser sessions.
+    # The canonical flow is now CDP-first and CDP-persistent.
+    # We keep the auth file for reference but don't depend on it.
 
     # Step 3: Check for explicit opt-in before ANY browser launch
     if not allow_browser_launch:
@@ -840,14 +984,21 @@ def bootstrap_auth_session(
         result["message"] = "Chrome not found - please install Google Chrome"
         return result
 
-    # Find an available port for Chrome
-    temp_cdp_port = 19230
-    while check_cdp_available(str(temp_cdp_port)) and temp_cdp_port < 19300:
-        temp_cdp_port += 1
+    # Determine which port to use for Chrome launch
+    # Prefer the user's requested port, fall back to temp port range if occupied
+    preferred_port_int = int(preferred_cdp_port)
+    if not is_port_in_use(preferred_port_int):
+        # Preferred port is free - use it for the login browser
+        actual_cdp_port = preferred_port_int
+    else:
+        # Preferred port is occupied - search for an available fallback port
+        actual_cdp_port = 19230
+        while is_port_in_use(actual_cdp_port) and actual_cdp_port < 19300:
+            actual_cdp_port += 1
 
-    if temp_cdp_port >= 19300:
-        result["error"] = "Could not find available port for Chrome"
-        return result
+        if actual_cdp_port >= 19300:
+            result["error"] = "Could not find available port for Chrome"
+            return result
 
     # Use configured profile directory (persistent, not temp)
     profile_dir = (
@@ -856,7 +1007,8 @@ def bootstrap_auth_session(
     profile_dir.mkdir(parents=True, exist_ok=True)
 
     print(
-        f"Launching Chrome for authentication on port {temp_cdp_port}", file=sys.stderr
+        f"Launching Chrome for authentication on port {actual_cdp_port}",
+        file=sys.stderr,
     )
     print(f"Profile directory: {profile_dir}", file=sys.stderr)
     print("", file=sys.stderr)
@@ -867,14 +1019,14 @@ def bootstrap_auth_session(
         file=sys.stderr,
     )
     print(
-        "3. Your authentication will be saved automatically when login completes",
+        "3. This Chrome window will remain open and be reused for subsequent operations",
         file=sys.stderr,
     )
     print("", file=sys.stderr)
     print("Waiting for you to log in...", file=sys.stderr)
 
     # Launch Chrome
-    chrome_process = launch_isolated_chrome(profile_dir, temp_cdp_port, chrome_path)
+    chrome_process = launch_isolated_chrome(profile_dir, actual_cdp_port, chrome_path)
 
     if chrome_process is None:
         result["error"] = "Failed to launch Chrome for manual login"
@@ -882,7 +1034,7 @@ def bootstrap_auth_session(
         return result
 
     # Step 4: Poll for authentication (automatic, no user input required)
-    auth_check = _poll_for_authentication(str(temp_cdp_port), chrome_process)
+    auth_check = _poll_for_authentication(str(actual_cdp_port), chrome_process)
     if not auth_check["authenticated"]:
         result["error"] = (
             f"Auth check failed: {auth_check.get('error', 'Not authenticated')}"
@@ -891,43 +1043,22 @@ def bootstrap_auth_session(
         close_chrome(chrome_process)
         return result
 
-    # Export auth state using official agent-browser state save
-    export_result = export_auth_state(str(temp_cdp_port), auth_file)
-    if not export_result["success"]:
-        result["error"] = f"Auth export failed: {export_result.get('error')}"
-        result["message"] = "Failed to save authentication state"
-        close_chrome(chrome_process)
-        return result
-
-    # Step 5: Close Chrome
-    close_chrome(chrome_process)
-
-    # Step 6: Start agent-browser session from saved auth
-    session_name = f"linkedin-{int(time.time())}"
-    session_result = start_agent_browser_session(auth_file, session_name, headed=True)
-
-    if not session_result["success"]:
-        result["error"] = (
-            f"Failed to start agent-browser session: {session_result.get('error')}"
-        )
-        result["message"] = "Auth saved but session start failed"
-        return result
-
-    # Step 7: Save browser mode metadata
+    # Step 5: Save browser mode as CDP (Chrome stays running)
     save_browser_mode(
         work_dir,
-        mode="agent-browser",
-        session_name=session_name,
-        auth_file=str(auth_file),
+        mode="cdp",
+        cdp_port=str(actual_cdp_port),
         headed=True,
     )
 
     result["success"] = True
-    result["mode"] = "agent-browser"
-    result["session_name"] = session_name
-    result["auth_file"] = str(auth_file)
+    result["mode"] = "cdp"
+    result["cdp_port"] = str(actual_cdp_port)
+    result["session_name"] = None
+    result["auth_file"] = None
+    result["headed"] = True
     result["message"] = (
-        f"Auth bootstrap complete. Session '{session_name}' started with saved auth."
+        f"Auth bootstrap complete. Chrome is running on port {actual_cdp_port} and will be reused for subsequent operations."
     )
 
     return result

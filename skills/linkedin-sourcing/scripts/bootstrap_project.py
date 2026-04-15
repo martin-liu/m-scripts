@@ -79,6 +79,9 @@ SKILL_DIR = SCRIPT_DIR.parent
 sys.path.insert(0, str(SCRIPT_DIR))
 from excel_utils import create
 
+# Import auth_bootstrap for browser availability check
+import auth_bootstrap
+
 
 def parse_args() -> argparse.Namespace:
     """Parse command line arguments."""
@@ -252,15 +255,71 @@ def check_existing_project_by_recruiter_id(
     return None
 
 
+def ensure_browser_auth(work_dir: Path, cdp_port: str) -> dict[str, Any]:
+    """Ensure browser is available and authenticated to LinkedIn Recruiter.
+
+    This function invokes the canonical auth bootstrap flow to ensure a usable
+    browser is available before attempting Recruiter project operations.
+
+    Args:
+        work_dir: Working directory for runtime data
+        cdp_port: Preferred Chrome DevTools Protocol port
+
+    Returns:
+        Dict with success status, browser mode, and error message if failed:
+        - success: bool - whether browser is available and authenticated
+        - mode: BrowserMode | None - the browser mode to use for operations
+        - error: str | None - error message if failed
+    """
+    result = auth_bootstrap.bootstrap_auth_session(
+        work_dir=work_dir,
+        preferred_cdp_port=cdp_port,
+        allow_browser_launch=True,  # CLI use case allows browser launch
+    )
+
+    if result["success"]:
+        # Construct BrowserMode from bootstrap result, preserving headed state
+        from browser_utils import BrowserMode
+
+        # Preserve headed from bootstrap result, default to True for backward compatibility
+        headed = result.get("headed")
+        if headed is None:
+            headed = True
+
+        if result.get("mode") == "agent-browser":
+            mode = BrowserMode(
+                mode="agent-browser",
+                session_name=result.get("session_name"),
+                auth_file=result.get("auth_file"),
+                headed=headed,
+            )
+        else:
+            mode = BrowserMode(
+                mode="cdp",
+                cdp_port=result.get("cdp_port", cdp_port),
+                headed=headed,
+            )
+        return {"success": True, "mode": mode, "error": None}
+
+    return {
+        "success": False,
+        "mode": None,
+        "error": result.get("error", "Unknown error"),
+    }
+
+
 def ensure_recruiter_project_and_get_id(
-    project_name: str, description: str, cdp_port: str, work_dir: Path
+    project_name: str,
+    description: str,
+    browser_mode: "BrowserMode | str",
+    work_dir: Path,
 ) -> dict[str, Any]:
     """Ensure Recruiter project exists and return its ID and URL.
 
     Args:
         project_name: Name for the Recruiter project
         description: Description for the project
-        cdp_port: Chrome DevTools Protocol port
+        browser_mode: BrowserMode instance or CDP port string for browser operations
         work_dir: Working directory for incident reporting
 
     Returns:
@@ -272,7 +331,7 @@ def ensure_recruiter_project_and_get_id(
     result = ensure_project_exists(
         project_name=project_name,
         description=description,
-        cdp_port=cdp_port,
+        browser_mode=browser_mode,
         work_dir=str(work_dir),
         require_contextual_url=False,  # Bootstrap only needs project identity, not search URL
     )
@@ -1047,6 +1106,22 @@ def bootstrap_project(args: argparse.Namespace) -> dict[str, Any]:
         project_id = recruiter_project_id
     else:
         # Create/ensure Recruiter project and derive PROJECT_ID
+        # First ensure browser is available and authenticated
+        browser_check = ensure_browser_auth(work_dir, args.cdp_port)
+        if not browser_check["success"]:
+            raise RuntimeError(
+                f"Browser authentication required but failed: {browser_check.get('error', 'Unknown error')}. "
+                "Please provide --recruiter-url or ensure Chrome is running with CDP."
+            )
+
+        # Use the browser mode returned from auth bootstrap (CDP or agent-browser)
+        browser_mode = browser_check.get("mode")
+        if browser_mode is None:
+            # Fallback to CDP mode with provided port for backward compatibility
+            from browser_utils import BrowserMode
+
+            browser_mode = BrowserMode(mode="cdp", cdp_port=args.cdp_port)
+
         # Use position title as project name, or placeholder if not available
         position_title_for_name = inferred.get("position_title", "")
         # Avoid using placeholder for Recruiter project name
@@ -1060,7 +1135,7 @@ def bootstrap_project(args: argparse.Namespace) -> dict[str, Any]:
         ensure_result = ensure_recruiter_project_and_get_id(
             project_name=project_name,
             description=description,
-            cdp_port=args.cdp_port,
+            browser_mode=browser_mode,
             work_dir=work_dir,
         )
 

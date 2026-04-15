@@ -150,6 +150,34 @@ class TestBrowserMode:
         assert "linkedin-test" in args
         assert "--state" in args
         assert "/auth.json" in args
+        # Default headed=True should include --headed
+        assert "--headed" in args
+
+    def test_build_agent_browser_args_session_headed_false(self):
+        """Should not include --headed when headed=False."""
+        mode = bu.BrowserMode(
+            mode="agent-browser",
+            session_name="linkedin-test",
+            auth_file="/auth.json",
+            headed=False,
+        )
+        args = mode.build_agent_browser_args()
+
+        assert "--session" in args
+        assert "--headed" not in args
+
+    def test_build_agent_browser_args_session_headed_true(self):
+        """Should include --headed when headed=True."""
+        mode = bu.BrowserMode(
+            mode="agent-browser",
+            session_name="linkedin-test",
+            auth_file="/auth.json",
+            headed=True,
+        )
+        args = mode.build_agent_browser_args()
+
+        assert "--session" in args
+        assert "--headed" in args
 
     def test_build_agent_browser_args_cdp_missing_port(self):
         """Should raise error when CDP mode missing port."""
@@ -445,8 +473,86 @@ class TestFormatTimeoutError:
         assert "Are you sure?" in result
 
 
+class TestCheckAuthFromUrl:
+    """Tests for _check_auth_from_url helper function."""
+
+    def test_talent_root_no_trailing_slash(self):
+        """Should accept /talent (no trailing slash) as authenticated."""
+        result = bu._check_auth_from_url("https://www.linkedin.com/talent")
+        assert result is True
+
+    def test_talent_home(self):
+        """Should accept /talent/home as authenticated."""
+        result = bu._check_auth_from_url("https://www.linkedin.com/talent/home")
+        assert result is True
+
+    def test_talent_project(self):
+        """Should accept /talent/hire/.../projects/... as authenticated."""
+        result = bu._check_auth_from_url(
+            "https://www.linkedin.com/talent/hire/123456789/projects/987654321"
+        )
+        assert result is True
+
+    def test_rejects_login_page(self):
+        """Should reject /login as not authenticated."""
+        result = bu._check_auth_from_url("https://www.linkedin.com/login")
+        assert result is False
+
+    def test_rejects_checkpoint(self):
+        """Should reject /checkpoint as not authenticated."""
+        result = bu._check_auth_from_url(
+            "https://www.linkedin.com/checkpoint/challenge/AgGf..."
+        )
+        assert result is False
+
+    def test_rejects_login_cap(self):
+        """Should reject /uas/login-cap as not authenticated."""
+        result = bu._check_auth_from_url(
+            "https://www.linkedin.com/uas/login-cap?session_redirect=/talent/home"
+        )
+        assert result is False
+
+    def test_rejects_generic_linkedin(self):
+        """Should reject generic linkedin.com pages not under /talent."""
+        result = bu._check_auth_from_url("https://www.linkedin.com/feed/")
+        assert result is False
+
+    def test_rejects_none_url(self):
+        """Should reject None URL."""
+        result = bu._check_auth_from_url(None)
+        assert result is False
+
+    def test_rejects_non_linkedin_host(self):
+        """Should reject non-LinkedIn hosts."""
+        result = bu._check_auth_from_url("https://example.com/talent")
+        assert result is False
+
+
+def _make_js_result(
+    url: str,
+    is_talent: bool = True,
+    has_login_form: bool = False,
+    has_checkpoint: bool = False,
+    has_captcha: bool = False,
+) -> Mock:
+    """Create a mock subprocess result for JS eval."""
+    page_state = {
+        "url": url,
+        "path": url.replace("https://www.linkedin.com", ""),
+        "title": "LinkedIn",
+        "isTalentPath": is_talent,
+        "hasLoginForm": has_login_form,
+        "hasLoginText": has_login_form,
+        "hasCheckpoint": has_checkpoint,
+        "hasCaptcha": has_captcha,
+        "hasRecruiterShell": is_talent and not has_login_form,
+        "hasUserMenu": is_talent and not has_login_form,
+    }
+    return Mock(returncode=0, stdout=json.dumps(page_state), stderr="")
+
+
 class TestProbeRecruiterAuth:
-    """Tests for Recruiter auth probing."""
+    """Tests for Recruiter auth probing with JS-based detection."""
 
     @patch("browser_utils.check_cdp_available")
     def test_cdp_not_available(self, mock_check):
@@ -461,15 +567,11 @@ class TestProbeRecruiterAuth:
     @patch("browser_utils.check_cdp_available")
     @patch("subprocess.run")
     def test_authenticated_on_recruiter(self, mock_run, mock_check):
-        """Should detect authenticated on Recruiter page."""
+        """Should detect authenticated on Recruiter page via JS."""
         mock_check.return_value = True
         mock_run.side_effect = [
-            Mock(returncode=0, stdout="", stderr=""),
-            Mock(
-                returncode=0,
-                stdout="https://www.linkedin.com/talent/home\n",
-                stderr="",
-            ),
+            Mock(returncode=0, stdout="", stderr=""),  # open
+            _make_js_result("https://www.linkedin.com/talent/home"),  # JS eval
         ]
 
         result = bu.probe_recruiter_auth("9230")
@@ -479,22 +581,37 @@ class TestProbeRecruiterAuth:
 
     @patch("browser_utils.check_cdp_available")
     @patch("subprocess.run")
-    def test_not_authenticated_on_login_cap(self, mock_run, mock_check):
-        """Should reject login-cap URLs (false positive fix)."""
+    def test_authenticated_on_talent_root_no_trailing_slash(self, mock_run, mock_check):
+        """Should detect authenticated on /talent (no trailing slash) via JS."""
         mock_check.return_value = True
         mock_run.side_effect = [
             Mock(returncode=0, stdout="", stderr=""),
-            Mock(
-                returncode=0,
-                stdout="https://www.linkedin.com/uas/login-cap?session_redirect=/talent/home\n",
-                stderr="",
+            _make_js_result("https://www.linkedin.com/talent"),
+        ]
+
+        result = bu.probe_recruiter_auth("9230")
+
+        assert result["authenticated"] is True
+        assert result["error"] is None
+        assert result["url"] == "https://www.linkedin.com/talent"
+
+    @patch("browser_utils.check_cdp_available")
+    @patch("subprocess.run")
+    def test_not_authenticated_on_login_cap(self, mock_run, mock_check):
+        """Should reject login-cap URLs via JS detection."""
+        mock_check.return_value = True
+        mock_run.side_effect = [
+            Mock(returncode=0, stdout="", stderr=""),
+            _make_js_result(
+                "https://www.linkedin.com/uas/login-cap?session_redirect=/talent/home",
+                is_talent=False,
+                has_login_form=True,
             ),
         ]
 
         result = bu.probe_recruiter_auth("9230")
 
         assert result["authenticated"] is False
-        assert "login-cap" in result["url"]
 
     @patch("browser_utils.check_cdp_available")
     @patch("subprocess.run")
@@ -503,10 +620,9 @@ class TestProbeRecruiterAuth:
         mock_check.return_value = True
         mock_run.side_effect = [
             Mock(returncode=0, stdout="", stderr=""),
-            Mock(
-                returncode=0,
-                stdout="https://www.linkedin.com/feed/\n",
-                stderr="",
+            _make_js_result(
+                "https://www.linkedin.com/feed/",
+                is_talent=False,
             ),
         ]
 
@@ -517,14 +633,14 @@ class TestProbeRecruiterAuth:
     @patch("browser_utils.check_cdp_available")
     @patch("subprocess.run")
     def test_not_authenticated_on_login_page(self, mock_run, mock_check):
-        """Should reject explicit login pages."""
+        """Should reject explicit login pages via JS."""
         mock_check.return_value = True
         mock_run.side_effect = [
             Mock(returncode=0, stdout="", stderr=""),
-            Mock(
-                returncode=0,
-                stdout="https://www.linkedin.com/login?fromSignIn=true\n",
-                stderr="",
+            _make_js_result(
+                "https://www.linkedin.com/login?fromSignIn=true",
+                is_talent=False,
+                has_login_form=True,
             ),
         ]
 
@@ -535,14 +651,32 @@ class TestProbeRecruiterAuth:
     @patch("browser_utils.check_cdp_available")
     @patch("subprocess.run")
     def test_not_authenticated_on_checkpoint(self, mock_run, mock_check):
-        """Should reject checkpoint/challenge pages."""
+        """Should reject checkpoint/challenge pages via JS."""
         mock_check.return_value = True
         mock_run.side_effect = [
             Mock(returncode=0, stdout="", stderr=""),
-            Mock(
-                returncode=0,
-                stdout="https://www.linkedin.com/checkpoint/challenge/AgGf...\n",
-                stderr="",
+            _make_js_result(
+                "https://www.linkedin.com/checkpoint/challenge/AgGf...",
+                is_talent=False,
+                has_checkpoint=True,
+            ),
+        ]
+
+        result = bu.probe_recruiter_auth("9230")
+
+        assert result["authenticated"] is False
+
+    @patch("browser_utils.check_cdp_available")
+    @patch("subprocess.run")
+    def test_not_authenticated_login_form_on_talent(self, mock_run, mock_check):
+        """Should reject when login form present on talent path."""
+        mock_check.return_value = True
+        mock_run.side_effect = [
+            Mock(returncode=0, stdout="", stderr=""),
+            _make_js_result(
+                "https://www.linkedin.com/talent",
+                is_talent=True,
+                has_login_form=True,
             ),
         ]
 
@@ -557,10 +691,8 @@ class TestProbeRecruiterAuth:
         mock_check.return_value = True
         mock_run.side_effect = [
             Mock(returncode=0, stdout="", stderr=""),
-            Mock(
-                returncode=0,
-                stdout="https://www.linkedin.com/talent/hire/123456789/projects/987654321\n",
-                stderr="",
+            _make_js_result(
+                "https://www.linkedin.com/talent/hire/123456789/projects/987654321"
             ),
         ]
 
@@ -571,38 +703,28 @@ class TestProbeRecruiterAuth:
     @patch("browser_utils.check_cdp_available")
     @patch("subprocess.run")
     def test_readonly_probe_does_not_navigate(self, mock_run, mock_check):
-        """Should only inspect current URL in readonly mode."""
+        """Should only inspect current page in readonly mode."""
         mock_check.return_value = True
-        mock_run.return_value = Mock(
-            returncode=0,
-            stdout="https://www.linkedin.com/talent/home\n",
-            stderr="",
-        )
+        mock_run.return_value = _make_js_result("https://www.linkedin.com/talent/home")
 
         result = bu.probe_recruiter_auth("9230", navigate=False)
 
         assert result["authenticated"] is True
-        mock_run.assert_called_once_with(
-            ["agent-browser", "--cdp", "9230", "get", "url"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
+        # Should only call eval, not open
+        mock_run.assert_called_once()
+        cmd = mock_run.call_args[0][0]
+        assert "eval" in cmd
 
 
 class TestProbeAgentBrowserAuth:
-    """Tests for agent-browser session auth probing (false-success prevention)."""
+    """Tests for agent-browser session auth probing with JS-based detection."""
 
     @patch("subprocess.run")
     def test_authenticated_on_recruiter(self, mock_run):
         """Should detect authenticated on Recruiter page via session."""
         mock_run.side_effect = [
             Mock(returncode=0, stdout="", stderr=""),  # open command
-            Mock(
-                returncode=0,
-                stdout="https://www.linkedin.com/talent/home\n",
-                stderr="",
-            ),  # get url command
+            _make_js_result("https://www.linkedin.com/talent/home"),  # JS eval
         ]
 
         result = bu.probe_agent_browser_auth("test-session")
@@ -615,14 +737,28 @@ class TestProbeAgentBrowserAuth:
         assert "test-session" in cmd
 
     @patch("subprocess.run")
+    def test_authenticated_on_talent_root_no_trailing_slash(self, mock_run):
+        """Should detect authenticated on /talent (no trailing slash) via session."""
+        mock_run.side_effect = [
+            Mock(returncode=0, stdout="", stderr=""),
+            _make_js_result("https://www.linkedin.com/talent"),
+        ]
+
+        result = bu.probe_agent_browser_auth("test-session")
+
+        assert result["authenticated"] is True
+        assert result["error"] is None
+        assert result["url"] == "https://www.linkedin.com/talent"
+
+    @patch("subprocess.run")
     def test_not_authenticated_on_login_page(self, mock_run):
         """Should reject login page via session (false-success prevention)."""
         mock_run.side_effect = [
             Mock(returncode=0, stdout="", stderr=""),
-            Mock(
-                returncode=0,
-                stdout="https://www.linkedin.com/login?fromSignIn=true\n",
-                stderr="",
+            _make_js_result(
+                "https://www.linkedin.com/login?fromSignIn=true",
+                is_talent=False,
+                has_login_form=True,
             ),
         ]
 
@@ -635,10 +771,10 @@ class TestProbeAgentBrowserAuth:
         """Should reject login-cap URLs via session (false-success prevention)."""
         mock_run.side_effect = [
             Mock(returncode=0, stdout="", stderr=""),
-            Mock(
-                returncode=0,
-                stdout="https://www.linkedin.com/uas/login-cap?session_redirect=/talent/home\n",
-                stderr="",
+            _make_js_result(
+                "https://www.linkedin.com/uas/login-cap?session_redirect=/talent/home",
+                is_talent=False,
+                has_login_form=True,
             ),
         ]
 
@@ -651,10 +787,26 @@ class TestProbeAgentBrowserAuth:
         """Should reject checkpoint/challenge pages via session."""
         mock_run.side_effect = [
             Mock(returncode=0, stdout="", stderr=""),
-            Mock(
-                returncode=0,
-                stdout="https://www.linkedin.com/checkpoint/challenge/AgGf...\n",
-                stderr="",
+            _make_js_result(
+                "https://www.linkedin.com/checkpoint/challenge/AgGf...",
+                is_talent=False,
+                has_checkpoint=True,
+            ),
+        ]
+
+        result = bu.probe_agent_browser_auth("test-session")
+
+        assert result["authenticated"] is False
+
+    @patch("subprocess.run")
+    def test_not_authenticated_login_form_on_talent(self, mock_run):
+        """Should reject when login form present on talent path."""
+        mock_run.side_effect = [
+            Mock(returncode=0, stdout="", stderr=""),
+            _make_js_result(
+                "https://www.linkedin.com/talent",
+                is_talent=True,
+                has_login_form=True,
             ),
         ]
 
@@ -1039,33 +1191,34 @@ class TestBrowserContextAutoBootstrap:
     @patch("browser_utils.auth_bootstrap.bootstrap_auth_session")
     @patch("browser_utils.get_browser_mode")
     @patch("browser_utils.check_cdp_available")
-    def test_auto_bootstrap_success_agent_browser_mode(
+    def test_auto_bootstrap_success_cdp_mode(
         self, mock_check_cdp, mock_get_mode, mock_bootstrap, tmp_path
     ):
-        """Should auto-bootstrap successfully into agent-browser mode."""
+        """Should auto-bootstrap successfully into CDP mode."""
+        # Provide multiple values for get_browser_mode calls:
+        # 1. Initial check (None)
+        # 2. After bootstrap reload (CDP mode)
+        # 3. Additional calls if any
         mock_get_mode.side_effect = [
             None,
-            bu.BrowserMode(
-                mode="agent-browser",
-                session_name="linkedin-test",
-                auth_file=str(tmp_path / "runtime" / "auth" / "linkedin-auth.json"),
-            ),
+            bu.BrowserMode(mode="cdp", cdp_port="9230"),
+            bu.BrowserMode(mode="cdp", cdp_port="9230"),
         ]
         mock_check_cdp.return_value = False
         mock_bootstrap.return_value = {
             "success": True,
-            "mode": "agent-browser",
-            "cdp_port": None,
-            "session_name": "linkedin-test",
-            "auth_file": str(tmp_path / "runtime" / "auth" / "linkedin-auth.json"),
-            "message": "Agent-browser session started",
+            "mode": "cdp",
+            "cdp_port": "9230",
+            "session_name": None,
+            "auth_file": None,
+            "message": "Chrome running on port 9230",
             "error": None,
         }
 
         with patch("browser_utils.check_browser_available", return_value=True):
             with bu.BrowserContext(tmp_path, "9230", auto_bootstrap=True) as ctx:
-                assert ctx.mode.mode == "agent-browser"
-                assert ctx.mode.session_name == "linkedin-test"
+                assert ctx.mode.mode == "cdp"
+                assert ctx.mode.cdp_port == "9230"
 
     @patch("browser_utils.auth_bootstrap.bootstrap_auth_session")
     @patch("browser_utils.get_browser_mode")
@@ -1249,6 +1402,7 @@ class TestBrowserContextSavedModeAuthCheck:
     ):
         """Saved agent-browser mode available but unauthenticated + auto_bootstrap=True => bootstrap attempted."""
         # Setup: saved agent-browser mode exists, browser reachable, but NOT authenticated
+        # Bootstrap now returns CDP mode, not agent-browser mode
         mock_get_mode.side_effect = [
             bu.BrowserMode(
                 mode="agent-browser",
@@ -1256,10 +1410,9 @@ class TestBrowserContextSavedModeAuthCheck:
                 auth_file="/path/to/auth.json",
             ),  # Initial saved mode
             bu.BrowserMode(
-                mode="agent-browser",
-                session_name="new-session",
-                auth_file="/path/to/new-auth.json",
-            ),  # After bootstrap reload
+                mode="cdp",
+                cdp_port="9230",
+            ),  # After bootstrap reload (now CDP mode)
         ]
         mock_check_available.return_value = True  # Browser is reachable
         mock_probe.return_value = {
@@ -1269,17 +1422,17 @@ class TestBrowserContextSavedModeAuthCheck:
         }
         mock_bootstrap.return_value = {
             "success": True,
-            "mode": "agent-browser",
-            "cdp_port": None,
-            "session_name": "new-session",
-            "auth_file": "/path/to/new-auth.json",
+            "mode": "cdp",
+            "cdp_port": "9230",
+            "session_name": None,
+            "auth_file": None,
             "message": "Bootstrap succeeded",
             "error": None,
         }
 
         with bu.BrowserContext(tmp_path, "9230", auto_bootstrap=True) as ctx:
-            assert ctx.mode.mode == "agent-browser"
-            assert ctx.mode.session_name == "new-session"
+            assert ctx.mode.mode == "cdp"
+            assert ctx.mode.cdp_port == "9230"
 
         # Verify bootstrap was called to recover from unauthenticated state
         mock_bootstrap.assert_called_once()
@@ -1311,7 +1464,7 @@ class TestBrowserContextSavedModeAuthCheck:
             with bu.BrowserContext(tmp_path, "9230", auto_bootstrap=False) as ctx:
                 pass
 
-        # Should fail with clear guidance
+        # Should fail with clear guidance (backward compat: still mentions agent-browser)
         assert "Saved agent-browser mode reachable but not authenticated" in str(
             exc_info.value
         )

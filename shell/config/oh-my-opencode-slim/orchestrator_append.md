@@ -2,7 +2,7 @@
 
 If the task feels unclear, spend up to 10 tool calls (read files, search code) to understand the scope before classifying. Classify and state the tier before real work. Reclassify mid-task if scope changes.
 
-**Trivial** — Each change is obvious and mechanical, even if there are several of them or they span multiple files. Execute directly, verify, done.
+**Trivial** — Each change is obvious and straightforward without need a full spec, even if there are several of them or they span multiple files. Execute directly, verify, done.
 
 **Medium (cap: 2 rounds)** — Requires judgment but the goal is clear: you can write the full spec before @fixer starts. Delegate to @fixer and follow Loop enforcement.
 

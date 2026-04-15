@@ -98,8 +98,71 @@ class TestCheckCdpAvailable:
         assert result is False
 
 
+class TestIsPortInUse:
+    """Tests for generic TCP port occupancy checking."""
+
+    @patch("socket.socket")
+    def test_port_in_use(self, mock_socket_class):
+        """Should return True when port is occupied by any process."""
+        mock_sock = Mock()
+        mock_sock.connect_ex.return_value = 0  # Connection succeeded = port in use
+        mock_sock.__enter__ = Mock(return_value=mock_sock)
+        mock_sock.__exit__ = Mock(return_value=False)
+        mock_socket_class.return_value = mock_sock
+
+        result = ab.is_port_in_use(9230)
+
+        assert result is True
+        mock_sock.connect_ex.assert_called_once_with(("localhost", 9230))
+
+    @patch("socket.socket")
+    def test_port_free(self, mock_socket_class):
+        """Should return False when port is not in use."""
+        mock_sock = Mock()
+        mock_sock.connect_ex.return_value = 111  # ECONNREFUSED = port free
+        mock_sock.__enter__ = Mock(return_value=mock_sock)
+        mock_sock.__exit__ = Mock(return_value=False)
+        mock_socket_class.return_value = mock_sock
+
+        result = ab.is_port_in_use(9230)
+
+        assert result is False
+
+    @patch("socket.socket")
+    def test_port_check_socket_error(self, mock_socket_class):
+        """Should return False on socket error (fail-safe)."""
+        mock_socket_class.side_effect = OSError("Socket creation failed")
+
+        result = ab.is_port_in_use(9230)
+
+        assert result is False
+
+
+def _make_js_result(
+    url: str,
+    is_talent: bool = True,
+    has_login_form: bool = False,
+    has_checkpoint: bool = False,
+    has_captcha: bool = False,
+) -> Mock:
+    """Create a mock subprocess result for JS eval."""
+    page_state = {
+        "url": url,
+        "path": url.replace("https://www.linkedin.com", ""),
+        "title": "LinkedIn",
+        "isTalentPath": is_talent,
+        "hasLoginForm": has_login_form,
+        "hasLoginText": has_login_form,
+        "hasCheckpoint": has_checkpoint,
+        "hasCaptcha": has_captcha,
+        "hasRecruiterShell": is_talent and not has_login_form,
+        "hasUserMenu": is_talent and not has_login_form,
+    }
+    return Mock(returncode=0, stdout=json.dumps(page_state), stderr="")
+
+
 class TestProbeRecruiterAuth:
-    """Tests for Recruiter auth probing."""
+    """Tests for Recruiter auth probing with JS-based detection."""
 
     @patch("auth_bootstrap.check_cdp_available")
     def test_cdp_not_available(self, mock_check):
@@ -115,16 +178,12 @@ class TestProbeRecruiterAuth:
     @patch("auth_bootstrap.check_cdp_available")
     @patch("subprocess.run")
     def test_authenticated_on_recruiter_page(self, mock_run, mock_check):
-        """Should detect authenticated when on Recruiter page."""
+        """Should detect authenticated when on Recruiter page via JS."""
         mock_check.return_value = True
-        # First call is open, second is get url
+        # First call is open, second is JS eval
         mock_run.side_effect = [
             Mock(returncode=0, stdout="", stderr=""),
-            Mock(
-                returncode=0,
-                stdout="https://www.linkedin.com/talent/home\n",
-                stderr="",
-            ),
+            _make_js_result("https://www.linkedin.com/talent/home"),
         ]
 
         result = ab.probe_recruiter_auth("9230")
@@ -135,15 +194,31 @@ class TestProbeRecruiterAuth:
 
     @patch("auth_bootstrap.check_cdp_available")
     @patch("subprocess.run")
-    def test_not_authenticated_on_login_page(self, mock_run, mock_check):
-        """Should detect not authenticated when on login page."""
+    def test_authenticated_on_talent_root_no_trailing_slash(self, mock_run, mock_check):
+        """Should detect authenticated on /talent (no trailing slash) via JS."""
         mock_check.return_value = True
         mock_run.side_effect = [
             Mock(returncode=0, stdout="", stderr=""),
-            Mock(
-                returncode=0,
-                stdout="https://www.linkedin.com/login\n",
-                stderr="",
+            _make_js_result("https://www.linkedin.com/talent"),
+        ]
+
+        result = ab.probe_recruiter_auth("9230")
+
+        assert result["authenticated"] is True
+        assert result["error"] is None
+        assert result["url"] == "https://www.linkedin.com/talent"
+
+    @patch("auth_bootstrap.check_cdp_available")
+    @patch("subprocess.run")
+    def test_not_authenticated_on_login_page(self, mock_run, mock_check):
+        """Should detect not authenticated when on login page via JS."""
+        mock_check.return_value = True
+        mock_run.side_effect = [
+            Mock(returncode=0, stdout="", stderr=""),
+            _make_js_result(
+                "https://www.linkedin.com/login",
+                is_talent=False,
+                has_login_form=True,
             ),
         ]
 
@@ -154,14 +229,32 @@ class TestProbeRecruiterAuth:
     @patch("auth_bootstrap.check_cdp_available")
     @patch("subprocess.run")
     def test_not_authenticated_on_checkpoint(self, mock_run, mock_check):
-        """Should detect not authenticated when on checkpoint page."""
+        """Should detect not authenticated when on checkpoint page via JS."""
         mock_check.return_value = True
         mock_run.side_effect = [
             Mock(returncode=0, stdout="", stderr=""),
-            Mock(
-                returncode=0,
-                stdout="https://www.linkedin.com/checkpoint/challenge\n",
-                stderr="",
+            _make_js_result(
+                "https://www.linkedin.com/checkpoint/challenge",
+                is_talent=False,
+                has_checkpoint=True,
+            ),
+        ]
+
+        result = ab.probe_recruiter_auth("9230")
+
+        assert result["authenticated"] is False
+
+    @patch("auth_bootstrap.check_cdp_available")
+    @patch("subprocess.run")
+    def test_not_authenticated_login_form_on_talent(self, mock_run, mock_check):
+        """Should detect not authenticated when login form present on talent path."""
+        mock_check.return_value = True
+        mock_run.side_effect = [
+            Mock(returncode=0, stdout="", stderr=""),
+            _make_js_result(
+                "https://www.linkedin.com/talent",
+                is_talent=True,
+                has_login_form=True,
             ),
         ]
 
@@ -192,6 +285,69 @@ class TestProbeRecruiterAuth:
 
         assert result["authenticated"] is False
         assert "agent-browser" in result["error"].lower()
+
+
+class TestProbeAgentBrowserAuth:
+    """Tests for probe_agent_browser_auth function with JS-based detection."""
+
+    @patch("subprocess.run")
+    def test_authenticated_on_talent_root_no_trailing_slash(self, mock_run):
+        """Should detect authenticated on /talent (no trailing slash) via session."""
+        mock_run.side_effect = [
+            Mock(returncode=0, stdout="", stderr=""),  # open command
+            _make_js_result("https://www.linkedin.com/talent"),  # JS eval
+        ]
+
+        result = ab.probe_agent_browser_auth("test-session")
+
+        assert result["authenticated"] is True
+        assert result["error"] is None
+        assert result["url"] == "https://www.linkedin.com/talent"
+
+    @patch("subprocess.run")
+    def test_authenticated_on_talent_home(self, mock_run):
+        """Should detect authenticated on /talent/home via session."""
+        mock_run.side_effect = [
+            Mock(returncode=0, stdout="", stderr=""),
+            _make_js_result("https://www.linkedin.com/talent/home"),
+        ]
+
+        result = ab.probe_agent_browser_auth("test-session")
+
+        assert result["authenticated"] is True
+        assert result["error"] is None
+
+    @patch("subprocess.run")
+    def test_not_authenticated_on_login_page(self, mock_run):
+        """Should reject login page via session."""
+        mock_run.side_effect = [
+            Mock(returncode=0, stdout="", stderr=""),
+            _make_js_result(
+                "https://www.linkedin.com/login",
+                is_talent=False,
+                has_login_form=True,
+            ),
+        ]
+
+        result = ab.probe_agent_browser_auth("test-session")
+
+        assert result["authenticated"] is False
+
+    @patch("subprocess.run")
+    def test_not_authenticated_login_form_on_talent(self, mock_run):
+        """Should reject when login form present on talent path."""
+        mock_run.side_effect = [
+            Mock(returncode=0, stdout="", stderr=""),
+            _make_js_result(
+                "https://www.linkedin.com/talent",
+                is_talent=True,
+                has_login_form=True,
+            ),
+        ]
+
+        result = ab.probe_agent_browser_auth("test-session")
+
+        assert result["authenticated"] is False
 
 
 class TestFindSystemChrome:
@@ -505,7 +661,8 @@ class TestStartAgentBrowserSession:
     def test_session_start_success_clean_exit(self, mock_sleep, mock_popen, mock_probe):
         """Should treat clean exit (returncode 0) as success."""
         mock_process = Mock()
-        mock_process.poll.return_value = 0  # Clean exit
+        # First poll returns None (running), then 0 (clean exit)
+        mock_process.poll.side_effect = [None, 0]
         mock_popen.return_value = mock_process
         mock_probe.return_value = {
             "authenticated": True,
@@ -544,65 +701,20 @@ class TestStartAgentBrowserSession:
     @patch("auth_bootstrap.probe_agent_browser_auth")
     @patch("subprocess.Popen")
     @patch("time.sleep")
-    def test_session_not_authenticated_false_success(
+    def test_session_process_exits_during_probe(
         self, mock_sleep, mock_popen, mock_probe
     ):
-        """CRITICAL: Must reject session that starts but is not authenticated (false-success prevention)."""
+        """Should fail clearly if agent-browser exits during auth probe."""
         mock_process = Mock()
-        mock_process.poll.return_value = None  # Still running
+        # Process exits with error during probe
+        mock_process.poll.side_effect = [None, None, 2]  # running, running, then error
+        mock_process.stderr = Mock()
+        mock_process.stderr.read.return_value = b"connection lost"
         mock_popen.return_value = mock_process
-        # Session started but NOT authenticated (e.g., expired auth, login page)
+
         mock_probe.return_value = {
             "authenticated": False,
-            "url": "https://www.linkedin.com/login",
-            "error": None,
-        }
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            auth_file = Path(tmpdir) / "auth.json"
-            auth_file.write_text('{"cookies": []}')
-
-            result = ab.start_agent_browser_session(auth_file, "linkedin-test")
-
-        # MUST fail - session started but auth check failed
-        assert result["success"] is False
-        assert "not authenticated" in result["error"].lower()
-        assert "linkedin.com/login" in result["error"]
-
-    @patch("auth_bootstrap.probe_agent_browser_auth")
-    @patch("subprocess.Popen")
-    @patch("time.sleep")
-    def test_session_auth_probe_error(self, mock_sleep, mock_popen, mock_probe):
-        """Should fail if auth probe returns error."""
-        mock_process = Mock()
-        mock_process.poll.return_value = None
-        mock_popen.return_value = mock_process
-        mock_probe.return_value = {
-            "authenticated": False,
-            "url": None,
-            "error": "agent-browser not found",
-        }
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            auth_file = Path(tmpdir) / "auth.json"
-            auth_file.write_text('{"cookies": []}')
-
-            result = ab.start_agent_browser_session(auth_file, "linkedin-test")
-
-        assert result["success"] is False
-        assert "not authenticated" in result["error"].lower()
-
-    @patch("auth_bootstrap.probe_agent_browser_auth")
-    @patch("subprocess.Popen")
-    @patch("time.sleep")
-    def test_session_on_checkpoint_page(self, mock_sleep, mock_popen, mock_probe):
-        """Should reject session on checkpoint/challenge page (false-success prevention)."""
-        mock_process = Mock()
-        mock_process.poll.return_value = None
-        mock_popen.return_value = mock_process
-        mock_probe.return_value = {
-            "authenticated": False,
-            "url": "https://www.linkedin.com/checkpoint/challenge/AgGf...",
+            "url": "https://www.linkedin.com/talent/home",
             "error": None,
         }
 
@@ -613,7 +725,8 @@ class TestStartAgentBrowserSession:
             result = ab.start_agent_browser_session(auth_file, "linkedin-test")
 
         assert result["success"] is False
-        assert "not authenticated" in result["error"].lower()
+        assert "exited" in result["error"].lower()
+        assert "connection lost" in result["error"]
 
 
 class TestPollForAuthentication:
@@ -759,6 +872,367 @@ class TestEnsurePermissionProbe:
             assert probe_path.exists()
 
 
+class TestPortSelectionDuringBootstrap:
+    """Tests for port selection behavior during manual bootstrap."""
+
+    @patch("auth_bootstrap.is_interactive_session")
+    @patch("auth_bootstrap.find_system_chrome")
+    @patch("auth_bootstrap.check_cdp_available")
+    @patch("auth_bootstrap.is_port_in_use")
+    @patch("auth_bootstrap.launch_isolated_chrome")
+    @patch("auth_bootstrap._poll_for_authentication")
+    def test_preferred_port_available_gets_chosen(
+        self,
+        mock_poll,
+        mock_launch,
+        mock_is_port_in_use,
+        mock_check,
+        mock_find,
+        mock_interactive,
+    ):
+        """When preferred port is free, it should be used for Chrome launch."""
+        # Setup: preferred port (9230) is free (no process using it)
+        mock_is_port_in_use.side_effect = lambda port: port != 9230
+        mock_check.return_value = False  # No CDP on preferred port
+        mock_find.return_value = "/usr/bin/google-chrome"
+        mock_interactive.return_value = True
+
+        mock_process = Mock()
+        mock_process.poll.return_value = None
+        mock_launch.return_value = mock_process
+
+        mock_poll.return_value = {
+            "authenticated": True,
+            "url": "https://www.linkedin.com/talent/home",
+            "error": None,
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            work_dir = Path(tmpdir)
+
+            result = ab.bootstrap_auth_session(
+                work_dir, "9230", allow_browser_launch=True
+            )
+
+        # Should succeed with CDP mode
+        assert result["success"] is True
+        assert result["mode"] == "cdp"
+        assert result["cdp_port"] == "9230"
+        # launch_isolated_chrome should be called with preferred port 9230
+        mock_launch.assert_called_once()
+        call_args = mock_launch.call_args
+        assert call_args[0][1] == 9230  # Second positional arg is cdp_port
+
+    @patch("auth_bootstrap.is_interactive_session")
+    @patch("auth_bootstrap.find_system_chrome")
+    @patch("auth_bootstrap.check_cdp_available")
+    @patch("auth_bootstrap.is_port_in_use")
+    @patch("auth_bootstrap.launch_isolated_chrome")
+    @patch("auth_bootstrap._poll_for_authentication")
+    def test_preferred_port_unavailable_falls_back(
+        self,
+        mock_poll,
+        mock_launch,
+        mock_is_port_in_use,
+        mock_check,
+        mock_find,
+        mock_interactive,
+    ):
+        """When preferred port is occupied, should fallback to next available port."""
+
+        # Setup: preferred port (9230) IS occupied, but 19230 is free
+        def check_port(port):
+            return port == 9230  # Only 9230 is occupied
+
+        mock_is_port_in_use.side_effect = check_port
+        mock_check.return_value = False  # No CDP on any port
+        mock_find.return_value = "/usr/bin/google-chrome"
+        mock_interactive.return_value = True
+
+        mock_process = Mock()
+        mock_process.poll.return_value = None
+        mock_launch.return_value = mock_process
+
+        mock_poll.return_value = {
+            "authenticated": True,
+            "url": "https://www.linkedin.com/talent/home",
+            "error": None,
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            work_dir = Path(tmpdir)
+
+            result = ab.bootstrap_auth_session(
+                work_dir, "9230", allow_browser_launch=True
+            )
+
+        # Should succeed with CDP mode on fallback port
+        assert result["success"] is True
+        assert result["mode"] == "cdp"
+        assert result["cdp_port"] == "19230"
+        # launch_isolated_chrome should be called with fallback port 19230
+        mock_launch.assert_called_once()
+        call_args = mock_launch.call_args
+        assert call_args[0][1] == 19230  # Second positional arg is cdp_port
+
+    @patch("auth_bootstrap.is_interactive_session")
+    @patch("auth_bootstrap.find_system_chrome")
+    @patch("auth_bootstrap.check_cdp_available")
+    @patch("auth_bootstrap.is_port_in_use")
+    @patch("auth_bootstrap.launch_isolated_chrome")
+    @patch("auth_bootstrap._poll_for_authentication")
+    def test_preferred_port_occupied_by_non_cdp_falls_back(
+        self,
+        mock_poll,
+        mock_launch,
+        mock_is_port_in_use,
+        mock_check,
+        mock_find,
+        mock_interactive,
+    ):
+        """CRITICAL: Preferred port occupied by non-CDP process should fallback.
+
+        This tests the oracle issue: if preferred_cdp_port is taken by a non-CDP
+        process, check_cdp_available() returns False (no CDP response), but
+        is_port_in_use() returns True (port occupied). The code should fallback
+        instead of trying to launch Chrome on an occupied port.
+        """
+        # Setup: preferred port (9230) is occupied by non-CDP (e.g., another service)
+        # CDP check returns False (no CDP there), but port is in use
+        mock_is_port_in_use.side_effect = lambda port: (
+            port == 9230
+        )  # Only 9230 occupied
+        mock_check.return_value = (
+            False  # No CDP on preferred port (it's a non-CDP process)
+        )
+        mock_find.return_value = "/usr/bin/google-chrome"
+        mock_interactive.return_value = True
+
+        mock_process = Mock()
+        mock_process.poll.return_value = None
+        mock_launch.return_value = mock_process
+
+        mock_poll.return_value = {
+            "authenticated": True,
+            "url": "https://www.linkedin.com/talent/home",
+            "error": None,
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            work_dir = Path(tmpdir)
+
+            result = ab.bootstrap_auth_session(
+                work_dir, "9230", allow_browser_launch=True
+            )
+
+        # Should succeed using fallback port with CDP mode
+        assert result["success"] is True
+        assert result["mode"] == "cdp"
+        assert result["cdp_port"] == "19230"
+        # Should NOT try to use the occupied preferred port
+        mock_launch.assert_called_once()
+        call_args = mock_launch.call_args
+        assert call_args[0][1] == 19230  # Fallback port, not 9230
+
+    @patch("auth_bootstrap.is_interactive_session")
+    @patch("auth_bootstrap.find_system_chrome")
+    @patch("auth_bootstrap.check_cdp_available")
+    @patch("auth_bootstrap.is_port_in_use")
+    @patch("auth_bootstrap.launch_isolated_chrome")
+    @patch("auth_bootstrap._poll_for_authentication")
+    def test_fallback_search_skips_occupied_non_cdp_ports(
+        self,
+        mock_poll,
+        mock_launch,
+        mock_is_port_in_use,
+        mock_check,
+        mock_find,
+        mock_interactive,
+    ):
+        """Fallback search should skip ports occupied by any process, not just CDP."""
+        # Setup: preferred port and first few fallback ports occupied by non-CDP
+        occupied_ports = {9230, 19230, 19231, 19232}  # Non-CDP processes
+
+        def check_port(port):
+            return port in occupied_ports
+
+        mock_is_port_in_use.side_effect = check_port
+        mock_check.return_value = False  # No CDP on any port
+        mock_find.return_value = "/usr/bin/google-chrome"
+        mock_interactive.return_value = True
+
+        mock_process = Mock()
+        mock_process.poll.return_value = None
+        mock_launch.return_value = mock_process
+
+        mock_poll.return_value = {
+            "authenticated": True,
+            "url": "https://www.linkedin.com/talent/home",
+            "error": None,
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            work_dir = Path(tmpdir)
+
+            result = ab.bootstrap_auth_session(
+                work_dir, "9230", allow_browser_launch=True
+            )
+
+        # Should succeed using first free port (19233) with CDP mode
+        assert result["success"] is True
+        assert result["mode"] == "cdp"
+        assert result["cdp_port"] == "19233"
+        mock_launch.assert_called_once()
+        call_args = mock_launch.call_args
+        assert call_args[0][1] == 19233  # First free port after skipping occupied ones
+
+    @patch("auth_bootstrap.is_interactive_session")
+    @patch("auth_bootstrap.find_system_chrome")
+    @patch("auth_bootstrap.check_cdp_available")
+    @patch("auth_bootstrap.is_port_in_use")
+    @patch("auth_bootstrap.launch_isolated_chrome")
+    @patch("auth_bootstrap._poll_for_authentication")
+    def test_actual_chosen_port_used_for_polling_and_saved(
+        self,
+        mock_poll,
+        mock_launch,
+        mock_is_port_in_use,
+        mock_check,
+        mock_find,
+        mock_interactive,
+    ):
+        """The actual chosen port should be used for auth polling and saved."""
+        # Setup: preferred port is free
+        mock_is_port_in_use.side_effect = lambda port: port != 9230
+        mock_check.return_value = False  # No CDP on preferred port
+        mock_find.return_value = "/usr/bin/google-chrome"
+        mock_interactive.return_value = True
+
+        mock_process = Mock()
+        mock_process.poll.return_value = None
+        mock_launch.return_value = mock_process
+
+        mock_poll.return_value = {
+            "authenticated": True,
+            "url": "https://www.linkedin.com/talent/home",
+            "error": None,
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            work_dir = Path(tmpdir)
+
+            result = ab.bootstrap_auth_session(
+                work_dir, "9230", allow_browser_launch=True
+            )
+
+        # Should succeed with CDP mode
+        assert result["success"] is True
+        assert result["mode"] == "cdp"
+        assert result["cdp_port"] == "9230"
+
+        # _poll_for_authentication should be called with port 9230
+        mock_poll.assert_called_once()
+        poll_args = mock_poll.call_args
+        assert poll_args[0][0] == "9230"  # First positional arg is cdp_port
+
+    @patch("auth_bootstrap.is_interactive_session")
+    @patch("auth_bootstrap.find_system_chrome")
+    @patch("auth_bootstrap.check_cdp_available")
+    @patch("auth_bootstrap.is_port_in_use")
+    def test_no_available_ports_returns_error(
+        self, mock_is_port_in_use, mock_check, mock_find, mock_interactive
+    ):
+        """When no ports are available, should return error."""
+        # Setup: all ports occupied (preferred + fallback range)
+        mock_is_port_in_use.return_value = True  # All ports occupied
+        mock_check.return_value = False  # No CDP
+        mock_find.return_value = "/usr/bin/google-chrome"
+        mock_interactive.return_value = True
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            work_dir = Path(tmpdir)
+            result = ab.bootstrap_auth_session(
+                work_dir, "9230", allow_browser_launch=True
+            )
+
+        # Should fail with port error
+        assert result["success"] is False
+        assert "port" in result["error"].lower()
+
+
+class TestLoadSavedBrowserMode:
+    """Tests for loading saved browser mode."""
+
+    def test_load_saved_cdp_mode(self):
+        """Should load saved CDP mode with port."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            work_dir = Path(tmpdir)
+            runtime_dir = work_dir / "runtime"
+            runtime_dir.mkdir(parents=True)
+            mode_file = runtime_dir / "browser_mode.json"
+            mode_file.write_text(
+                json.dumps(
+                    {
+                        "mode": "cdp",
+                        "cdp_port": "19230",
+                        "session_name": None,
+                        "auth_file": None,
+                        "headed": True,
+                        "updated_at": "2024-01-01T00:00:00Z",
+                    }
+                )
+            )
+
+            result = ab._load_saved_browser_mode(work_dir)
+
+            assert result is not None
+            assert result["mode"] == "cdp"
+            assert result["cdp_port"] == "19230"
+
+    def test_load_no_file_returns_none(self):
+        """Should return None when no browser mode file exists."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            work_dir = Path(tmpdir)
+
+            result = ab._load_saved_browser_mode(work_dir)
+
+            assert result is None
+
+    def test_load_invalid_json_returns_none(self):
+        """Should return None when file contains invalid JSON."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            work_dir = Path(tmpdir)
+            runtime_dir = work_dir / "runtime"
+            runtime_dir.mkdir(parents=True)
+            mode_file = runtime_dir / "browser_mode.json"
+            mode_file.write_text("not valid json")
+
+            result = ab._load_saved_browser_mode(work_dir)
+
+            assert result is None
+
+    def test_load_non_cdp_mode_returns_none(self):
+        """Should return None when mode is not CDP."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            work_dir = Path(tmpdir)
+            runtime_dir = work_dir / "runtime"
+            runtime_dir.mkdir(parents=True)
+            mode_file = runtime_dir / "browser_mode.json"
+            mode_file.write_text(
+                json.dumps(
+                    {
+                        "mode": "agent-browser",
+                        "cdp_port": None,
+                        "session_name": "test-session",
+                    }
+                )
+            )
+
+            result = ab._load_saved_browser_mode(work_dir)
+
+            assert result is None
+
+
 class TestBootstrapAuthSession:
     """Tests for auth bootstrap flow."""
 
@@ -781,6 +1255,7 @@ class TestBootstrapAuthSession:
         assert result["success"] is True
         assert result["mode"] == "cdp"
         assert result["cdp_port"] == "9230"
+        assert result["headed"] is True
         assert "existing authenticated browser" in result["message"]
 
     @patch("auth_bootstrap.check_cdp_available")
@@ -945,38 +1420,17 @@ class TestBootstrapAuthSession:
 
     @patch("auth_bootstrap.is_interactive_session")
     @patch("auth_bootstrap.check_cdp_available")
-    @patch("auth_bootstrap.start_agent_browser_session")
-    def test_recent_auth_file_no_opt_in_fails_closed(
-        self, mock_start_session, mock_check, mock_interactive
-    ):
-        """CRITICAL: Recent auth file without explicit opt-in must NOT launch browser.
+    def test_no_cdp_no_opt_in_fails_closed(self, mock_check, mock_interactive):
+        """CRITICAL: No CDP available without explicit opt-in must NOT launch browser.
 
-        This tests the oracle issue: saved auth session launch must be gated
+        This tests the oracle issue: browser launch must be gated
         by allow_browser_launch parameter, not just tty check.
         """
         mock_check.return_value = False
         mock_interactive.return_value = True  # Even with tty
-        mock_start_session.return_value = {
-            "success": True,
-            "session_name": "linkedin-test",
-            "message": "Session started",
-        }
 
         with tempfile.TemporaryDirectory() as tmpdir:
             work_dir = Path(tmpdir)
-            auth_dir = work_dir / "runtime" / "auth"
-            auth_dir.mkdir(parents=True)
-            auth_file = auth_dir / "linkedin-auth.json"
-
-            # Create recent auth file (use current time)
-            from datetime import datetime, timezone
-
-            now = datetime.now(timezone.utc)
-            auth_data = {
-                "exported_at": now.isoformat().replace("+00:00", "Z"),
-                "cookies": [],
-            }
-            auth_file.write_text(json.dumps(auth_data))
 
             # No allow_browser_launch - should fail closed
             result = ab.bootstrap_auth_session(work_dir, "9230")
@@ -987,42 +1441,19 @@ class TestBootstrapAuthSession:
             "explicit opt-in" in result["error"].lower()
             or "not allowed" in result["error"].lower()
         )
-        # start_agent_browser_session should NOT have been called
-        mock_start_session.assert_not_called()
 
     @patch("auth_bootstrap.is_interactive_session")
     @patch("auth_bootstrap.check_cdp_available")
-    @patch("auth_bootstrap.start_agent_browser_session")
-    def test_recent_auth_file_non_interactive_fails_closed(
-        self, mock_start_session, mock_check, mock_interactive
-    ):
-        """CRITICAL: Recent auth file in non-interactive mode must NOT launch browser.
+    def test_no_cdp_non_interactive_fails_closed(self, mock_check, mock_interactive):
+        """CRITICAL: No CDP in non-interactive mode must NOT launch browser.
 
         Even with allow_browser_launch=True, non-interactive session should fail.
         """
         mock_check.return_value = False
         mock_interactive.return_value = False  # Non-interactive
-        mock_start_session.return_value = {
-            "success": True,
-            "session_name": "linkedin-test",
-            "message": "Session started",
-        }
 
         with tempfile.TemporaryDirectory() as tmpdir:
             work_dir = Path(tmpdir)
-            auth_dir = work_dir / "runtime" / "auth"
-            auth_dir.mkdir(parents=True)
-            auth_file = auth_dir / "linkedin-auth.json"
-
-            # Create recent auth file
-            from datetime import datetime, timezone
-
-            now = datetime.now(timezone.utc)
-            auth_data = {
-                "exported_at": now.isoformat().replace("+00:00", "Z"),
-                "cookies": [],
-            }
-            auth_file.write_text(json.dumps(auth_data))
 
             # Has opt-in but non-interactive - should still fail
             result = ab.bootstrap_auth_session(
@@ -1032,39 +1463,208 @@ class TestBootstrapAuthSession:
         # Must fail closed - no browser launch in non-interactive mode
         assert result["success"] is False
         assert "interactive" in result["error"].lower()
-        # start_agent_browser_session should NOT have been called
-        mock_start_session.assert_not_called()
+
+    @patch("auth_bootstrap.check_cdp_available")
+    @patch("auth_bootstrap.probe_recruiter_auth")
+    def test_saved_fallback_cdp_port_is_reused(self, mock_probe, mock_check):
+        """CRITICAL: Saved fallback CDP port should be reused on later runs.
+
+        If bootstrap previously launched Chrome on a non-preferred port (e.g., 19230
+        because 9230 was occupied), subsequent runs should find and reuse that port.
+        """
+
+        # Preferred port (9230) has no CDP, but saved port (19230) is authenticated
+        def check_cdp_side_effect(port):
+            return port == "19230"  # Only saved port has CDP
+
+        mock_check.side_effect = check_cdp_side_effect
+
+        def probe_auth_side_effect(port):
+            if port == "19230":
+                return {
+                    "authenticated": True,
+                    "url": "https://www.linkedin.com/talent/home",
+                    "error": None,
+                }
+            return {
+                "authenticated": False,
+                "url": None,
+                "error": "CDP not available",
+            }
+
+        mock_probe.side_effect = probe_auth_side_effect
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            work_dir = Path(tmpdir)
+            runtime_dir = work_dir / "runtime"
+            runtime_dir.mkdir(parents=True)
+            mode_file = runtime_dir / "browser_mode.json"
+            # Simulate previously saved fallback port
+            mode_file.write_text(
+                json.dumps(
+                    {
+                        "mode": "cdp",
+                        "cdp_port": "19230",
+                        "session_name": None,
+                        "auth_file": None,
+                        "headed": True,
+                        "updated_at": "2024-01-01T00:00:00Z",
+                    }
+                )
+            )
+
+            result = ab.bootstrap_auth_session(work_dir, "9230")
+
+        # Should succeed using the saved fallback port
+        assert result["success"] is True
+        assert result["mode"] == "cdp"
+        assert result["cdp_port"] == "19230"
+        assert "saved port" in result["message"].lower()
+
+    @patch("auth_bootstrap.check_cdp_available")
+    @patch("auth_bootstrap.probe_recruiter_auth")
+    def test_stale_saved_cdp_port_falls_back_to_preferred(self, mock_probe, mock_check):
+        """CRITICAL: Stale saved CDP port should fall back to preferred port.
+
+        If the saved port is no longer reachable or not authenticated,
+        should fall back to checking the preferred port.
+        """
+
+        # Saved port (19230) is stale/not available, but preferred (9230) is authenticated
+        def check_cdp_side_effect(port):
+            return port == "9230"  # Only preferred port has CDP
+
+        mock_check.side_effect = check_cdp_side_effect
+
+        def probe_auth_side_effect(port):
+            if port == "9230":
+                return {
+                    "authenticated": True,
+                    "url": "https://www.linkedin.com/talent/home",
+                    "error": None,
+                }
+            return {
+                "authenticated": False,
+                "url": None,
+                "error": "CDP not available",
+            }
+
+        mock_probe.side_effect = probe_auth_side_effect
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            work_dir = Path(tmpdir)
+            runtime_dir = work_dir / "runtime"
+            runtime_dir.mkdir(parents=True)
+            mode_file = runtime_dir / "browser_mode.json"
+            # Simulate stale saved port (Chrome was closed)
+            mode_file.write_text(
+                json.dumps(
+                    {
+                        "mode": "cdp",
+                        "cdp_port": "19230",
+                        "session_name": None,
+                        "auth_file": None,
+                        "headed": True,
+                        "updated_at": "2024-01-01T00:00:00Z",
+                    }
+                )
+            )
+
+            result = ab.bootstrap_auth_session(work_dir, "9230")
+
+        # Should succeed using the preferred port (saved port was stale)
+        assert result["success"] is True
+        assert result["mode"] == "cdp"
+        assert result["cdp_port"] == "9230"
+
+    @patch("auth_bootstrap.check_cdp_available")
+    @patch("auth_bootstrap.probe_recruiter_auth")
+    def test_saved_cdp_port_not_authenticated_falls_back(self, mock_probe, mock_check):
+        """Saved CDP port that is reachable but not authenticated should fall back.
+
+        If saved port has CDP but user logged out, should check preferred port.
+        """
+
+        # Both saved and preferred ports have CDP, but only preferred is authenticated
+        def check_cdp_side_effect(port):
+            return port in ("19230", "9230")  # Both have CDP
+
+        mock_check.side_effect = check_cdp_side_effect
+
+        def probe_auth_side_effect(port):
+            if port == "9230":
+                return {
+                    "authenticated": True,
+                    "url": "https://www.linkedin.com/talent/home",
+                    "error": None,
+                }
+            # Saved port is not authenticated
+            return {
+                "authenticated": False,
+                "url": "https://www.linkedin.com/login",
+                "error": None,
+            }
+
+        mock_probe.side_effect = probe_auth_side_effect
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            work_dir = Path(tmpdir)
+            runtime_dir = work_dir / "runtime"
+            runtime_dir.mkdir(parents=True)
+            mode_file = runtime_dir / "browser_mode.json"
+            mode_file.write_text(
+                json.dumps(
+                    {
+                        "mode": "cdp",
+                        "cdp_port": "19230",
+                        "session_name": None,
+                        "auth_file": None,
+                        "headed": True,
+                        "updated_at": "2024-01-01T00:00:00Z",
+                    }
+                )
+            )
+
+            result = ab.bootstrap_auth_session(work_dir, "9230")
+
+        # Should succeed using the preferred port (saved port not authenticated)
+        assert result["success"] is True
+        assert result["mode"] == "cdp"
+        assert result["cdp_port"] == "9230"
 
     @patch("auth_bootstrap.is_interactive_session")
+    @patch("auth_bootstrap.find_system_chrome")
     @patch("auth_bootstrap.check_cdp_available")
-    @patch("auth_bootstrap.start_agent_browser_session")
-    def test_use_recent_auth_file_with_opt_in(
-        self, mock_start_session, mock_check, mock_interactive
+    @patch("auth_bootstrap.is_port_in_use")
+    @patch("auth_bootstrap.launch_isolated_chrome")
+    @patch("auth_bootstrap._poll_for_authentication")
+    def test_bootstrap_with_opt_in_starts_chrome(
+        self,
+        mock_poll,
+        mock_launch,
+        mock_is_port_in_use,
+        mock_check,
+        mock_find,
+        mock_interactive,
     ):
-        """Should use existing auth file if recent with explicit opt-in AND interactive."""
-        mock_check.return_value = False
+        """Should launch Chrome and return CDP mode with explicit opt-in AND interactive."""
+        mock_check.return_value = False  # No existing CDP
         mock_interactive.return_value = True  # Interactive session
-        mock_start_session.return_value = {
-            "success": True,
-            "session_name": "linkedin-test",
-            "message": "Session started",
+        mock_is_port_in_use.return_value = False  # Port is free
+        mock_find.return_value = "/usr/bin/google-chrome"
+
+        mock_process = Mock()
+        mock_process.poll.return_value = None
+        mock_launch.return_value = mock_process
+
+        mock_poll.return_value = {
+            "authenticated": True,
+            "url": "https://www.linkedin.com/talent/home",
+            "error": None,
         }
 
         with tempfile.TemporaryDirectory() as tmpdir:
             work_dir = Path(tmpdir)
-            auth_dir = work_dir / "runtime" / "auth"
-            auth_dir.mkdir(parents=True)
-            auth_file = auth_dir / "linkedin-auth.json"
-
-            # Create recent auth file (use current time)
-            from datetime import datetime, timezone
-
-            now = datetime.now(timezone.utc)
-            auth_data = {
-                "exported_at": now.isoformat().replace("+00:00", "Z"),
-                "cookies": [],
-            }
-            auth_file.write_text(json.dumps(auth_data))
 
             # Explicit opt-in AND interactive
             result = ab.bootstrap_auth_session(
@@ -1072,14 +1672,11 @@ class TestBootstrapAuthSession:
             )
 
         assert result["success"] is True
-        assert result["mode"] == "agent-browser"
-        # Session name is generated dynamically, just verify it starts with "linkedin-"
-        assert result["session_name"].startswith("linkedin-")
-        assert result["auth_file"] == str(auth_file)
-        # Verify start_agent_browser_session was called with headed=True
-        mock_start_session.assert_called_once()
-        call_args = mock_start_session.call_args
-        assert call_args[1].get("headed") is True or len(call_args[0]) >= 3
+        assert result["mode"] == "cdp"
+        assert result["headed"] is True
+        assert result["cdp_port"] == "9230"
+        # Verify launch_isolated_chrome was called
+        mock_launch.assert_called_once()
 
 
 class TestCliBootstrapOutput:
@@ -1134,12 +1731,21 @@ class TestCliBootstrapOutput:
     @patch("auth_bootstrap.is_interactive_session")
     @patch("auth_bootstrap.find_system_chrome")
     @patch("auth_bootstrap.check_cdp_available")
+    @patch("auth_bootstrap.is_port_in_use")
     @patch("auth_bootstrap.launch_isolated_chrome")
     @patch("auth_bootstrap._poll_for_authentication")
     def test_bootstrap_prompts_go_to_stderr(
-        self, mock_poll, mock_launch, mock_check, mock_find, mock_interactive, capsys
+        self,
+        mock_poll,
+        mock_launch,
+        mock_is_port_in_use,
+        mock_check,
+        mock_find,
+        mock_interactive,
+        capsys,
     ):
         """Human prompts during bootstrap must go to stderr, not stdout."""
+        mock_is_port_in_use.return_value = False  # Port is free
         mock_check.return_value = False  # No existing CDP
         mock_find.return_value = "/usr/bin/google-chrome"
         mock_interactive.return_value = True  # Simulate interactive session
@@ -1158,17 +1764,9 @@ class TestCliBootstrapOutput:
         with tempfile.TemporaryDirectory() as tmpdir:
             work_dir = Path(tmpdir)
 
-            with patch("auth_bootstrap.export_auth_state") as mock_export:
-                mock_export.return_value = {"success": True, "error": None}
-                with patch("auth_bootstrap.start_agent_browser_session") as mock_start:
-                    mock_start.return_value = {
-                        "success": True,
-                        "session_name": "linkedin-test",
-                        "message": "Session started",
-                    }
-                    result = ab.bootstrap_auth_session(
-                        work_dir, "9230", allow_browser_launch=True
-                    )
+            result = ab.bootstrap_auth_session(
+                work_dir, "9230", allow_browser_launch=True
+            )
 
         captured = capsys.readouterr()
 
@@ -1178,18 +1776,27 @@ class TestCliBootstrapOutput:
         assert "Log in to LinkedIn Recruiter" in captured.err
         # Should NOT ask for Enter press (automatic polling)
         assert "Press Enter" not in captured.err
-        # Should indicate automatic saving
-        assert "automatically" in captured.err.lower()
+        # Should indicate Chrome will be reused
+        assert "reused" in captured.err.lower() or "remain" in captured.err.lower()
 
     @patch("auth_bootstrap.is_interactive_session")
     @patch("auth_bootstrap.find_system_chrome")
     @patch("auth_bootstrap.check_cdp_available")
+    @patch("auth_bootstrap.is_port_in_use")
     @patch("auth_bootstrap.launch_isolated_chrome")
     @patch("auth_bootstrap._poll_for_authentication")
     def test_bootstrap_prompts_user_to_login_not_launch_chrome(
-        self, mock_poll, mock_launch, mock_check, mock_find, mock_interactive, capsys
+        self,
+        mock_poll,
+        mock_launch,
+        mock_is_port_in_use,
+        mock_check,
+        mock_find,
+        mock_interactive,
+        capsys,
     ):
         """User should be prompted to log in, not to launch Chrome manually."""
+        mock_is_port_in_use.return_value = False  # Port is free
         mock_check.return_value = False  # No existing CDP
         mock_find.return_value = "/usr/bin/google-chrome"
         mock_interactive.return_value = True  # Simulate interactive session
@@ -1208,17 +1815,9 @@ class TestCliBootstrapOutput:
         with tempfile.TemporaryDirectory() as tmpdir:
             work_dir = Path(tmpdir)
 
-            with patch("auth_bootstrap.export_auth_state") as mock_export:
-                mock_export.return_value = {"success": True, "error": None}
-                with patch("auth_bootstrap.start_agent_browser_session") as mock_start:
-                    mock_start.return_value = {
-                        "success": True,
-                        "session_name": "linkedin-test",
-                        "message": "Session started",
-                    }
-                    result = ab.bootstrap_auth_session(
-                        work_dir, "9230", allow_browser_launch=True
-                    )
+            result = ab.bootstrap_auth_session(
+                work_dir, "9230", allow_browser_launch=True
+            )
 
         captured = capsys.readouterr()
 
@@ -1235,6 +1834,8 @@ class TestCliBootstrapOutput:
         assert "remote-debugging-port" not in captured.err
         # Should NOT ask for Enter press (automatic polling)
         assert "Press Enter" not in captured.err
+        # Should indicate Chrome will be reused
+        assert "reused" in captured.err.lower() or "remain" in captured.err.lower()
 
 
 if __name__ == "__main__":

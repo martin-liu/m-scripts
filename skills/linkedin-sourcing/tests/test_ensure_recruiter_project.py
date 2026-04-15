@@ -867,6 +867,64 @@ class TestJavaScriptTemplates:
 
         assert project_name in js
 
+    def test_fill_create_form_js_has_id_based_selectors(self):
+        """FILL_CREATE_FORM_JS should include id-based selectors for live page compatibility."""
+        js = erp.FILL_CREATE_FORM_JS
+
+        # Should include id-based selectors for project name (observed: #ember1131-projectName)
+        assert 'input[id$="-projectName"]' in js, (
+            "JS must include id$= selector for project name fields like #ember1131-projectName"
+        )
+        assert 'input[id*="projectName"]' in js, (
+            "JS must include id*= selector for project name fields"
+        )
+
+        # Should include id-based selectors for description (observed: #ember1131-projectDescription)
+        assert 'textarea[id$="-projectDescription"]' in js, (
+            "JS must include id$= selector for description fields like #ember1131-projectDescription"
+        )
+        assert 'textarea[id*="projectDescription"]' in js, (
+            "JS must include id*= selector for description fields"
+        )
+
+    def test_fill_create_form_js_id_selectors_before_fallback(self):
+        """Id-based selectors should be checked before broader fallback selectors."""
+        js = erp.FILL_CREATE_FORM_JS
+
+        # Id-based selectors should appear before broader selectors in the querySelector list
+        name_id_idx = js.find('input[id$="-projectName"]')
+        name_fallback_idx = js.find('input[name*="name"]')
+        assert name_id_idx < name_fallback_idx, (
+            "Id-based selector for name must come before fallback name selector"
+        )
+
+        desc_id_idx = js.find('textarea[id$="-projectDescription"]')
+        desc_fallback_idx = js.find('textarea[name*="description"]')
+        assert desc_id_idx < desc_fallback_idx, (
+            "Id-based selector for description must come before fallback description selector"
+        )
+
+    def test_fill_create_form_js_formats_correctly(self):
+        """FILL_CREATE_FORM_JS should format correctly with project name and description."""
+        project_name = "Test Project"
+        description = "Test Description"
+        js = erp.FILL_CREATE_FORM_JS.format(
+            project_name=project_name, description=description
+        )
+
+        # After formatting, should have valid JS with single braces
+        assert "{{" not in js, "Formatted JS should not contain {{"
+        assert "}}" not in js, "Formatted JS should not contain }}"
+
+        # Should contain the formatted values
+        assert project_name in js
+        assert description in js
+
+        # Should have valid JS structure
+        assert "document.querySelector" in js
+        assert "nameFilled" in js
+        assert "descFilled" in js
+
 
 class TestNavigateToSearchPage:
     """Tests for navigate_to_search_page function."""

@@ -874,7 +874,7 @@ class TestEnsureRecruiterProjectAndGetId:
         result = bp.ensure_recruiter_project_and_get_id(
             project_name="Test Project",
             description="Test description",
-            cdp_port="9230",
+            browser_mode="9230",  # Can pass string CDP port for backward compatibility
             work_dir=tmp_path,
         )
 
@@ -895,7 +895,7 @@ class TestEnsureRecruiterProjectAndGetId:
         result = bp.ensure_recruiter_project_and_get_id(
             project_name="Test Project",
             description="Test description",
-            cdp_port="9230",
+            browser_mode="9230",  # Can pass string CDP port for backward compatibility
             work_dir=tmp_path,
         )
 
@@ -916,12 +916,44 @@ class TestEnsureRecruiterProjectAndGetId:
         bp.ensure_recruiter_project_and_get_id(
             project_name="Test",
             description="",
-            cdp_port="9230",
+            browser_mode="9230",  # Can pass string CDP port for backward compatibility
             work_dir=tmp_path,
         )
 
         call_kwargs = mock_ensure.call_args[1]
         assert call_kwargs["require_contextual_url"] is False
+
+    @patch("ensure_recruiter_project.ensure_project_exists")
+    def test_accepts_browser_mode_instance(self, mock_ensure, tmp_path):
+        """Should accept BrowserMode instance for agent-browser mode."""
+        mock_ensure.return_value = {
+            "status": "created",
+            "project_id": "67890",
+            "url": "https://linkedin.com/talent/hire/67890/overview",
+            "message": "Created new project",
+        }
+
+        # Import BrowserMode for the test
+        from browser_utils import BrowserMode
+
+        browser_mode = BrowserMode(
+            mode="agent-browser",
+            session_name="test-session",
+            auth_file="/path/to/auth.json",
+        )
+
+        result = bp.ensure_recruiter_project_and_get_id(
+            project_name="Test Project",
+            description="Test description",
+            browser_mode=browser_mode,  # Pass BrowserMode instance
+            work_dir=tmp_path,
+        )
+
+        assert result["success"] is True
+        assert result["project_id"] == "67890"
+        # Verify the BrowserMode was passed through to ensure_project_exists
+        call_args = mock_ensure.call_args[1]
+        assert call_args["browser_mode"] is browser_mode
 
 
 class TestBootstrapProject:
@@ -2135,6 +2167,383 @@ class TestFindProjectByProjectId:
         """Should return None when projects directory doesn't exist."""
         result = bp.find_project_by_project_id(tmp_path, "12345")
         assert result is None
+
+
+class TestEnsureBrowserAuth:
+    """Tests for ensure_browser_auth function."""
+
+    @patch("bootstrap_project.auth_bootstrap.bootstrap_auth_session")
+    def test_returns_success_when_auth_succeeds(self, mock_bootstrap, tmp_path):
+        """Should return success when bootstrap_auth_session succeeds."""
+        mock_bootstrap.return_value = {
+            "success": True,
+            "mode": "cdp",
+            "cdp_port": "9230",
+            "message": "Using existing authenticated browser",
+        }
+
+        result = bp.ensure_browser_auth(tmp_path, "9230")
+
+        assert result["success"] is True
+        assert result["error"] is None
+        mock_bootstrap.assert_called_once_with(
+            work_dir=tmp_path,
+            preferred_cdp_port="9230",
+            allow_browser_launch=True,
+        )
+
+    @patch("bootstrap_project.auth_bootstrap.bootstrap_auth_session")
+    def test_returns_failure_when_auth_fails(self, mock_bootstrap, tmp_path):
+        """Should return failure when bootstrap_auth_session fails."""
+        mock_bootstrap.return_value = {
+            "success": False,
+            "error": "Browser launch not allowed without explicit opt-in",
+            "message": "Cannot launch Chrome for manual login",
+        }
+
+        result = bp.ensure_browser_auth(tmp_path, "9230")
+
+        assert result["success"] is False
+        assert "Browser launch not allowed" in result["error"]
+
+    @patch("bootstrap_project.auth_bootstrap.bootstrap_auth_session")
+    def test_preserves_headed_from_bootstrap_result_cdp(self, mock_bootstrap, tmp_path):
+        """Should preserve headed from bootstrap result for CDP mode."""
+        mock_bootstrap.return_value = {
+            "success": True,
+            "mode": "cdp",
+            "cdp_port": "9230",
+            "headed": True,
+            "message": "Using existing authenticated browser",
+        }
+
+        result = bp.ensure_browser_auth(tmp_path, "9230")
+
+        assert result["success"] is True
+        assert result["mode"].mode == "cdp"
+        assert result["mode"].headed is True
+
+    @patch("bootstrap_project.auth_bootstrap.bootstrap_auth_session")
+    def test_preserves_headed_from_bootstrap_result_agent_browser(
+        self, mock_bootstrap, tmp_path
+    ):
+        """Should preserve headed from bootstrap result for agent-browser mode."""
+        mock_bootstrap.return_value = {
+            "success": True,
+            "mode": "agent-browser",
+            "session_name": "test-session",
+            "auth_file": "/path/to/auth.json",
+            "headed": True,
+            "message": "Session started",
+        }
+
+        result = bp.ensure_browser_auth(tmp_path, "9230")
+
+        assert result["success"] is True
+        assert result["mode"].mode == "agent-browser"
+        assert result["mode"].session_name == "test-session"
+        assert result["mode"].headed is True
+
+    @patch("bootstrap_project.auth_bootstrap.bootstrap_auth_session")
+    def test_defaults_to_headed_true_when_not_in_result(self, mock_bootstrap, tmp_path):
+        """Should default to headed=True when not present in bootstrap result."""
+        mock_bootstrap.return_value = {
+            "success": True,
+            "mode": "cdp",
+            "cdp_port": "9230",
+            # headed not included - should default to True
+            "message": "Using existing authenticated browser",
+        }
+
+        result = bp.ensure_browser_auth(tmp_path, "9230")
+
+        assert result["success"] is True
+        assert result["mode"].headed is True
+
+
+class TestBootstrapProjectBrowserAuth:
+    """Tests for bootstrap_project browser authentication integration."""
+
+    @patch("bootstrap_project.ensure_browser_auth")
+    @patch("bootstrap_project.ensure_recruiter_project_and_get_id")
+    def test_triggers_browser_bootstrap_when_no_recruiter_url(
+        self, mock_ensure_project, mock_ensure_browser, tmp_path, monkeypatch
+    ):
+        """Should trigger browser bootstrap before ensure_recruiter_project when no URL provided."""
+        monkeypatch.setattr(bp.Path, "home", lambda: tmp_path)
+
+        # Browser auth succeeds
+        mock_ensure_browser.return_value = {"success": True, "error": None}
+        # Project creation succeeds
+        mock_ensure_project.return_value = {
+            "success": True,
+            "project_id": "67890",
+            "url": "https://linkedin.com/talent/hire/67890/overview",
+            "status": "created",
+            "message": "Created new project",
+        }
+
+        args = Mock()
+        args.jd_url = None
+        args.jd_text = "JD content"
+        args.work_dir = str(tmp_path / "work")
+        args.recruiter_url = None  # No URL provided - should trigger browser bootstrap
+        args.cdp_port = "9230"
+        args.project_id = None
+        args.position_title = "ML Engineer"
+        args.team_name = None
+        args.location = None
+        args.core_function = None
+        args.business_impact = None
+        args.keywords = None
+        args.companies = None
+        args.exclude_titles = None
+
+        result = bp.bootstrap_project(args)
+
+        # Should call browser auth first
+        mock_ensure_browser.assert_called_once_with(tmp_path / "work", "9230")
+        # Then call ensure_recruiter_project
+        mock_ensure_project.assert_called_once()
+        # Project should be created successfully
+        assert result["project_id"] == "67890"
+
+    @patch("bootstrap_project.ensure_browser_auth")
+    @patch("bootstrap_project.ensure_recruiter_project_and_get_id")
+    def test_skips_browser_bootstrap_when_recruiter_url_provided(
+        self, mock_ensure_project, mock_ensure_browser, tmp_path, monkeypatch
+    ):
+        """Should NOT trigger browser bootstrap when --recruiter-url is provided."""
+        monkeypatch.setattr(bp.Path, "home", lambda: tmp_path)
+
+        args = Mock()
+        args.jd_url = None
+        args.jd_text = "JD content"
+        args.work_dir = str(tmp_path / "work")
+        args.recruiter_url = (
+            "https://linkedin.com/talent/hire/12345/discover/recruiterSearch"
+        )
+        args.cdp_port = "9230"
+        args.project_id = None
+        args.position_title = "Engineer"
+        args.team_name = None
+        args.location = None
+        args.core_function = None
+        args.business_impact = None
+        args.keywords = None
+        args.companies = None
+        args.exclude_titles = None
+
+        result = bp.bootstrap_project(args)
+
+        # Should NOT call browser auth when recruiter_url is provided
+        mock_ensure_browser.assert_not_called()
+        # Should NOT call ensure_recruiter_project
+        mock_ensure_project.assert_not_called()
+        # Project ID should be derived from recruiter_url
+        assert result["project_id"] == "12345"
+
+    @patch("bootstrap_project.ensure_browser_auth")
+    @patch("bootstrap_project.ensure_recruiter_project_and_get_id")
+    def test_skips_browser_bootstrap_when_project_id_override_provided(
+        self, mock_ensure_project, mock_ensure_browser, tmp_path, monkeypatch
+    ):
+        """Should NOT trigger browser bootstrap when --project-id override is provided."""
+        monkeypatch.setattr(bp.Path, "home", lambda: tmp_path)
+
+        args = Mock()
+        args.jd_url = None
+        args.jd_text = "JD content"
+        args.work_dir = str(tmp_path / "work")
+        args.recruiter_url = None
+        args.cdp_port = "9230"
+        args.project_id = "custom_override_id"  # Explicit override
+        args.position_title = "Engineer"
+        args.team_name = None
+        args.location = None
+        args.core_function = None
+        args.business_impact = None
+        args.keywords = None
+        args.companies = None
+        args.exclude_titles = None
+
+        result = bp.bootstrap_project(args)
+
+        # Should NOT call browser auth when project_id override is provided
+        mock_ensure_browser.assert_not_called()
+        # Should NOT call ensure_recruiter_project
+        mock_ensure_project.assert_not_called()
+        # Project ID should use the override
+        assert result["project_id"] == "custom_override_id"
+
+    @patch("bootstrap_project.ensure_browser_auth")
+    def test_raises_clear_error_when_browser_auth_fails(
+        self, mock_ensure_browser, tmp_path, monkeypatch
+    ):
+        """Should raise RuntimeError with clear message when browser auth fails."""
+        monkeypatch.setattr(bp.Path, "home", lambda: tmp_path)
+
+        # Browser auth fails
+        mock_ensure_browser.return_value = {
+            "success": False,
+            "error": "Browser launch not allowed without explicit opt-in",
+        }
+
+        args = Mock()
+        args.jd_url = None
+        args.jd_text = "JD content"
+        args.work_dir = str(tmp_path / "work")
+        args.recruiter_url = None  # No URL - needs browser
+        args.cdp_port = "9230"
+        args.project_id = None
+        args.position_title = "Engineer"
+        args.team_name = None
+        args.location = None
+        args.core_function = None
+        args.business_impact = None
+        args.keywords = None
+        args.companies = None
+        args.exclude_titles = None
+
+        try:
+            bp.bootstrap_project(args)
+            assert False, "Should have raised RuntimeError"
+        except RuntimeError as e:
+            assert "Browser authentication required but failed" in str(e)
+            assert "Browser launch not allowed" in str(e)
+            assert "--recruiter-url" in str(e)
+
+
+class TestBootstrapProjectFreshAuthBootstrap:
+    """Tests for fresh auth bootstrap success path with agent-browser mode."""
+
+    @patch("bootstrap_project.ensure_recruiter_project_and_get_id")
+    @patch("bootstrap_project.ensure_browser_auth")
+    def test_fresh_bootstrap_with_agent_browser_mode(
+        self, mock_ensure_browser, mock_ensure_project, tmp_path, monkeypatch
+    ):
+        """Should pass BrowserMode to project creation after fresh auth bootstrap.
+
+        This tests the success path where:
+        1. No existing browser is available
+        2. Auth bootstrap succeeds and returns agent-browser mode
+        3. Project creation proceeds using the agent-browser mode
+        """
+        monkeypatch.setattr(bp.Path, "home", lambda: tmp_path)
+
+        from browser_utils import BrowserMode
+
+        # Simulate fresh auth bootstrap returning agent-browser mode
+        browser_mode = BrowserMode(
+            mode="agent-browser",
+            session_name="linkedin-1234567890",
+            auth_file="/path/to/auth.json",
+            headed=True,
+        )
+        mock_ensure_browser.return_value = {
+            "success": True,
+            "mode": browser_mode,
+            "error": None,
+        }
+
+        mock_ensure_project.return_value = {
+            "success": True,
+            "project_id": "54321",
+            "url": "https://linkedin.com/talent/hire/54321/overview",
+            "status": "created",
+            "message": "Created new project",
+        }
+
+        args = Mock()
+        args.jd_url = None
+        args.jd_text = "JD content"
+        args.work_dir = str(tmp_path / "work")
+        args.recruiter_url = None  # No URL - triggers browser bootstrap
+        args.cdp_port = "9230"
+        args.project_id = None
+        args.position_title = "Senior ML Engineer"
+        args.team_name = None
+        args.location = None
+        args.core_function = None
+        args.business_impact = None
+        args.keywords = None
+        args.companies = None
+        args.exclude_titles = None
+
+        result = bp.bootstrap_project(args)
+
+        # Should succeed with project created via agent-browser mode
+        assert result["project_id"] == "54321"
+
+        # Verify browser auth was called
+        mock_ensure_browser.assert_called_once()
+
+        # Verify project creation was called with BrowserMode (not just cdp_port string)
+        mock_ensure_project.assert_called_once()
+        call_kwargs = mock_ensure_project.call_args[1]
+        passed_mode = call_kwargs["browser_mode"]
+
+        # The mode should be the BrowserMode instance returned from auth
+        assert passed_mode is browser_mode
+        assert passed_mode.mode == "agent-browser"
+        assert passed_mode.session_name == "linkedin-1234567890"
+
+    @patch("bootstrap_project.ensure_recruiter_project_and_get_id")
+    @patch("bootstrap_project.ensure_browser_auth")
+    def test_fresh_bootstrap_with_cdp_mode(
+        self, mock_ensure_browser, mock_ensure_project, tmp_path, monkeypatch
+    ):
+        """Should pass BrowserMode (CDP) to project creation when CDP mode returned."""
+        monkeypatch.setattr(bp.Path, "home", lambda: tmp_path)
+
+        from browser_utils import BrowserMode
+
+        # Simulate auth bootstrap returning CDP mode
+        browser_mode = BrowserMode(
+            mode="cdp",
+            cdp_port="9230",
+            headed=True,
+        )
+        mock_ensure_browser.return_value = {
+            "success": True,
+            "mode": browser_mode,
+            "error": None,
+        }
+
+        mock_ensure_project.return_value = {
+            "success": True,
+            "project_id": "98765",
+            "url": "https://linkedin.com/talent/hire/98765/overview",
+            "status": "created",
+            "message": "Created new project",
+        }
+
+        args = Mock()
+        args.jd_url = None
+        args.jd_text = "JD content"
+        args.work_dir = str(tmp_path / "work")
+        args.recruiter_url = None
+        args.cdp_port = "9230"
+        args.project_id = None
+        args.position_title = "Engineer"
+        args.team_name = None
+        args.location = None
+        args.core_function = None
+        args.business_impact = None
+        args.keywords = None
+        args.companies = None
+        args.exclude_titles = None
+
+        result = bp.bootstrap_project(args)
+
+        assert result["project_id"] == "98765"
+
+        # Verify project creation was called with BrowserMode
+        call_kwargs = mock_ensure_project.call_args[1]
+        passed_mode = call_kwargs["browser_mode"]
+        assert passed_mode is browser_mode
+        assert passed_mode.mode == "cdp"
+        assert passed_mode.cdp_port == "9230"
 
 
 if __name__ == "__main__":

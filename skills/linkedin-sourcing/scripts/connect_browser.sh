@@ -1,12 +1,12 @@
 #!/bin/bash
 # Connect to LinkedIn Recruiter browser with automatic auth bootstrap.
 #
-# This script implements the auth flow:
+# This script implements the CDP-first, CDP-persistent auth flow:
 # 1. Check if configured CDP browser is reachable AND Recruiter-authenticated
 # 2. If yes: use it (fast path)
-# 3. Check for saved auth state (< 7 days old)
-# 4. If yes: start agent-browser session from saved auth
-# 5. If no: auto-bootstrap - launch Chrome, prompt for login, export auth, close Chrome
+# 3. If no: auto-bootstrap - launch Chrome, prompt for login, keep Chrome running
+#
+# The authenticated Chrome remains running on the chosen CDP port for subsequent operations.
 #
 # Usage:
 #   bash connect_browser.sh                    # Connect with auto-bootstrap (default)
@@ -15,7 +15,7 @@
 #   bash connect_browser.sh --no-bootstrap     # Fail closed if no auth (no browser launch)
 #
 # Exit codes:
-#   0 - Connected successfully (CDP or agent-browser mode)
+#   0 - Connected successfully (CDP mode)
 #   1 - Not connected / auth required
 #   2 - Chrome not found
 
@@ -147,8 +147,58 @@ run_bootstrap() {
     python3 "$SCRIPT_DIR/auth_bootstrap.py" --bootstrap --work-dir "$WORK_DIR" --cdp-port "$PREFERRED_PORT" --chrome-profile "$CHROME_PROFILE"
 }
 
+# Helper: get saved CDP port from browser_mode.json
+get_saved_cdp_port() {
+    if [[ -f "$BROWSER_MODE_FILE" ]]; then
+        python3 -c "import sys,json; data=json.load(open('$BROWSER_MODE_FILE')); print(data.get('cdp_port',''))" 2>/dev/null
+    else
+        echo ""
+    fi
+}
+
 # Main logic
 main() {
+    # Step 0: Check saved browser mode for existing CDP port (fallback reuse)
+    # This handles the case where bootstrap previously launched Chrome on a non-preferred port
+    SAVED_PORT=$(get_saved_cdp_port)
+    if [[ -n "$SAVED_PORT" && "$SAVED_PORT" != "$PREFERRED_PORT" ]]; then
+        if check_cdp "$SAVED_PORT"; then
+            if [[ "$CHECK_ONLY" == "true" ]]; then
+                auth_result=$(probe_auth_readonly "$SAVED_PORT")
+            else
+                auth_result=$(probe_auth "$SAVED_PORT")
+            fi
+            authenticated=$(echo "$auth_result" | python3 -c "import sys,json; print(json.load(sys.stdin).get('authenticated', False))")
+
+            if [[ "$authenticated" == "True" ]]; then
+                # Saved port is authenticated - reuse it
+                if [[ "$JSON_OUTPUT" == "true" ]]; then
+                    output_json "connected" "cdp" "$SAVED_PORT" "Using existing authenticated browser on saved port"
+                else
+                    echo "CONNECTED (CDP mode, saved port $SAVED_PORT)"
+                fi
+
+                # Update timestamp on saved mode
+                if [[ "$JSON_OUTPUT" != "true" && "$CHECK_ONLY" != "true" ]]; then
+                    mkdir -p "$RUNTIME_DIR"
+                    cat > "$BROWSER_MODE_FILE" <<EOF
+{
+  "mode": "cdp",
+  "cdp_port": "$SAVED_PORT",
+  "session_name": null,
+  "auth_file": null,
+  "headed": true,
+  "updated_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+}
+EOF
+                fi
+                exit 0
+            fi
+            # Saved port exists but not authenticated - fall through to preferred port check
+        fi
+        # Saved port not reachable - fall through to preferred port check
+    fi
+
     # Step 1: Check if preferred CDP port is available
     if check_cdp "$PREFERRED_PORT"; then
         # Step 2: Check if authenticated to Recruiter
@@ -249,99 +299,7 @@ EOF
         fi
     fi
 
-    # Step 3: Bootstrap mode - Check for existing auth file (agent-browser mode)
-    if [[ "$AUTO_BOOTSTRAP" == "true" && -f "$AUTH_FILE" ]]; then
-        # Validate auth file is recent (< 7 days)
-        auth_age_days=$(python3 -c "
-import json
-import os
-from datetime import datetime, timezone
-try:
-    with open('$AUTH_FILE') as f:
-        data = json.load(f)
-    exported = data.get('exported_at', '')
-    if exported:
-        exp_time = datetime.fromisoformat(exported.replace('Z', '+00:00'))
-        age = (datetime.now(timezone.utc) - exp_time).days
-        print(age)
-    else:
-        print(999)
-except:
-    print(999)
-" 2>/dev/null || echo "999")
-
-        if [[ "$auth_age_days" -lt 7 ]]; then
-            # Start agent-browser session from saved auth
-            if [[ "$JSON_OUTPUT" != "true" ]]; then
-                echo "Starting agent-browser session from saved auth ($auth_age_days days old)..."
-            fi
-
-            # Generate session name
-            session_name="linkedin-$(date +%s)"
-
-            # Start headed agent-browser session
-            # CRITICAL: We must verify actual Recruiter authentication, not just process success
-            if agent-browser --session "$session_name" --state "$AUTH_FILE" --headed open "https://www.linkedin.com/talent/home" >/dev/null 2>&1; then
-                # Process started - now verify Recruiter authentication
-                # Session may have started but auth might be invalid/expired
-                auth_check=$(probe_auth_via_session "$session_name")
-                auth_check_exit_code=$?
-
-                # Handle probe failure (e.g., agent-browser not found)
-                if [[ $auth_check_exit_code -ne 0 ]] || [[ -z "$auth_check" ]]; then
-                    if [[ "$JSON_OUTPUT" != "true" ]]; then
-                        echo "WARNING: Failed to verify session authentication (probe failed)"
-                    fi
-                    # Continue to bootstrap flow - don't treat as success
-                else
-                    authenticated=$(echo "$auth_check" | python3 -c "import sys,json; print(json.load(sys.stdin).get('authenticated', False))")
-
-                    if [[ "$authenticated" == "True" ]]; then
-                        if [[ "$JSON_OUTPUT" == "true" ]]; then
-                            output_json "connected" "agent-browser" "$PREFERRED_PORT" "Using saved auth state ($auth_age_days days old)"
-                        else
-                            echo "CONNECTED (agent-browser mode, session: $session_name)"
-                        fi
-
-                        # Save browser mode with session info (skip in status-only mode)
-                        if [[ "$JSON_OUTPUT" != "true" ]]; then
-                            mkdir -p "$RUNTIME_DIR"
-                            cat > "$BROWSER_MODE_FILE" <<EOF
-{
-  "mode": "agent-browser",
-  "cdp_port": null,
-  "session_name": "$session_name",
-  "auth_file": "$AUTH_FILE",
-  "headed": true,
-  "updated_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-}
-EOF
-                        fi
-                        exit 0
-                    else
-                        # Session started but not authenticated - auth expired/invalid
-                        current_url=$(echo "$auth_check" | python3 -c "import sys,json; print(json.load(sys.stdin).get('url', 'unknown'))")
-                        if [[ "$JSON_OUTPUT" != "true" ]]; then
-                            echo "Session started but not authenticated to Recruiter (URL: $current_url)"
-                            echo "Saved auth may be expired or invalid."
-                        fi
-                        # Continue to bootstrap flow
-                    fi
-                fi
-            else
-                # agent-browser command failed (non-zero exit or not found)
-                if [[ "$JSON_OUTPUT" != "true" ]]; then
-                    echo "Failed to start agent-browser session from saved auth (command failed)."
-                fi
-            fi
-        else
-            if [[ "$JSON_OUTPUT" != "true" ]]; then
-                echo "Saved auth state is $auth_age_days days old (max 7 days)."
-            fi
-        fi
-    fi
-
-    # Step 4: Auto-bootstrap disabled and no valid auth found
+    # Step 3: Auto-bootstrap disabled and no valid auth found
     if [[ "$AUTO_BOOTSTRAP" != "true" ]]; then
         if [[ "$JSON_OUTPUT" == "true" ]]; then
             output_json "bootstrap_required" "none" "$PREFERRED_PORT" "Auth bootstrap required" "No valid auth found"
@@ -352,7 +310,7 @@ EOF
         exit 1
     fi
 
-    # Step 5: Interactive bootstrap flow
+    # Step 4: Interactive bootstrap flow
     if [[ "$JSON_OUTPUT" != "true" ]]; then
         echo ""
         echo "=== LinkedIn Auth Bootstrap ==="
@@ -361,7 +319,7 @@ EOF
         echo ""
         echo "Launching Chrome for LinkedIn Recruiter login..."
         echo "Please log in to LinkedIn Recruiter in the Chrome window (complete any SSO/2FA)."
-        echo "Your authentication will be saved automatically when login completes."
+        echo "The Chrome window will remain open and be reused for subsequent operations."
         echo ""
     fi
 
@@ -371,19 +329,12 @@ EOF
     bootstrap_mode=$(echo "$bootstrap_result" | python3 -c "import sys,json; print(json.load(sys.stdin).get('mode', 'failed'))")
 
     if [[ "$bootstrap_success" == "True" && "$bootstrap_mode" == "cdp" ]]; then
-        # Using existing CDP
+        # Using CDP mode (either existing or newly launched Chrome)
+        bootstrap_cdp_port=$(echo "$bootstrap_result" | python3 -c "import sys,json; print(json.load(sys.stdin).get('cdp_port', '$PREFERRED_PORT'))")
         if [[ "$JSON_OUTPUT" == "true" ]]; then
-            output_json "connected" "cdp" "$PREFERRED_PORT" "Using existing authenticated browser"
+            output_json "connected" "cdp" "$bootstrap_cdp_port" "Chrome running on port $bootstrap_cdp_port"
         else
-            echo "CONNECTED (CDP mode, port $PREFERRED_PORT)"
-        fi
-        exit 0
-    elif [[ "$bootstrap_success" == "True" && "$bootstrap_mode" == "agent-browser" ]]; then
-        session_name=$(echo "$bootstrap_result" | python3 -c "import sys,json; print(json.load(sys.stdin).get('session_name', ''))")
-        if [[ "$JSON_OUTPUT" == "true" ]]; then
-            output_json "connected" "agent-browser" "$PREFERRED_PORT" "Agent-browser session started"
-        else
-            echo "CONNECTED (agent-browser mode, session: $session_name)"
+            echo "CONNECTED (CDP mode, port $bootstrap_cdp_port)"
         fi
         exit 0
     else

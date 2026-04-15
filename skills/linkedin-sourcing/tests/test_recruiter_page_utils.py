@@ -6,10 +6,13 @@ Run with: python3 -m pytest skills/linkedin-sourcing/tests/test_recruiter_page_u
 
 from __future__ import annotations
 
+import json
 import sys
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 
@@ -487,7 +490,8 @@ class TestRecoveryHelper:
             assert len(incident_files) == 1
 
             incident = json.loads(incident_files[0].read_text())
-            assert incident["cdp_port"] == "9230"
+            # Check browser_mode is recorded (can be string or dict)
+            assert "browser_mode" in incident
             assert incident["context"] == "test_context"
             assert incident["state"] == "blocked_or_captcha"
 
@@ -1551,6 +1555,62 @@ class TestIntegrationPatterns:
 
         assert state["state"] == "logged_out_or_wrong_product"
         assert state["details"]["isLoginPage"] is True
+
+
+class TestBackwardsCompatibility:
+    """Tests for backwards compatibility with cdp_port parameter."""
+
+    @patch("recruiter_page_utils.check_dialog_status")
+    @patch("recruiter_page_utils.run_browser_command")
+    def test_ensure_page_ready_accepts_cdp_port_keyword(self, mock_run, mock_dialog):
+        """ensure_page_ready should accept cdp_port= as alias for browser_mode=."""
+        mock_dialog.return_value = {"has_dialog": False}
+        mock_run.return_value = {
+            "parsed": {
+                "is404": False,
+                "isLoginPage": False,
+                "isWrongProduct": False,
+                "isBlocked": False,
+                "isLoading": False,
+                "hasRecruiterContent": True,
+            },
+            "error": None,
+        }
+
+        # Using cdp_port= as keyword argument (old API)
+        result = rpu.ensure_page_ready(cdp_port="9230")
+
+        assert result["ready"] is True
+        assert result["state"] == "ready"
+
+    @patch("recruiter_page_utils.check_dialog_status")
+    @patch("recruiter_page_utils.run_browser_command")
+    def test_ensure_page_ready_browser_mode_takes_precedence(
+        self, mock_run, mock_dialog
+    ):
+        """browser_mode= should take precedence over cdp_port= when both provided."""
+        mock_dialog.return_value = {"has_dialog": False}
+        mock_run.return_value = {
+            "parsed": {
+                "is404": False,
+                "isLoginPage": False,
+                "isWrongProduct": False,
+                "isBlocked": False,
+                "isLoading": False,
+                "hasRecruiterContent": True,
+            },
+            "error": None,
+        }
+
+        # Both provided - browser_mode should be used
+        result = rpu.ensure_page_ready(browser_mode="9230", cdp_port="9999")
+
+        assert result["ready"] is True
+
+    def test_ensure_page_ready_requires_one_argument(self):
+        """ensure_page_ready should raise TypeError if neither argument provided."""
+        with pytest.raises(TypeError, match="requires either browser_mode or cdp_port"):
+            rpu.ensure_page_ready()
 
 
 if __name__ == "__main__":

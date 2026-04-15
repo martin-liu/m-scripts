@@ -65,7 +65,7 @@ This skill separates **project bootstrapping** from **Recruiter execution**:
 
 `SKILL_DIR` = this skill directory.
 
-`WORK_DIR` = the user's runtime data directory from `~/.config/linkedin-sourcing/profile.sh`.
+`WORK_DIR` = the user's runtime data directory from `$HOME/.config/linkedin-sourcing/profile.sh`.
 
 **Canonical script locations** (derive from these variables only):
 - Before runtime init or for debugging: `$SKILL_DIR/scripts`
@@ -128,18 +128,18 @@ This syncs the runtime bundle, checks dependencies, and makes `$WORK_DIR/runtime
 
 ## First-Time Setup
 
-On first invocation, if `~/.config/linkedin-sourcing/profile.sh` does not exist, ask the user:
+On first invocation, if `$HOME/.config/linkedin-sourcing/profile.sh` does not exist, ask the user:
 
 | Setting | Prompt | Default |
 |---------|--------|---------|
-| `WORK_DIR` | Work folder for all sourcing data? | `~/Desktop/linkedin-sourcing` |
+| `WORK_DIR` | Work folder for all sourcing data? | `$HOME/Desktop/linkedin-sourcing` |
 | `USER_EMAIL` | Your recruiter email (for templates)? | — |
 | `USER_NAME` | Your first name (for signatures)? | — |
 | `ACCOUNT_NAME` | LinkedIn Recruiter account name? | — |
 | `CDP_PORT` | Chrome debug port? | `9230` |
 | `CHROME_PROFILE` | Chrome profile path? | `$WORK_DIR/chrome-profile` |
 
-Save to `~/.config/linkedin-sourcing/profile.sh`:
+Save to `$HOME/.config/linkedin-sourcing/profile.sh`:
 
 ```bash
 WORK_DIR="$HOME/Desktop/linkedin-sourcing"
@@ -263,37 +263,28 @@ python3 $SKILL_DIR/scripts/ensure_recruiter_project.py \
 
 ## Browser
 
-Do not ask the user to launch Chrome manually. Use the canonical connect flow first so the skill can reuse either:
-- an authenticated CDP browser on `$CDP_PORT`, or
-- a saved auth-backed `agent-browser` session
-
-Use `--cdp $CDP_PORT` only when you are intentionally targeting the authenticated CDP browser directly. Saved-auth flows may run in `agent-browser` session mode instead.
+Do not ask the user to launch Chrome manually. Use the canonical connect flow first so the skill can reuse an authenticated CDP browser.
 
 Connect via: `bash $WORK_DIR/runtime/current/scripts/connect_browser.sh` (or `$SKILL_DIR/scripts/connect_browser.sh` if runtime not yet initialized)
 
 **Fresh session reminder**: On a fresh machine or new session, ensure `$WORK_DIR` exists and touch `$WORK_DIR/.permission_probe` before running connect_browser.sh to trigger OpenCode approval at the WORK_DIR root.
 
-**Policy: Automatic Auth with Reusable State**
+**Policy: CDP-First and CDP-Persistent Auth**
 
-This skill implements an automated authentication flow:
+This skill implements a CDP-first authentication flow:
 1. **Fast path**: If the configured CDP browser (port 9230) is reachable AND authenticated to LinkedIn Recruiter, use it immediately
-2. **Saved auth**: If valid saved auth exists (< 7 days old), start an agent-browser session from it
-3. **Auto-bootstrap**: If no auth available, automatically launch Chrome with the configured profile, navigate to LinkedIn Recruiter, prompt you to log in, then export and save auth state for reuse
+2. **Auto-bootstrap**: If no authenticated browser available, automatically launch Chrome with the configured profile, navigate to LinkedIn Recruiter, prompt you to log in, then keep that Chrome running for subsequent operations
 
 **Auth Flow**:
 1. Check for existing authenticated CDP browser (port 9230)
-2. Check for recent saved auth state (`$WORK_DIR/runtime/auth/linkedin-auth.json`)
-3. If neither available: automatically launch Chrome with configured profile (`$CHROME_PROFILE`, default `$WORK_DIR/chrome-profile`)
-4. Navigate to LinkedIn Recruiter login page
-5. You complete SSO/2FA in the Chrome window
-6. Script automatically detects successful login (no terminal input required)
-7. Auth state automatically exported to `$WORK_DIR/runtime/auth/linkedin-auth.json`
-8. Bootstrap Chrome closed automatically
-9. New agent-browser session started from saved auth
+2. If not available: automatically launch Chrome with configured profile (`$CHROME_PROFILE`, default `$WORK_DIR/chrome-profile`)
+3. Navigate to LinkedIn Recruiter login page
+4. You complete SSO/2FA in the Chrome window
+5. Script automatically detects successful login (no terminal input required)
+6. The Chrome window remains open on the chosen CDP port for subsequent operations
 
-**Browser Modes**:
-- **CDP mode**: Direct connection to existing Chrome (fast path)
-- **Agent-browser mode**: Managed session using saved auth state
+**Browser Mode**:
+- **CDP mode**: Direct connection to Chrome via CDP port (fast path and persistent)
 
 The current mode is persisted in `$WORK_DIR/runtime/browser_mode.json`.
 
@@ -316,7 +307,7 @@ bash "$WORK_DIR/runtime/current/scripts/connect_browser.sh" --no-bootstrap
 - Do not use `pkill` or `killall`
 - When an account selector appears, select `$ACCOUNT_NAME`
 - If session is lost, run connect_browser.sh to re-authenticate
-- Auth state expires after 7 days; re-run connect_browser.sh to refresh when needed
+- The authenticated Chrome remains running; subsequent operations reuse the same browser
 
 ---
 

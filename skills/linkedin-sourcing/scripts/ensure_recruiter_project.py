@@ -45,7 +45,7 @@ SKILL_DIR = SCRIPT_DIR.parent
 
 # Import shared browser utilities
 sys.path.insert(0, str(SCRIPT_DIR))
-from browser_utils import run_browser_command as _run_browser_command
+from browser_utils import BrowserMode, run_browser_command as _run_browser_command
 from browser_utils import format_timeout_error
 from recruiter_page_utils import RecoveryHelper, PageStateProbe, ensure_page_ready
 
@@ -138,19 +138,50 @@ FILL_CREATE_FORM_JS = """
     const projectName = {project_name!r};
     const description = {description!r} || '';
 
-    // Fill project name
-    const nameInput = document.querySelector('input[name*="name"], input[placeholder*="name" i], input[data-test-id*="name"]');
-    if (nameInput) {{
-        nameInput.value = projectName;
-        nameInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
-        nameInput.dispatchEvent(new Event('change', {{ bubbles: true }}));
+    function setFieldValue(el, value) {{
+        if (!el) return;
+
+        const proto = Object.getPrototypeOf(el);
+        const valueDescriptor = Object.getOwnPropertyDescriptor(proto, 'value')
+            || (window.HTMLInputElement && Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value'))
+            || (window.HTMLTextAreaElement && Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value'));
+
+        if (valueDescriptor && valueDescriptor.set) {{
+            valueDescriptor.set.call(el, value);
+        }} else {{
+            el.value = value;
+        }}
+
+        el.dispatchEvent(new Event('input', {{ bubbles: true }}));
+        el.dispatchEvent(new Event('change', {{ bubbles: true }}));
+        el.dispatchEvent(new Event('blur', {{ bubbles: true }}));
     }}
 
-    // Fill description if field exists
-    const descInput = document.querySelector('textarea[name*="description"], textarea[placeholder*="description" i], input[name*="description"]');
+    // Fill project name - try id-based selectors first (observed on live page as #ember1131-projectName)
+    // then fall back to broader selectors
+    const nameInput = document.querySelector(
+        'input[id$="-projectName"], ' +
+        'input[id*="projectName"], ' +
+        'input[name*="name"], ' +
+        'input[placeholder*="name" i], ' +
+        'input[aria-label*="name" i], ' +
+        'input[data-test-id*="name"]'
+    );
+    if (nameInput) {{
+        setFieldValue(nameInput, projectName);
+    }}
+
+    // Fill description if field exists - try id-based selectors first (observed as #ember1131-projectDescription)
+    const descInput = document.querySelector(
+        'textarea[id$="-projectDescription"], ' +
+        'textarea[id*="projectDescription"], ' +
+        'textarea[name*="description"], ' +
+        'textarea[placeholder*="description" i], ' +
+        'textarea[aria-label*="description" i], ' +
+        'input[name*="description"]'
+    );
     if (descInput && description) {{
-        descInput.value = description;
-        descInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
+        setFieldValue(descInput, description);
     }}
 
     return {{
@@ -325,13 +356,20 @@ WAIT_FOR_LOAD_JS = """
 """
 
 
-def run_browser_command(cdp_port: str, action: str, js_code: str) -> dict[str, Any]:
+def run_browser_command(
+    browser_mode: BrowserMode | str, action: str, js_code: str
+) -> dict[str, Any]:
     """Run an agent-browser eval command and return parsed JSON result.
 
     This wrapper uses the shared browser_utils helper for consistent
     timeout handling and dialog detection across all browser operations.
+
+    Args:
+        browser_mode: BrowserMode instance or CDP port string for browser operations
+        action: The action to perform (e.g., "eval", "goto")
+        js_code: JavaScript code to execute or URL to navigate to
     """
-    result = _run_browser_command(cdp_port, "eval", js_code, timeout=30)
+    result = _run_browser_command(browser_mode, "eval", js_code, timeout=30)
 
     # Handle timeout with dialog info
     if result.get("timed_out"):
@@ -360,11 +398,13 @@ def run_browser_command(cdp_port: str, action: str, js_code: str) -> dict[str, A
     return {"raw_output": output, "parse_error": True}
 
 
-def navigate_to_projects(cdp_port: str, work_dir: str | None = None) -> dict[str, Any]:
+def navigate_to_projects(
+    browser_mode: BrowserMode | str, work_dir: str | None = None
+) -> dict[str, Any]:
     """Navigate to the LinkedIn Recruiter Projects page with recovery.
 
     Args:
-        cdp_port: Chrome DevTools Protocol port number
+        browser_mode: BrowserMode instance or CDP port string for browser operations
         work_dir: Optional working directory for incident reporting
 
     Returns:
@@ -376,7 +416,7 @@ def navigate_to_projects(cdp_port: str, work_dir: str | None = None) -> dict[str
     """
     # First attempt: direct navigation
     result = _run_browser_command(
-        cdp_port, "goto", PROJECTS_URL, timeout=30, check_dialog_on_timeout=True
+        browser_mode, "goto", PROJECTS_URL, timeout=30, check_dialog_on_timeout=True
     )
 
     if result.get("timed_out"):
@@ -404,7 +444,7 @@ def navigate_to_projects(cdp_port: str, work_dir: str | None = None) -> dict[str
     time.sleep(2)
 
     # Check page state and attempt recovery if needed
-    probe = PageStateProbe(cdp_port)
+    probe = PageStateProbe(browser_mode)
     state = probe.classify_state()
 
     if state["state"] == "ready":
@@ -416,7 +456,7 @@ def navigate_to_projects(cdp_port: str, work_dir: str | None = None) -> dict[str
         }
 
     # Page not ready - attempt recovery
-    recovery = RecoveryHelper(cdp_port, work_dir)
+    recovery = RecoveryHelper(browser_mode, work_dir)
     recovery_result = recovery.attempt_recovery(
         target_url=PROJECTS_URL,
         context="navigate_to_projects",
@@ -438,79 +478,89 @@ def navigate_to_projects(cdp_port: str, work_dir: str | None = None) -> dict[str
     }
 
 
-def wait_for_page_load(cdp_port: str, max_wait: int = 10) -> bool:
+def wait_for_page_load(browser_mode: BrowserMode | str, max_wait: int = 10) -> bool:
     """Wait for page to be fully loaded."""
     for _ in range(max_wait * 2):
-        result = run_browser_command(cdp_port, "eval", WAIT_FOR_LOAD_JS)
+        result = run_browser_command(browser_mode, "eval", WAIT_FOR_LOAD_JS)
         if result.get("ready"):
             return True
         time.sleep(0.5)
     return False
 
 
-def search_for_project(cdp_port: str, project_name: str) -> dict[str, Any]:
+def search_for_project(
+    browser_mode: BrowserMode | str, project_name: str
+) -> dict[str, Any]:
     """Search for a project by name on the Projects page."""
     js = SEARCH_PROJECT_JS.format(project_name=project_name)
-    return run_browser_command(cdp_port, "eval", js)
+    return run_browser_command(browser_mode, "eval", js)
 
 
-def check_project_exists(cdp_port: str, project_name: str) -> dict[str, Any]:
+def check_project_exists(
+    browser_mode: BrowserMode | str, project_name: str
+) -> dict[str, Any]:
     """Check if a project with the given name exists on the current page."""
     js = CHECK_PROJECT_EXISTS_JS.format(project_name=project_name)
-    return run_browser_command(cdp_port, "eval", js)
+    return run_browser_command(browser_mode, "eval", js)
 
 
-def click_create_project(cdp_port: str) -> dict[str, Any]:
+def click_create_project(browser_mode: BrowserMode | str) -> dict[str, Any]:
     """Click the Create Project button."""
-    return run_browser_command(cdp_port, "eval", CLICK_CREATE_PROJECT_JS)
+    return run_browser_command(browser_mode, "eval", CLICK_CREATE_PROJECT_JS)
 
 
 def fill_create_form(
-    cdp_port: str, project_name: str, description: str
+    browser_mode: BrowserMode | str, project_name: str, description: str
 ) -> dict[str, Any]:
     """Fill the project creation form."""
     js = FILL_CREATE_FORM_JS.format(project_name=project_name, description=description)
-    return run_browser_command(cdp_port, "eval", js)
+    return run_browser_command(browser_mode, "eval", js)
 
 
-def submit_form(cdp_port: str) -> dict[str, Any]:
+def submit_form(browser_mode: BrowserMode | str) -> dict[str, Any]:
     """Submit the form, with click-outside fallback for typeahead overlays."""
     # First try direct submit
-    result = run_browser_command(cdp_port, "eval", SUBMIT_FORM_JS)
+    result = run_browser_command(browser_mode, "eval", SUBMIT_FORM_JS)
 
     if not result.get("submitted"):
         # Try clicking outside first to close any overlays
-        run_browser_command(cdp_port, "eval", CLICK_OUTSIDE_JS)
+        run_browser_command(browser_mode, "eval", CLICK_OUTSIDE_JS)
         time.sleep(0.5)
         # Try submit again
-        result = run_browser_command(cdp_port, "eval", SUBMIT_FORM_JS)
+        result = run_browser_command(browser_mode, "eval", SUBMIT_FORM_JS)
 
     return result
 
 
-def check_untitled(cdp_port: str) -> dict[str, Any]:
+def check_untitled(browser_mode: BrowserMode | str) -> dict[str, Any]:
     """Check if the current project is untitled."""
-    return run_browser_command(cdp_port, "eval", CHECK_UNTITLED_JS)
+    return run_browser_command(browser_mode, "eval", CHECK_UNTITLED_JS)
 
 
-def rename_project(cdp_port: str, project_name: str) -> dict[str, Any]:
+def rename_project(
+    browser_mode: BrowserMode | str, project_name: str
+) -> dict[str, Any]:
     """Rename an untitled project."""
     js = RENAME_PROJECT_JS.format(project_name=project_name)
-    return run_browser_command(cdp_port, "eval", js)
+    return run_browser_command(browser_mode, "eval", js)
 
 
-def get_current_url(cdp_port: str) -> dict[str, Any]:
+def get_current_url(browser_mode: BrowserMode | str) -> dict[str, Any]:
     """Get the current page URL and title."""
-    return run_browser_command(cdp_port, "eval", GET_CURRENT_URL_JS)
+    return run_browser_command(browser_mode, "eval", GET_CURRENT_URL_JS)
 
 
-def navigate_to_search_page(cdp_port: str) -> dict[str, Any]:
+def navigate_to_search_page(browser_mode: BrowserMode | str) -> dict[str, Any]:
     """Navigate to the Recruiter search page by clicking the search tab/link.
 
-    Returns dict with success status and the final URL.
+    Args:
+        browser_mode: BrowserMode instance or CDP port string for browser operations
+
+    Returns:
+        Dict with success status and the final URL.
     """
     # First try clicking the search tab/link
-    result = run_browser_command(cdp_port, "eval", NAVIGATE_TO_SEARCH_JS)
+    result = run_browser_command(browser_mode, "eval", NAVIGATE_TO_SEARCH_JS)
 
     if result.get("alreadyOnSearch"):
         return {"success": True, "url": result.get("url"), "method": "already_there"}
@@ -518,31 +568,31 @@ def navigate_to_search_page(cdp_port: str) -> dict[str, Any]:
     if result.get("clicked"):
         # Wait for navigation to complete
         time.sleep(2)
-        if wait_for_page_load(cdp_port, max_wait=5):
+        if wait_for_page_load(browser_mode, max_wait=5):
             # Poll for URL transition - the recruiterSearch URL may update after page load
             # This handles the delayed URL transition observed in live testing
             # Keep polling past bare URLs until a contextual URL appears
             for _ in range(10):  # Poll for up to 5 seconds
-                url_result = get_current_url(cdp_port)
+                url_result = get_current_url(browser_mode)
                 final_url = url_result.get("url", "")
                 if is_contextual_search_url(final_url):
                     return {"success": True, "url": final_url, "method": "click"}
                 time.sleep(0.5)
 
     # Fallback: try to derive search URL from current URL
-    derive_result = run_browser_command(cdp_port, "eval", DERIVE_SEARCH_URL_JS)
+    derive_result = run_browser_command(browser_mode, "eval", DERIVE_SEARCH_URL_JS)
     if derive_result.get("derived"):
         search_url = derive_result.get("searchUrl")
         # Navigate to derived URL using guarded browser command
-        goto_result = _run_browser_command(cdp_port, "goto", search_url, timeout=30)
+        goto_result = _run_browser_command(browser_mode, "goto", search_url, timeout=30)
         if goto_result.get("error"):
             return {
                 "success": False,
                 "error": f"Could not navigate to search page: {goto_result['error']}",
             }
         time.sleep(2)
-        if wait_for_page_load(cdp_port, max_wait=5):
-            url_result = get_current_url(cdp_port)
+        if wait_for_page_load(browser_mode, max_wait=5):
+            url_result = get_current_url(browser_mode)
             final_url = url_result.get("url", "")
             if "discover/recruiterSearch" in final_url:
                 return {"success": True, "url": final_url, "method": "derived"}
@@ -580,7 +630,7 @@ def is_contextual_search_url(url: str) -> bool:
     return any(param in url for param in context_params)
 
 
-def resolve_search_url(cdp_port: str, current_url: str) -> str | None:
+def resolve_search_url(browser_mode: BrowserMode | str, current_url: str) -> str | None:
     """Resolve the best search URL from current page state.
 
     Tries multiple strategies:
@@ -590,7 +640,7 @@ def resolve_search_url(cdp_port: str, current_url: str) -> str | None:
     4. Return None if only a bare URL is available (fail closed)
 
     Args:
-        cdp_port: Chrome DevTools Protocol port number
+        browser_mode: BrowserMode instance or CDP port string for browser operations
         current_url: The current page URL
 
     Returns:
@@ -607,7 +657,7 @@ def resolve_search_url(cdp_port: str, current_url: str) -> str | None:
         pass  # Fall through to navigation attempt
 
     # Try navigation via click
-    nav_result = navigate_to_search_page(cdp_port)
+    nav_result = navigate_to_search_page(browser_mode)
     if nav_result.get("success"):
         nav_url = nav_result.get("url", "")
         if is_contextual_search_url(nav_url):
@@ -620,7 +670,7 @@ def resolve_search_url(cdp_port: str, current_url: str) -> str | None:
 
 
 def validate_navigation_result(
-    cdp_port: str,
+    browser_mode: BrowserMode | str,
     expected_url_patterns: list[str],
     context: str,
     work_dir: str | None = None,
@@ -628,7 +678,7 @@ def validate_navigation_result(
     """Validate that navigation succeeded and we're on the expected page.
 
     Args:
-        cdp_port: Chrome DevTools Protocol port number
+        browser_mode: BrowserMode instance or CDP port string for browser operations
         expected_url_patterns: URL patterns that must be present after navigation
         context: Context string for error messages
         work_dir: Optional working directory for incident reporting
@@ -640,7 +690,7 @@ def validate_navigation_result(
             - error: str | None - error message if validation failed
     """
     # Get current URL
-    url_result = get_current_url(cdp_port)
+    url_result = get_current_url(browser_mode)
     current_url = url_result.get("url", "")
 
     # Check if URL matches expected patterns
@@ -677,14 +727,14 @@ def validate_navigation_result(
 
 
 def validate_project_context(
-    cdp_port: str,
+    browser_mode: BrowserMode | str,
     project_name: str,
     expected_project_id: str | None = None,
 ) -> dict[str, Any]:
     """Validate that the current page belongs to the intended project context.
 
     Args:
-        cdp_port: Chrome DevTools Protocol port number
+        browser_mode: BrowserMode instance or CDP port string for browser operations
         project_name: Expected project name
         expected_project_id: Optional expected project ID from URL
 
@@ -695,7 +745,7 @@ def validate_project_context(
             - project_id: str | None - extracted project ID from URL
             - error: str | None - error message if validation failed
     """
-    url_result = get_current_url(cdp_port)
+    url_result = get_current_url(browser_mode)
     current_url = url_result.get("url", "")
 
     if not current_url:
@@ -742,7 +792,7 @@ def validate_project_context(
 def ensure_project_exists(
     project_name: str,
     description: str,
-    cdp_port: str,
+    browser_mode: BrowserMode | str,
     work_dir: str | None = None,
     require_contextual_url: bool = True,
 ) -> dict[str, Any]:
@@ -751,7 +801,7 @@ def ensure_project_exists(
     Args:
         project_name: Name of the project to find or create
         description: Description for new projects
-        cdp_port: Chrome DevTools Protocol port number
+        browser_mode: BrowserMode instance or CDP port string for browser operations
         work_dir: Optional working directory for incident reporting
         require_contextual_url: If False, returns project URL even without search context
             (used by bootstrap when project identity is known but search URL not yet available)
@@ -767,20 +817,20 @@ def ensure_project_exists(
     }
 
     # Step 1: Navigate to Projects page (with recovery)
-    nav_result = navigate_to_projects(cdp_port, work_dir)
+    nav_result = navigate_to_projects(browser_mode, work_dir)
     if not nav_result["success"]:
         result["message"] = (
             nav_result.get("error") or "Failed to navigate to Projects page"
         )
         return result
 
-    if not wait_for_page_load(cdp_port):
+    if not wait_for_page_load(browser_mode):
         result["message"] = "Page did not load in time"
         return result
 
     # Validate we're on the Projects page
     validation = validate_navigation_result(
-        cdp_port,
+        browser_mode,
         expected_url_patterns=["/talent/projects"],
         context="Navigate to Projects page",
         work_dir=work_dir,
@@ -790,18 +840,18 @@ def ensure_project_exists(
         return result
 
     # Step 2: Search for existing project
-    search_result = search_for_project(cdp_port, project_name)
+    search_result = search_for_project(browser_mode, project_name)
     time.sleep(1)  # Wait for search results
 
     # Step 3: Check if project exists
-    exists_result = check_project_exists(cdp_port, project_name)
+    exists_result = check_project_exists(browser_mode, project_name)
 
     if exists_result.get("found"):
         # Project exists - navigate to it and get URL
         url = exists_result.get("url")
         if url:
             # Navigate to the project URL using guarded browser command
-            goto_result = _run_browser_command(cdp_port, "goto", url, timeout=30)
+            goto_result = _run_browser_command(browser_mode, "goto", url, timeout=30)
             if goto_result.get("error"):
                 result["message"] = (
                     f"Failed to navigate to project: {goto_result['error']}"
@@ -811,7 +861,7 @@ def ensure_project_exists(
 
             # Validate navigation succeeded
             open_validation = validate_navigation_result(
-                cdp_port,
+                browser_mode,
                 expected_url_patterns=["/talent/hire/"],
                 context="Open existing project",
                 work_dir=work_dir,
@@ -821,12 +871,12 @@ def ensure_project_exists(
                 return result
 
             # Wait for page load and resolve search URL
-            wait_for_page_load(cdp_port)
-            url_result = get_current_url(cdp_port)
+            wait_for_page_load(browser_mode)
+            url_result = get_current_url(browser_mode)
             current_url = url_result.get("url", url)
 
             # Validate project context and extract project_id
-            context_validation = validate_project_context(cdp_port, project_name)
+            context_validation = validate_project_context(browser_mode, project_name)
             if not context_validation["valid"]:
                 result["message"] = context_validation["error"]
                 return result
@@ -835,7 +885,7 @@ def ensure_project_exists(
             result["project_id"] = context_validation.get("project_id")
 
             # Resolve to search URL (extraction-ready)
-            search_url = resolve_search_url(cdp_port, current_url)
+            search_url = resolve_search_url(browser_mode, current_url)
 
             # If not requiring contextual URL, return with whatever we have
             if not require_contextual_url:
@@ -867,7 +917,7 @@ def ensure_project_exists(
             return result
 
     # Step 4: Create new project
-    create_btn_result = click_create_project(cdp_port)
+    create_btn_result = click_create_project(browser_mode)
     if not create_btn_result.get("clicked"):
         result["message"] = (
             f"Could not click Create Project button: {create_btn_result.get('error', 'Unknown error')}"
@@ -877,7 +927,7 @@ def ensure_project_exists(
     time.sleep(2)  # Wait for form to appear
 
     # Step 5: Fill the form
-    fill_result = fill_create_form(cdp_port, project_name, description)
+    fill_result = fill_create_form(browser_mode, project_name, description)
     if not fill_result.get("nameFilled"):
         result["message"] = "Could not fill project name in form"
         return result
@@ -885,13 +935,13 @@ def ensure_project_exists(
     time.sleep(1)
 
     # Step 6: Submit the form
-    submit_result = submit_form(cdp_port)
+    submit_result = submit_form(browser_mode)
 
     # Validate submission succeeded by checking we're no longer on projects page
     time.sleep(3)  # Wait for creation
 
     submit_validation = validate_navigation_result(
-        cdp_port,
+        browser_mode,
         expected_url_patterns=["/talent/hire/"],
         context="Project creation submit",
         work_dir=work_dir,
@@ -901,19 +951,19 @@ def ensure_project_exists(
         return result
 
     # Step 7: Check if we landed on an untitled project
-    untitled_check = check_untitled(cdp_port)
+    untitled_check = check_untitled(browser_mode)
     if untitled_check.get("isUntitled"):
         # Need to rename
-        rename_project(cdp_port, project_name)
+        rename_project(browser_mode, project_name)
         time.sleep(2)
 
     # Step 8: Get the final URL and resolve to search URL
-    url_result = get_current_url(cdp_port)
+    url_result = get_current_url(browser_mode)
     final_url = url_result.get("url")
 
     if final_url and "/talent/" in final_url:
         # Validate project context
-        context_validation = validate_project_context(cdp_port, project_name)
+        context_validation = validate_project_context(browser_mode, project_name)
         if not context_validation["valid"]:
             result["message"] = context_validation["error"]
             return result
@@ -922,7 +972,7 @@ def ensure_project_exists(
         result["project_id"] = context_validation.get("project_id")
 
         # Resolve to search URL (extraction-ready)
-        search_url = resolve_search_url(cdp_port, final_url)
+        search_url = resolve_search_url(browser_mode, final_url)
 
         # If not requiring contextual URL, return with whatever we have
         if not require_contextual_url:
@@ -1015,10 +1065,13 @@ def main() -> int:
     profile = manager._resolve_profile()
     work_dir = profile.get("WORK_DIR")
 
+    # Create BrowserMode from CLI arguments (CDP mode by default for CLI)
+    browser_mode = BrowserMode(mode="cdp", cdp_port=args.cdp_port)
+
     result = ensure_project_exists(
         project_name=args.project_name,
         description=args.description,
-        cdp_port=args.cdp_port,
+        browser_mode=browser_mode,
         work_dir=work_dir,
     )
 

@@ -47,6 +47,42 @@ RECRUITER_LOGIN_INDICATORS = [
     "/cap",  # captcha/challenge pages
 ]
 
+# JavaScript snippet for generic auth detection
+# Returns page state signals without requiring exact URL matching
+AUTH_DETECTION_JS = r"""
+(() => {
+    const url = window.location.href;
+    const path = window.location.pathname;
+    const title = document.title;
+    const html = document.body.innerHTML.toLowerCase();
+
+    // Login/unauthenticated indicators
+    const hasLoginForm = !!document.querySelector('form[action*="login"], input[name="session_key"], input[name="password"]');
+    const hasLoginText = /sign\s*in|log\s*in|enter\s*password/i.test(title) ||
+                         html.includes('sign in') || html.includes('log in');
+    const hasCheckpoint = path.includes('/checkpoint') || path.includes('/challenge');
+    const hasCaptcha = path.includes('/cap') || html.includes('captcha');
+
+    // Recruiter/talent authenticated indicators
+    const isTalentPath = path.startsWith('/talent');
+    const hasRecruiterShell = !!document.querySelector('[data-test-id="recruiter-nav"], .recruiter-nav, [class*="talent"], nav[role="navigation"]');
+    const hasUserMenu = !!document.querySelector('[data-test-id="user-menu"], .global-nav__me, [class*="profile-menu"]');
+
+    return {
+        url: url,
+        path: path,
+        title: title,
+        isTalentPath: isTalentPath,
+        hasLoginForm: hasLoginForm,
+        hasLoginText: hasLoginText,
+        hasCheckpoint: hasCheckpoint,
+        hasCaptcha: hasCaptcha,
+        hasRecruiterShell: hasRecruiterShell,
+        hasUserMenu: hasUserMenu
+    };
+})()
+"""
+
 
 @dataclass
 class BrowserMode:
@@ -111,6 +147,8 @@ class BrowserMode:
             args = ["--session", self.session_name]
             if self.auth_file:
                 args.extend(["--state", self.auth_file])
+            if self.headed:
+                args.append("--headed")
             return args
         else:
             raise RuntimeError(f"Unknown browser mode: {self.mode}")
@@ -458,23 +496,137 @@ def _check_auth_from_url(current_url: str | None) -> bool:
     host = parsed.netloc.lower()
     path = parsed.path.lower()
 
-    if host.endswith("linkedin.com") and path.startswith("/talent/"):
+    if host.endswith("linkedin.com") and path.startswith("/talent"):
         if not any(indicator in path for indicator in RECRUITER_LOGIN_INDICATORS):
             return True
     return False
 
 
+def _evaluate_auth_js(cdp_port: str | None, session_name: str | None) -> dict[str, Any]:
+    """Evaluate auth detection JS and return parsed result.
+
+    Args:
+        cdp_port: CDP port (for CDP mode) - mutually exclusive with session_name
+        session_name: Session name (for agent-browser mode) - mutually exclusive with cdp_port
+
+    Returns:
+        Dict with page state and auth determination:
+        - url: str | None - current URL
+        - page_state: dict | None - raw JS evaluation result
+        - is_authenticated: bool - determined auth status
+        - error: str | None - error message if evaluation failed
+    """
+    if cdp_port:
+        cmd = ["agent-browser", "--cdp", cdp_port, "eval", AUTH_DETECTION_JS]
+    elif session_name:
+        cmd = ["agent-browser", "--session", session_name, "eval", AUTH_DETECTION_JS]
+    else:
+        return {
+            "url": None,
+            "page_state": None,
+            "is_authenticated": False,
+            "error": "Either cdp_port or session_name required",
+        }
+
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+
+        if result.returncode != 0:
+            return {
+                "url": None,
+                "page_state": None,
+                "is_authenticated": False,
+                "error": f"JS eval failed: {result.stderr}",
+            }
+
+        # Parse JSON output
+        try:
+            page_state = json.loads(result.stdout.strip())
+            # Handle double-encoded JSON
+            if isinstance(page_state, str):
+                page_state = json.loads(page_state)
+        except json.JSONDecodeError:
+            return {
+                "url": None,
+                "page_state": None,
+                "is_authenticated": False,
+                "error": f"Invalid JSON from eval: {result.stdout[:200]}",
+            }
+
+        url = page_state.get("url")
+        path = page_state.get("path", "")
+
+        # Determine authentication status
+        # Authenticated if on talent path AND no unauthenticated indicators
+        is_talent = page_state.get("isTalentPath", False)
+        has_login_form = page_state.get("hasLoginForm", False)
+        has_login_text = page_state.get("hasLoginText", False)
+        has_checkpoint = page_state.get("hasCheckpoint", False)
+        has_captcha = page_state.get("hasCaptcha", False)
+
+        # URL-based fallback check for non-talent paths
+        parsed = urlparse(url) if url else None
+        host = parsed.netloc.lower() if parsed else ""
+        path_lower = parsed.path.lower() if parsed else ""
+
+        # Auth indicators in URL path
+        auth_indicators = [
+            "/login",
+            "/login-cap",
+            "/signin",
+            "/challenge",
+            "/checkpoint",
+            "/uas/login",
+            "/uas/checkpoint",
+            "/auth",
+            "/cap",
+        ]
+        has_auth_in_url = any(ind in path_lower for ind in auth_indicators)
+
+        # Determine auth status
+        is_authenticated = False
+        if is_talent and not (has_login_form or has_checkpoint or has_captcha):
+            # On talent path without obvious login indicators
+            is_authenticated = True
+        elif host.endswith("linkedin.com") and path_lower.startswith("/talent"):
+            # URL-based check as fallback
+            if not has_auth_in_url and not has_login_form:
+                is_authenticated = True
+
+        return {
+            "url": url,
+            "page_state": page_state,
+            "is_authenticated": is_authenticated,
+            "error": None,
+        }
+
+    except subprocess.TimeoutExpired:
+        return {
+            "url": None,
+            "page_state": None,
+            "is_authenticated": False,
+            "error": "JS eval timed out",
+        }
+    except Exception as e:
+        return {
+            "url": None,
+            "page_state": None,
+            "is_authenticated": False,
+            "error": f"JS eval error: {e}",
+        }
+
+
 def probe_recruiter_auth(cdp_port: str, navigate: bool = True) -> dict[str, Any]:
     """Probe whether the CDP browser is authenticated to LinkedIn Recruiter.
 
-    This checks whether the browser is currently authenticated to Recruiter.
-    In navigational mode it opens the Recruiter home page first; in read-only
-    mode it only inspects the current URL.
+    Uses JS-based page state detection to determine authentication status
+    without requiring exact URL matching. In navigational mode it opens the
+    Recruiter home page first; in read-only mode it only inspects the current page.
 
     Args:
         cdp_port: Chrome DevTools Protocol port number
         navigate: Whether to navigate to the Recruiter home page before
-            checking the current URL
+            checking the current page state
 
     Returns:
         Dict with auth status:
@@ -498,21 +650,13 @@ def probe_recruiter_auth(cdp_port: str, navigate: bool = True) -> dict[str, Any]
                 timeout=10,
             )
 
-        # Get current URL after navigation
-        url_result = subprocess.run(
-            ["agent-browser", "--cdp", cdp_port, "get", "url"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        current_url = url_result.stdout.strip() if url_result.returncode == 0 else None
-
-        is_authenticated = _check_auth_from_url(current_url)
+        # Use JS-based detection for auth status
+        eval_result = _evaluate_auth_js(cdp_port=cdp_port, session_name=None)
 
         return {
-            "authenticated": is_authenticated,
-            "url": current_url,
-            "error": None,
+            "authenticated": eval_result["is_authenticated"],
+            "url": eval_result["url"],
+            "error": eval_result["error"],
         }
 
     except subprocess.TimeoutExpired:
@@ -538,8 +682,8 @@ def probe_recruiter_auth(cdp_port: str, navigate: bool = True) -> dict[str, Any]
 def probe_agent_browser_auth(session_name: str) -> dict[str, Any]:
     """Probe whether an agent-browser session is authenticated to LinkedIn Recruiter.
 
-    This checks if the session can access the Recruiter home page without
-    being redirected to a login page.
+    Uses JS-based page state detection to determine authentication status
+    without requiring exact URL matching.
 
     Args:
         session_name: The agent-browser session name
@@ -552,28 +696,20 @@ def probe_agent_browser_auth(session_name: str) -> dict[str, Any]:
     """
     try:
         # Navigate to Recruiter home
-        result = subprocess.run(
+        subprocess.run(
             ["agent-browser", "--session", session_name, "open", RECRUITER_HOME_URL],
             capture_output=True,
             text=True,
             timeout=10,
         )
 
-        # Get current URL after navigation
-        url_result = subprocess.run(
-            ["agent-browser", "--session", session_name, "get", "url"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        current_url = url_result.stdout.strip() if url_result.returncode == 0 else None
-
-        is_authenticated = _check_auth_from_url(current_url)
+        # Use JS-based detection for auth status
+        eval_result = _evaluate_auth_js(cdp_port=None, session_name=session_name)
 
         return {
-            "authenticated": is_authenticated,
-            "url": current_url,
-            "error": None,
+            "authenticated": eval_result["is_authenticated"],
+            "url": eval_result["url"],
+            "error": eval_result["error"],
         }
 
     except subprocess.TimeoutExpired:

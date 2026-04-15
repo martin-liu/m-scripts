@@ -270,6 +270,118 @@ else
     ((TESTS_PASSED++))
 fi
 
+# Test 12: Saved fallback CDP port is reused on later runs
+echo -n "Testing: Saved fallback CDP port is reused... "
+mock_saved_dir=$(mktemp -d)
+mock_saved_work_dir=$(mktemp -d)
+mkdir -p "$mock_saved_work_dir/runtime"
+cat > "$mock_saved_work_dir/runtime/browser_mode.json" <<'EOF'
+{
+  "mode": "cdp",
+  "cdp_port": "19230",
+  "session_name": null,
+  "auth_file": null,
+  "headed": true,
+  "updated_at": "2024-01-01T00:00:00Z"
+}
+EOF
+# Mock curl: preferred port (29999) fails, saved port (19230) succeeds
+cat > "$mock_saved_dir/curl" <<'EOF'
+#!/bin/bash
+# Check all arguments for the port in URL
+for arg in "$@"; do
+    if [[ "$arg" == *"19230"* ]]; then
+        exit 0  # Saved port is available
+    fi
+done
+exit 1  # Preferred port is not available
+EOF
+chmod +x "$mock_saved_dir/curl"
+
+# Mock python3 for auth probing
+cat > "$mock_saved_dir/python3" <<'EOF'
+#!/bin/bash
+if [[ "$*" == *"from browser_utils import probe_recruiter_auth"* ]]; then
+    # Check which port is being probed - look for the port in the command
+    if [[ "$*" == *"19230"* ]]; then
+        printf '%s\n' '{"authenticated": true, "url": "https://www.linkedin.com/talent/home"}'
+    else
+        printf '%s\n' '{"authenticated": false, "url": null, "error": "CDP not available"}'
+    fi
+elif [[ "$*" == *"json.load(sys.stdin).get('authenticated'"* ]]; then
+    printf '%s\n' 'True'
+else
+    /usr/bin/python3 "$@"
+fi
+EOF
+chmod +x "$mock_saved_dir/python3"
+
+set +e
+output=$(PATH="$mock_saved_dir:$PATH" WORK_DIR="$mock_saved_work_dir" bash "$CONNECT_SCRIPT" --port 29999 2>&1)
+exit_code=$?
+set -e
+
+if [[ "$exit_code" -eq 0 && "$output" == *"saved port"* ]]; then
+    echo -e "${GREEN}PASS${NC}"
+    ((TESTS_PASSED++))
+else
+    echo -e "${RED}FAIL${NC} (exit $exit_code, expected 'saved port' in output)"
+    echo "  Output: $output"
+    ((TESTS_FAILED++))
+fi
+
+rm -rf "$mock_saved_dir" "$mock_saved_work_dir"
+
+# Test 13: Stale saved CDP port falls back to preferred port
+echo -n "Testing: Stale saved CDP port falls back safely... "
+mock_stale_dir=$(mktemp -d)
+mock_stale_work_dir=$(mktemp -d)
+mkdir -p "$mock_stale_work_dir/runtime"
+cat > "$mock_stale_work_dir/runtime/browser_mode.json" <<'EOF'
+{
+  "mode": "cdp",
+  "cdp_port": "19230",
+  "session_name": null,
+  "auth_file": null,
+  "headed": true,
+  "updated_at": "2024-01-01T00:00:00Z"
+}
+EOF
+# Mock curl: both saved port (19230) and preferred port (29999) fail - no CDP
+cat > "$mock_stale_dir/curl" <<'EOF'
+#!/bin/bash
+exit 1  # No CDP available on any port
+EOF
+chmod +x "$mock_stale_dir/curl"
+
+# Mock python3 for bootstrap (since no CDP, will go to bootstrap path)
+cat > "$mock_stale_dir/python3" <<'EOF'
+#!/bin/bash
+if [[ "$1" == *"auth_bootstrap.py"* ]]; then
+  printf '%s\n' '{"success": true, "mode": "cdp", "cdp_port": "29999", "session_name": null, "auth_file": null, "message": "mock bootstrap", "error": null}'
+else
+  /usr/bin/python3 "$@"
+fi
+EOF
+chmod +x "$mock_stale_dir/python3"
+
+set +e
+output=$(WORK_DIR="$mock_stale_work_dir" PATH="$mock_stale_dir:$PATH" bash "$CONNECT_SCRIPT" --port 29999 2>&1)
+exit_code=$?
+set -e
+
+# Should fall through to bootstrap since saved port is stale and preferred has no CDP
+if [[ "$exit_code" -eq 0 && "$output" == *"CONNECTED"* ]]; then
+    echo -e "${GREEN}PASS${NC}"
+    ((TESTS_PASSED++))
+else
+    echo -e "${RED}FAIL${NC} (exit $exit_code, expected bootstrap to succeed)"
+    echo "  Output: $output"
+    ((TESTS_FAILED++))
+fi
+
+rm -rf "$mock_stale_dir" "$mock_stale_work_dir"
+
 rm -rf "$mock_dir" "$mock_work_dir"
 rm -rf "$mock_bootstrap_dir"
 rm -rf "$mock_bootstrap_work_dir"
