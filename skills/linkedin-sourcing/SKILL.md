@@ -4,7 +4,7 @@ description: LinkedIn Recruiter (paid product) sourcing assistant for macOS. Exc
 license: MIT
 metadata:
   author: martinliu
-  version: "1.0.0"
+  version: "1.0.1"
 allowed-tools: Bash(npx agent-browser:*), Bash(agent-browser:*), Bash(grep:*), Bash(rg:*), Bash(ls:*), Bash(mkdir:*), Bash(cat:*), Bash(echo:*), Bash(date:*), Bash(timeout:*), Bash(python3:*), Bash(open:*), Bash(chmod:*), Bash(bash:*)
 ---
 
@@ -16,13 +16,13 @@ Automates candidate outreach via **LinkedIn Recruiter** (the paid hiring product
 
 ```bash
 # Install only this skill
-npx skills add martin-liu/m-scripts --skill linkedin-sourcing
+npx -y skills add martin-liu/m-scripts --skill linkedin-sourcing
 
 # Install only this skill over SSH
-npx skills add git@github.com:martin-liu/m-scripts.git --skill linkedin-sourcing
+npx -y skills add git@github.com:martin-liu/m-scripts.git --skill linkedin-sourcing
 
 # Update this skill later
-npx skills update linkedin-sourcing
+npx -y skills update linkedin-sourcing
 ```
 
 | Mode | Flow | User action |
@@ -66,6 +66,12 @@ This skill separates **project bootstrapping** from **Recruiter execution**:
 `SKILL_DIR` = this skill directory.
 
 `WORK_DIR` = the user's runtime data directory from `~/.config/linkedin-sourcing/profile.sh`.
+
+**Canonical script locations** (derive from these variables only):
+- Before runtime init or for debugging: `$SKILL_DIR/scripts`
+- During normal execution: `$WORK_DIR/runtime/current/scripts`
+
+**Forbidden**: Do not use global filesystem searches (find, glob, locate) to locate script files. Always derive paths from `SKILL_DIR` or `WORK_DIR/runtime/current`.
 
 Permission rule: request approval once for top-level `$WORK_DIR`, not each child path.
 

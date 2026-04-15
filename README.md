@@ -44,26 +44,26 @@ AI agent skills that can be installed with the [skills CLI](https://github.com/v
 
 ```sh
 # Install all skills from this repo
-npx skills add martin-liu/m-scripts
+npx -y skills add martin-liu/m-scripts -g
 
 # Install all skills from this repo over SSH
-npx skills add git@github.com:martin-liu/m-scripts.git
+npx -y skills add git@github.com:martin-liu/m-scripts.git -g
 
 # Install only linkedin-sourcing
-npx skills add martin-liu/m-scripts --skill linkedin-sourcing
+npx -y skills add martin-liu/m-scripts --skill linkedin-sourcing -g
 
 # Install only linkedin-sourcing over SSH
-npx skills add git@github.com:martin-liu/m-scripts.git --skill linkedin-sourcing
+npx -y skills add git@github.com:martin-liu/m-scripts.git --skill linkedin-sourcing -g
 ```
 
 To update installed skills to the latest version:
 
 ```sh
 # Update all installed skills
-npx skills update
+npx -y skills update
 
 # Update only linkedin-sourcing
-npx skills update linkedin-sourcing
+npx -y skills update linkedin-sourcing
 ```
 
 ### Available skills
