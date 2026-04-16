@@ -12,7 +12,6 @@ Fail-closed semantics:
 
 from __future__ import annotations
 
-import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -22,33 +21,24 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
 from runtime_manager import RuntimeManager
+from config_utils import parse_config_file as shared_parse_config_file
+from recruiter_url_utils import (
+    extract_recruiter_id_from_url,
+    is_recruiter_url,
+)
 
 
-def extract_recruiter_id_from_url(url: str) -> str | None:
-    """Extract numeric recruiter project ID from a LinkedIn Recruiter URL.
-
-    Args:
-        url: LinkedIn Recruiter URL (e.g., https://linkedin.com/talent/hire/12345/...)
-
-    Returns:
-        Recruiter project ID string if found, None otherwise
-    """
-    # Match /talent/hire/{numeric_id} followed by /, ?, #, or end of string
-    # This accepts URLs with or without trailing slash, and with query params or hash
-    match = re.search(r"/talent/hire/(\d+)(?:/|$|\?|#)", url)
-    return match.group(1) if match else None
-
-
-def is_recruiter_url(ref: str) -> bool:
-    """Check if reference looks like a LinkedIn Recruiter URL.
-
-    Args:
-        ref: Project reference string
-
-    Returns:
-        True if ref appears to be a LinkedIn Recruiter URL
-    """
-    return "/talent/hire/" in ref and extract_recruiter_id_from_url(ref) is not None
+# Re-export for backward compatibility
+__all__ = [
+    "extract_recruiter_id_from_url",
+    "is_recruiter_url",
+    "is_bare_numeric_id",
+    "is_config_path",
+    "scan_projects_for_recruiter_id",
+    "scan_projects_for_project_id",
+    "parse_config_file",
+    "resolve_project_ref",
+]
 
 
 def is_bare_numeric_id(ref: str) -> bool:
@@ -102,25 +92,11 @@ def scan_projects_for_recruiter_id(work_dir: Path, recruiter_id: str) -> list[Pa
         if not config_path.exists():
             continue
 
-        try:
-            content = config_path.read_text()
-            # Look for RECRUITER_PROJECT_URL containing the recruiter_id
-            for line in content.splitlines():
-                line = line.strip()
-                if line.startswith("RECRUITER_PROJECT_URL="):
-                    # Extract URL value
-                    url_match = re.search(
-                        r'RECRUITER_PROJECT_URL=["\']?([^"\'\n]+)', line
-                    )
-                    if url_match:
-                        url = url_match.group(1)
-                        # Extract the recruiter ID from the URL and compare exactly
-                        url_recruiter_id = extract_recruiter_id_from_url(url)
-                        if url_recruiter_id == recruiter_id:
-                            matches.append(config_path)
-                            break
-        except (OSError, IOError):
-            continue
+        config = shared_parse_config_file(config_path)
+        recruiter_url = config.get("RECRUITER_PROJECT_URL", "")
+        url_recruiter_id = extract_recruiter_id_from_url(recruiter_url)
+        if url_recruiter_id == recruiter_id:
+            matches.append(config_path)
 
     return matches
 
@@ -149,21 +125,9 @@ def scan_projects_for_project_id(work_dir: Path, project_id: str) -> list[Path]:
         if not config_path.exists():
             continue
 
-        try:
-            content = config_path.read_text()
-            # Look for PROJECT_ID= line
-            for line in content.splitlines():
-                line = line.strip()
-                if line.startswith("PROJECT_ID="):
-                    # Extract PROJECT_ID value
-                    id_match = re.search(r'PROJECT_ID=["\']?([^"\'\n]+)', line)
-                    if id_match:
-                        config_project_id = id_match.group(1)
-                        if config_project_id == project_id:
-                            matches.append(config_path)
-                            break
-        except (OSError, IOError):
-            continue
+        config = shared_parse_config_file(config_path)
+        if config.get("PROJECT_ID") == project_id:
+            matches.append(config_path)
 
     return matches
 
@@ -177,25 +141,7 @@ def parse_config_file(config_path: Path) -> dict[str, str]:
     Returns:
         Dict of config key-value pairs
     """
-    config: dict[str, str] = {}
-
-    if not config_path.exists():
-        return config
-
-    try:
-        for line in config_path.read_text().splitlines():
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            if "=" in line:
-                key, value = line.split("=", 1)
-                key = key.strip()
-                value = value.strip().strip('"').strip("'")
-                config[key] = value
-    except (OSError, IOError):
-        pass
-
-    return config
+    return shared_parse_config_file(config_path)
 
 
 def resolve_project_ref(
@@ -376,6 +322,7 @@ def resolve_project_ref(
     result["success"] = True
     result["config_path"] = config_path
     result["local_project_id"] = local_project_id or config_path.parent.name
+    result["project_dir_name"] = config_path.parent.name
     result["workbook_path"] = workbook_path
     result["recruiter_project_id"] = recruiter_id
 

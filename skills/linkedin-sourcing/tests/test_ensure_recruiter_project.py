@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from unittest.mock import Mock, patch, call, MagicMock
+from unittest.mock import MagicMock, Mock, call, patch
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 
@@ -54,7 +54,7 @@ class TestParseArgs:
         """Should use default values for optional args."""
         with patch.object(sys, "argv", ["script", "--project-name", "Test"]):
             args = erp.parse_args()
-            assert args.cdp_port == "9230"
+            assert args.cdp_port == "9234"
             assert args.description == ""
 
 
@@ -74,7 +74,7 @@ class TestRunBrowserCommand:
             "timed_out": False,
         }
 
-        result = erp.run_browser_command("9230", "eval", "some_js")
+        result = erp.run_browser_command("9234", "eval", "some_js")
 
         assert result["found"] is True
         assert result["url"] == "https://example.com"
@@ -92,7 +92,7 @@ class TestRunBrowserCommand:
             "timed_out": False,
         }
 
-        result = erp.run_browser_command("9230", "eval", "some_js")
+        result = erp.run_browser_command("9234", "eval", "some_js")
 
         assert result["found"] is True
 
@@ -109,7 +109,7 @@ class TestRunBrowserCommand:
             "timed_out": False,
         }
 
-        result = erp.run_browser_command("9230", "eval", "some_js")
+        result = erp.run_browser_command("9234", "eval", "some_js")
 
         assert "error" in result
 
@@ -130,7 +130,7 @@ class TestRunBrowserCommand:
             "timed_out": True,
         }
 
-        result = erp.run_browser_command("9230", "eval", "some_js")
+        result = erp.run_browser_command("9234", "eval", "some_js")
 
         assert "error" in result
         assert "timed out" in result["error"].lower()
@@ -150,7 +150,7 @@ class TestRunBrowserCommand:
             "timed_out": False,
         }
 
-        result = erp.run_browser_command("9230", "eval", "some_js")
+        result = erp.run_browser_command("9234", "eval", "some_js")
 
         assert "error" in result
         assert "agent-browser" in result["error"].lower()
@@ -180,7 +180,7 @@ class TestNavigateToProjects:
         }
         mock_probe.return_value = mock_probe_instance
 
-        result = erp.navigate_to_projects("9230")
+        result = erp.navigate_to_projects("9234")
 
         assert result["success"] is True
         assert result["error"] is None
@@ -210,10 +210,12 @@ class TestNavigateToProjects:
         }
         mock_probe.return_value = mock_probe_instance
 
-        result = erp.navigate_to_projects("9230")
+        result = erp.navigate_to_projects("9234")
 
         assert result["success"] is False
         assert "connection refused" in result["error"]
+        assert result["failure_code"] == "browser_unavailable"
+        assert result["action_required"]["code"] == "browser_unavailable"
 
     @patch("ensure_recruiter_project.PageStateProbe")
     @patch("ensure_recruiter_project._run_browser_command")
@@ -240,12 +242,14 @@ class TestNavigateToProjects:
         }
         mock_probe.return_value = mock_probe_instance
 
-        result = erp.navigate_to_projects("9230")
+        result = erp.navigate_to_projects("9234")
 
         assert result["success"] is False
         assert result["dialog_info"]["has_dialog"] is True
         assert "alert dialog" in result["error"]
         assert "Session expired" in result["error"]
+        assert result["failure_code"] == "dialog_blocked"
+        assert result["action_required"]["code"] == "dialog_blocked"
 
     @patch("ensure_recruiter_project.RecoveryHelper")
     @patch("ensure_recruiter_project.PageStateProbe")
@@ -285,7 +289,7 @@ class TestNavigateToProjects:
         }
         mock_recovery.return_value = mock_recovery_instance
 
-        result = erp.navigate_to_projects("9230", work_dir="/tmp/test")
+        result = erp.navigate_to_projects("9234", work_dir="/tmp/test")
 
         assert result["success"] is True
         assert result["recovery_attempted"] is True
@@ -301,7 +305,7 @@ class TestWaitForPageLoad:
         """Should return True when page loads quickly."""
         mock_run_browser.return_value = {"ready": True, "state": "complete"}
 
-        result = erp.wait_for_page_load("9230")
+        result = erp.wait_for_page_load("9234")
 
         assert result is True
 
@@ -311,7 +315,7 @@ class TestWaitForPageLoad:
         """Should return False when page never loads."""
         mock_run_browser.return_value = {"ready": False, "state": "loading"}
 
-        result = erp.wait_for_page_load("9230", max_wait=1)
+        result = erp.wait_for_page_load("9234", max_wait=1)
 
         assert result is False
 
@@ -324,7 +328,7 @@ class TestSearchForProject:
         """Should execute search and return result."""
         mock_run_browser.return_value = {"found": True, "action": "searched"}
 
-        result = erp.search_for_project("9230", "Test Project")
+        result = erp.search_for_project("9234", "Test Project")
 
         assert result["found"] is True
         assert result["action"] == "searched"
@@ -342,7 +346,7 @@ class TestCheckProjectExists:
             "name": "Test Project",
         }
 
-        result = erp.check_project_exists("9230", "Test Project")
+        result = erp.check_project_exists("9234", "Test Project")
 
         assert result["found"] is True
         assert "url" in result
@@ -352,7 +356,7 @@ class TestCheckProjectExists:
         """Should return found=False when project doesn't exist."""
         mock_run_browser.return_value = {"found": False}
 
-        result = erp.check_project_exists("9230", "Nonexistent Project")
+        result = erp.check_project_exists("9234", "Nonexistent Project")
 
         assert result["found"] is False
 
@@ -365,7 +369,7 @@ class TestClickCreateProject:
         """Should return clicked=True when button found."""
         mock_run_browser.return_value = {"clicked": True, "text": "Create Project"}
 
-        result = erp.click_create_project("9230")
+        result = erp.click_create_project("9234")
 
         assert result["clicked"] is True
 
@@ -374,7 +378,7 @@ class TestClickCreateProject:
         """Should return clicked=False when button not found."""
         mock_run_browser.return_value = {"clicked": False, "error": "Not found"}
 
-        result = erp.click_create_project("9230")
+        result = erp.click_create_project("9234")
 
         assert result["clicked"] is False
 
@@ -391,7 +395,7 @@ class TestFillCreateForm:
             "projectName": "Test Project",
         }
 
-        result = erp.fill_create_form("9230", "Test Project", "Description")
+        result = erp.fill_create_form("9234", "Test Project", "Description")
 
         assert result["nameFilled"] is True
         assert result["projectName"] == "Test Project"
@@ -405,7 +409,7 @@ class TestFillCreateForm:
             "projectName": "Test Project",
         }
 
-        result = erp.fill_create_form("9230", "Test Project", "")
+        result = erp.fill_create_form("9234", "Test Project", "")
 
         assert result["nameFilled"] is True
 
@@ -419,7 +423,7 @@ class TestSubmitForm:
         """Should submit form directly when possible."""
         mock_run_browser.return_value = {"submitted": True, "text": "Create"}
 
-        result = erp.submit_form("9230")
+        result = erp.submit_form("9234")
 
         assert result["submitted"] is True
 
@@ -434,7 +438,7 @@ class TestSubmitForm:
             {"submitted": True},  # Second attempt
         ]
 
-        result = erp.submit_form("9230")
+        result = erp.submit_form("9234")
 
         assert result["submitted"] is True
         assert mock_run_browser.call_count == 3
@@ -451,7 +455,7 @@ class TestCheckUntitled:
             "title": "Untitled Project",
         }
 
-        result = erp.check_untitled("9230")
+        result = erp.check_untitled("9234")
 
         assert result["isUntitled"] is True
 
@@ -460,7 +464,7 @@ class TestCheckUntitled:
         """Should detect titled project."""
         mock_run_browser.return_value = {"isUntitled": False, "title": "My Project"}
 
-        result = erp.check_untitled("9230")
+        result = erp.check_untitled("9234")
 
         assert result["isUntitled"] is False
 
@@ -476,7 +480,7 @@ class TestGetCurrentUrl:
             "title": "Test Project",
         }
 
-        result = erp.get_current_url("9230")
+        result = erp.get_current_url("9234")
 
         assert result["url"] == "https://linkedin.com/talent/hire/123/projects"
         assert result["title"] == "Test Project"
@@ -485,6 +489,7 @@ class TestGetCurrentUrl:
 class TestEnsureProjectExists:
     """Integration tests for the main ensure_project_exists function."""
 
+    @patch("ensure_recruiter_project._run_browser_command")
     @patch("ensure_recruiter_project.validate_project_context")
     @patch("ensure_recruiter_project.validate_navigation_result")
     @patch("ensure_recruiter_project.resolve_search_url")
@@ -513,6 +518,7 @@ class TestEnsureProjectExists:
         mock_resolve,
         mock_validate_nav,
         mock_validate_context,
+        mock_run_browser,
     ):
         """Should return existing project when found with search URL."""
         mock_navigate.return_value = {
@@ -545,8 +551,15 @@ class TestEnsureProjectExists:
             "project_id": "123",
             "error": None,
         }
+        # Mock the goto command used when opening existing project
+        mock_run_browser.return_value = {
+            "stdout": "",
+            "stderr": "",
+            "returncode": 0,
+            "error": None,
+        }
 
-        result = erp.ensure_project_exists("Test Project", "Description", "9230")
+        result = erp.ensure_project_exists("Test Project", "Description", "9234")
 
         assert result["status"] == "existing"
         assert result["project_id"] == "123"
@@ -555,7 +568,7 @@ class TestEnsureProjectExists:
         )
         assert "Found existing" in result["message"]
         mock_resolve.assert_called_once_with(
-            "9230", "https://linkedin.com/talent/hire/123/overview"
+            "9234", "https://linkedin.com/talent/hire/123/overview"
         )
         # Should not try to create
         mock_click_create.assert_not_called()
@@ -621,7 +634,7 @@ class TestEnsureProjectExists:
             "error": None,
         }
 
-        result = erp.ensure_project_exists("Test Project", "Description", "9230")
+        result = erp.ensure_project_exists("Test Project", "Description", "9234")
 
         assert result["status"] == "created"
         assert result["project_id"] == "456"
@@ -631,7 +644,7 @@ class TestEnsureProjectExists:
         assert "Created new" in result["message"]
         mock_click_create.assert_called_once()
         mock_resolve.assert_called_once_with(
-            "9230", "https://linkedin.com/talent/hire/456/overview"
+            "9234", "https://linkedin.com/talent/hire/456/overview"
         )
 
     @patch("ensure_recruiter_project.validate_project_context")
@@ -697,7 +710,7 @@ class TestEnsureProjectExists:
             "error": None,
         }
 
-        result = erp.ensure_project_exists("Test Project", "Description", "9230")
+        result = erp.ensure_project_exists("Test Project", "Description", "9234")
 
         assert result["status"] == "created"
         assert result["project_id"] == "789"
@@ -713,12 +726,22 @@ class TestEnsureProjectExists:
             "success": False,
             "error": "Connection refused",
             "dialog_info": None,
+            "failure_code": "browser_unavailable",
+            "action_required": {
+                "code": "browser_unavailable",
+                "summary": "Chrome browser is not available for automation",
+                "steps": ["Ensure Chrome is running"],
+                "can_retry": True,
+                "context": {},
+            },
         }
 
-        result = erp.ensure_project_exists("Test Project", "Description", "9230")
+        result = erp.ensure_project_exists("Test Project", "Description", "9234")
 
         assert result["status"] == "error"
         assert "Connection refused" in result["message"]
+        assert result["failure_code"] == "browser_unavailable"
+        assert result["action_required"]["code"] == "browser_unavailable"
 
     @patch("ensure_recruiter_project.wait_for_page_load")
     @patch("ensure_recruiter_project.navigate_to_projects")
@@ -731,7 +754,7 @@ class TestEnsureProjectExists:
         }
         mock_wait.return_value = False
 
-        result = erp.ensure_project_exists("Test Project", "Description", "9230")
+        result = erp.ensure_project_exists("Test Project", "Description", "9234")
 
         assert result["status"] == "error"
         assert "did not load" in result["message"]
@@ -747,13 +770,23 @@ class TestEnsureProjectExists:
                 "dialog_type": "confirm",
                 "message": "Are you sure?",
             },
+            "failure_code": "dialog_blocked",
+            "action_required": {
+                "code": "dialog_blocked",
+                "summary": "A browser dialog is blocking automation progress",
+                "steps": ["Dismiss the dialog in Chrome"],
+                "can_retry": True,
+                "context": {"dialog_type": "confirm"},
+            },
         }
 
-        result = erp.ensure_project_exists("Test Project", "Description", "9230")
+        result = erp.ensure_project_exists("Test Project", "Description", "9234")
 
         assert result["status"] == "error"
         assert "confirm dialog" in result["message"]
         assert "Are you sure?" in result["message"]
+        assert result["failure_code"] == "dialog_blocked"
+        assert result["action_required"]["code"] == "dialog_blocked"
 
 
 class TestMain:
@@ -940,7 +973,7 @@ class TestNavigateToSearchPage:
             "url": "https://linkedin.com/talent/hire/123/discover/recruiterSearch",
         }
 
-        result = erp.navigate_to_search_page("9230")
+        result = erp.navigate_to_search_page("9234")
 
         assert result["success"] is True
         assert "discover/recruiterSearch" in result["url"]
@@ -961,7 +994,7 @@ class TestNavigateToSearchPage:
             "title": "Search",
         }
 
-        result = erp.navigate_to_search_page("9230")
+        result = erp.navigate_to_search_page("9234")
 
         assert result["success"] is True
         assert "discover/recruiterSearch" in result["url"]
@@ -1001,7 +1034,7 @@ class TestNavigateToSearchPage:
             },
         ]
 
-        result = erp.navigate_to_search_page("9230")
+        result = erp.navigate_to_search_page("9234")
 
         assert result["success"] is True
         assert "discover/recruiterSearch" in result["url"]
@@ -1044,7 +1077,7 @@ class TestNavigateToSearchPage:
             },  # Contextual URL - should stop here
         ]
 
-        result = erp.navigate_to_search_page("9230")
+        result = erp.navigate_to_search_page("9234")
 
         assert result["success"] is True
         assert "discover/recruiterSearch" in result["url"]
@@ -1089,7 +1122,7 @@ class TestNavigateToSearchPage:
             {"url": contextual_url, "title": "Recruiter Search"},
         ]
 
-        result = erp.navigate_to_search_page("9230")
+        result = erp.navigate_to_search_page("9234")
 
         assert result["success"] is True
         assert result["url"] == contextual_url
@@ -1133,7 +1166,7 @@ class TestNavigateToSearchPage:
             search_response,  # After derived navigation
         ]
 
-        result = erp.navigate_to_search_page("9230")
+        result = erp.navigate_to_search_page("9234")
 
         # Should succeed via derived method since polling didn't find it
         assert result["success"] is True
@@ -1164,7 +1197,7 @@ class TestNavigateToSearchPage:
         # _run_browser_command is used for goto in the derive fallback
         mock_run_goto.return_value = {"stdout": "", "stderr": "", "error": None}
 
-        result = erp.navigate_to_search_page("9230")
+        result = erp.navigate_to_search_page("9234")
 
         assert result["success"] is True
         assert "discover/recruiterSearch" in result["url"]
@@ -1287,7 +1320,7 @@ class TestResolveSearchUrl:
         """Should return URL as-is if already has context params."""
         contextual_url = "https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=abc123&searchHistoryId=def456"
 
-        result = erp.resolve_search_url("9230", contextual_url)
+        result = erp.resolve_search_url("9234", contextual_url)
 
         assert result == contextual_url
 
@@ -1295,7 +1328,7 @@ class TestResolveSearchUrl:
         """Bare search URL without context should return None (fail closed)."""
         bare_url = "https://linkedin.com/talent/hire/123/discover/recruiterSearch"
 
-        result = erp.resolve_search_url("9230", bare_url)
+        result = erp.resolve_search_url("9234", bare_url)
 
         # Should fail closed - bare URLs hang on "Loading search results"
         assert result is None
@@ -1311,7 +1344,7 @@ class TestResolveSearchUrl:
             "method": "click",
         }
 
-        result = erp.resolve_search_url("9230", overview_url)
+        result = erp.resolve_search_url("9234", overview_url)
 
         assert result == contextual_url
         mock_navigate.assert_called_once()
@@ -1327,7 +1360,7 @@ class TestResolveSearchUrl:
             "method": "derived",
         }
 
-        result = erp.resolve_search_url("9230", overview_url)
+        result = erp.resolve_search_url("9234", overview_url)
 
         # Should fail closed - don't return bare URLs
         assert result is None
@@ -1339,7 +1372,7 @@ class TestResolveSearchUrl:
         overview_url = "https://linkedin.com/talent/hire/123/overview"
         mock_navigate.return_value = {"success": False, "error": "Navigation failed"}
 
-        result = erp.resolve_search_url("9230", overview_url)
+        result = erp.resolve_search_url("9234", overview_url)
 
         # Should fail closed - return None instead of original URL
         assert result is None
@@ -1357,7 +1390,7 @@ class TestNavigationValidation:
         }
 
         result = erp.validate_navigation_result(
-            "9230",
+            "9234",
             expected_url_patterns=["/talent/hire/", "/discover/recruiterSearch"],
             context="Test navigation",
         )
@@ -1378,7 +1411,7 @@ class TestNavigationValidation:
         }
 
         result = erp.validate_navigation_result(
-            "9230",
+            "9234",
             expected_url_patterns=["/discover/recruiterSearch"],
             context="Open project",
         )
@@ -1396,7 +1429,7 @@ class TestNavigationValidation:
         }
 
         result = erp.validate_navigation_result(
-            "9230",
+            "9234",
             expected_url_patterns=["/talent/hire/"],
             context="Navigate to project",
         )
@@ -1410,7 +1443,7 @@ class TestNavigationValidation:
         mock_get_url.return_value = {"url": "", "title": ""}
 
         result = erp.validate_navigation_result(
-            "9230",
+            "9234",
             expected_url_patterns=["/talent/"],
             context="Test",
         )
@@ -1431,7 +1464,7 @@ class TestProjectContextValidation:
         }
 
         result = erp.validate_project_context(
-            "9230",
+            "9234",
             project_name="Test Project",
         )
 
@@ -1448,7 +1481,7 @@ class TestProjectContextValidation:
         }
 
         result = erp.validate_project_context(
-            "9230",
+            "9234",
             project_name="Test Project",
             expected_project_id="456",
         )
@@ -1465,7 +1498,7 @@ class TestProjectContextValidation:
         }
 
         result = erp.validate_project_context(
-            "9230",
+            "9234",
             project_name="Test Project",
             expected_project_id="456",
         )
@@ -1483,7 +1516,7 @@ class TestProjectContextValidation:
         }
 
         result = erp.validate_project_context(
-            "9230",
+            "9234",
             project_name="Test Project",
         )
 
@@ -1496,7 +1529,7 @@ class TestProjectContextValidation:
         mock_get_url.return_value = {"url": "", "title": ""}
 
         result = erp.validate_project_context(
-            "9230",
+            "9234",
             project_name="Test Project",
         )
 
@@ -1507,6 +1540,7 @@ class TestProjectContextValidation:
 class TestEnsureProjectExistsRelaxedMode:
     """Tests for ensure_project_exists with require_contextual_url=False (bootstrap mode)."""
 
+    @patch("ensure_recruiter_project._run_browser_command")
     @patch("ensure_recruiter_project.validate_project_context")
     @patch("ensure_recruiter_project.validate_navigation_result")
     @patch("ensure_recruiter_project.resolve_search_url")
@@ -1535,6 +1569,7 @@ class TestEnsureProjectExistsRelaxedMode:
         mock_resolve,
         mock_validate_nav,
         mock_validate_context,
+        mock_run_browser,
     ):
         """Should return project_id even without contextual search URL when require_contextual_url=False."""
         mock_navigate.return_value = {
@@ -1567,9 +1602,16 @@ class TestEnsureProjectExistsRelaxedMode:
             "project_id": "123",
             "error": None,
         }
+        # Mock the goto command used when opening existing project
+        mock_run_browser.return_value = {
+            "stdout": "",
+            "stderr": "",
+            "returncode": 0,
+            "error": None,
+        }
 
         result = erp.ensure_project_exists(
-            "Test Project", "Description", "9230", require_contextual_url=False
+            "Test Project", "Description", "9234", require_contextual_url=False
         )
 
         # Should succeed even without contextual URL
@@ -1577,6 +1619,7 @@ class TestEnsureProjectExistsRelaxedMode:
         assert result["project_id"] == "123"
         assert result["url"] == "https://linkedin.com/talent/hire/123/overview"
 
+    @patch("ensure_recruiter_project._run_browser_command")
     @patch("ensure_recruiter_project.validate_project_context")
     @patch("ensure_recruiter_project.validate_navigation_result")
     @patch("ensure_recruiter_project.resolve_search_url")
@@ -1605,6 +1648,7 @@ class TestEnsureProjectExistsRelaxedMode:
         mock_resolve,
         mock_validate_nav,
         mock_validate_context,
+        mock_run_browser,
     ):
         """Should fail without contextual URL when require_contextual_url=True (default)."""
         mock_navigate.return_value = {
@@ -1637,9 +1681,16 @@ class TestEnsureProjectExistsRelaxedMode:
             "project_id": "123",
             "error": None,
         }
+        # Mock the goto command used when opening existing project
+        mock_run_browser.return_value = {
+            "stdout": "",
+            "stderr": "",
+            "returncode": 0,
+            "error": None,
+        }
 
         result = erp.ensure_project_exists(
-            "Test Project", "Description", "9230", require_contextual_url=True
+            "Test Project", "Description", "9234", require_contextual_url=True
         )
 
         # Should fail in strict mode
@@ -1709,7 +1760,7 @@ class TestEnsureProjectExistsValidation:
             },
         ]
 
-        result = erp.ensure_project_exists("Test Project", "Description", "9230")
+        result = erp.ensure_project_exists("Test Project", "Description", "9234")
 
         assert result["status"] == "error"
         assert "Form submission failed" in result["message"]
@@ -1776,7 +1827,7 @@ class TestEnsureProjectExistsValidation:
             "url": "https://linkedin.com/talent/hire/123/overview"
         }
 
-        result = erp.ensure_project_exists("Test Project", "Description", "9230")
+        result = erp.ensure_project_exists("Test Project", "Description", "9234")
 
         assert result["status"] == "error"
         assert "Could not resolve contextual search URL" in result["message"]
@@ -1892,7 +1943,8 @@ class TestLiveExposedBugs:
 
 
 if __name__ == "__main__":
-    import pytest
     import subprocess
+
+    import pytest
 
     pytest.main([__file__, "-v"])

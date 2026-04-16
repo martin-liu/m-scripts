@@ -40,6 +40,7 @@ sys.path.insert(0, str(SCRIPT_DIR))
 from browser_utils import run_browser_command as _run_browser_command
 from browser_utils import format_timeout_error
 from recruiter_page_utils import RecoveryHelper, PageStateProbe, ensure_page_ready
+from config_utils import parse_config_file
 
 
 # Loading state detection patterns
@@ -69,34 +70,7 @@ def read_cdp_port() -> str:
 
     manager = RuntimeManager()
     profile = manager._resolve_profile()
-    return profile.get("CDP_PORT", "9230")
-
-
-def parse_config_file(config_path: str) -> dict[str, str]:
-    """Parse a shell config file and extract key-value pairs.
-
-    Handles simple VAR="value" or VAR='value' syntax.
-    Returns a dict of config values.
-    """
-    config: dict[str, str] = {}
-    path = Path(config_path)
-    if not path.exists():
-        return config
-
-    for line in path.read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        # Match VAR="value" or VAR='value' patterns
-        match = re.match(r'^([A-Z_]+)=\s*["\'](.+?)["\']\s*$', line)
-        if match:
-            config[match.group(1)] = match.group(2)
-        # Also match VAR=value (unquoted)
-        match_unquoted = re.match(r"^([A-Z_]+)=([^\s#]+)", line)
-        if match_unquoted and match_unquoted.group(1) not in config:
-            config[match_unquoted.group(1)] = match_unquoted.group(2)
-
-    return config
+    return profile.get("CDP_PORT", "9234")
 
 
 def resolve_target_url(args: argparse.Namespace) -> str | None:
@@ -485,7 +459,7 @@ JSON.stringify(
       const nameEl = article.querySelector('a[href*="/talent/profile/"]');
       if (!nameEl) return null;
       const name = nameEl.textContent.trim();
-      const url = nameEl.href.split('?')[0];
+      const profile_url = nameEl.href.split('?')[0];
 
       // Header section: headline + location
       const lockup = article.querySelector('section.lockup') || nameEl.closest('section');
@@ -513,7 +487,7 @@ JSON.stringify(
         }
       }
 
-      return { name, url, title, company, headline: headline.substring(0, 200), location };
+      return { name, profile_url, title, company, headline: headline.substring(0, 200), location };
     })
     .filter(Boolean)
 )

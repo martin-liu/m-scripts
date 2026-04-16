@@ -6,9 +6,10 @@ Run with: python3 -m pytest skills/linkedin-sourcing/tests/test_extract_candidat
 
 from __future__ import annotations
 
+import subprocess
 import sys
 from pathlib import Path
-from unittest.mock import Mock, patch, call
+from unittest.mock import Mock, call, patch
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 
@@ -40,7 +41,7 @@ class TestReadCdpPort:
 
         result = ec.read_cdp_port()
 
-        assert result == "9230"
+        assert result == "9234"
 
     @patch("runtime_manager.RuntimeManager")
     def test_strips_quotes_from_port(self, mock_manager_class):
@@ -171,7 +172,7 @@ class TestParseArguments:
     @patch("extract_candidates.read_cdp_port")
     def test_uses_positional_port(self, mock_read_cdp):
         """Should use positional argument as CDP port (backward compat)."""
-        mock_read_cdp.return_value = "9230"
+        mock_read_cdp.return_value = "9234"
 
         with patch.object(sys, "argv", ["script", "9235"]):
             args = ec.parse_arguments()
@@ -193,7 +194,7 @@ class TestParseArguments:
     @patch("extract_candidates.read_cdp_port")
     def test_parses_target_url_flag(self, mock_read_cdp):
         """Should parse --target-url flag."""
-        mock_read_cdp.return_value = "9230"
+        mock_read_cdp.return_value = "9234"
 
         with patch.object(
             sys,
@@ -207,7 +208,7 @@ class TestParseArguments:
     @patch("extract_candidates.read_cdp_port")
     def test_parses_project_config_flag(self, mock_read_cdp):
         """Should parse --project-config flag."""
-        mock_read_cdp.return_value = "9230"
+        mock_read_cdp.return_value = "9234"
 
         with patch.object(
             sys, "argv", ["script", "--project-config", "/path/to/config.sh"]
@@ -219,7 +220,7 @@ class TestParseArguments:
     @patch("extract_candidates.read_cdp_port")
     def test_combines_flags_with_positional_port(self, mock_read_cdp):
         """Should allow both flags and positional port."""
-        mock_read_cdp.return_value = "9230"
+        mock_read_cdp.return_value = "9234"
 
         with patch.object(
             sys,
@@ -237,9 +238,9 @@ class TestBuildAgentBrowserCommand:
 
     def test_builds_correct_command(self):
         """Should build correct agent-browser command."""
-        result = ec.build_agent_browser_command("9230")
+        result = ec.build_agent_browser_command("9234")
 
-        assert result == ["agent-browser", "--cdp", "9230"]
+        assert result == ["agent-browser", "--cdp", "9234"]
 
     def test_uses_provided_port(self):
         """Should use the provided port number."""
@@ -260,7 +261,7 @@ class TestRunBrowserCommand:
             returncode=0,
         )
 
-        result = ec.run_browser_command("9230", "eval", "some_js")
+        result = ec.run_browser_command("9234", "eval", "some_js")
 
         assert result["returncode"] == 0
         assert result["parsed"]["state"] == "ready"
@@ -275,7 +276,7 @@ class TestRunBrowserCommand:
             returncode=0,
         )
 
-        result = ec.run_browser_command("9230", "eval", "some_js")
+        result = ec.run_browser_command("9234", "eval", "some_js")
 
         assert result["parsed"]["state"] == "ready"
         assert result["parsed"]["count"] == 5
@@ -285,7 +286,7 @@ class TestRunBrowserCommand:
         """Should handle empty output gracefully."""
         mock_run.return_value = Mock(stdout="", stderr="", returncode=0)
 
-        result = ec.run_browser_command("9230", "eval", "some_js")
+        result = ec.run_browser_command("9234", "eval", "some_js")
 
         assert result["parsed"] is None
         assert result["error"] is None
@@ -299,7 +300,7 @@ class TestRunBrowserCommand:
             returncode=1,
         )
 
-        result = ec.run_browser_command("9230", "eval", "some_js")
+        result = ec.run_browser_command("9234", "eval", "some_js")
 
         assert result["returncode"] == 1
         assert "browser not connected" in result["error"]
@@ -309,7 +310,7 @@ class TestRunBrowserCommand:
         """Should handle timeout gracefully."""
         mock_run.side_effect = subprocess.TimeoutExpired(cmd="test", timeout=30)
 
-        result = ec.run_browser_command("9230", "eval", "some_js")
+        result = ec.run_browser_command("9234", "eval", "some_js")
 
         assert "timed out" in result["error"].lower()
 
@@ -318,7 +319,7 @@ class TestRunBrowserCommand:
         """Should handle missing agent-browser gracefully."""
         mock_run.side_effect = FileNotFoundError()
 
-        result = ec.run_browser_command("9230", "eval", "some_js")
+        result = ec.run_browser_command("9234", "eval", "some_js")
 
         assert "agent-browser" in result["error"].lower()
 
@@ -405,7 +406,7 @@ class TestWaitForSearchResults:
             "timed_out": False,
         }
 
-        result = ec.wait_for_search_results("9230", max_wait_seconds=1.0)
+        result = ec.wait_for_search_results("9234", max_wait_seconds=1.0)
 
         assert result["status"] == "ready"
         assert result["state"] == "ready"
@@ -429,7 +430,7 @@ class TestWaitForSearchResults:
             "timed_out": False,
         }
 
-        result = ec.wait_for_search_results("9230", max_wait_seconds=1.0)
+        result = ec.wait_for_search_results("9234", max_wait_seconds=1.0)
 
         assert result["status"] == "no_results"
         assert "no results found" in result["message"]
@@ -456,7 +457,7 @@ class TestWaitForSearchResults:
         mock_dialog.return_value = {"has_dialog": False}
 
         result = ec.wait_for_search_results(
-            "9230",
+            "9234",
             max_wait_seconds=0.5,
             poll_interval_seconds=0.1,
             attempt_recovery_on_timeout=False,  # Disable recovery for this test
@@ -490,7 +491,7 @@ class TestWaitForSearchResults:
         }
 
         result = ec.wait_for_search_results(
-            "9230", max_wait_seconds=0.3, poll_interval_seconds=0.1
+            "9234", max_wait_seconds=0.3, poll_interval_seconds=0.1
         )
 
         assert result["status"] == "timeout"
@@ -523,7 +524,7 @@ class TestWaitForSearchResults:
         }
 
         result = ec.wait_for_search_results(
-            "9230", max_wait_seconds=0.3, poll_interval_seconds=0.1
+            "9234", max_wait_seconds=0.3, poll_interval_seconds=0.1
         )
 
         assert result["status"] == "timeout"
@@ -538,7 +539,7 @@ class TestWaitForSearchResults:
             "timed_out": False,
         }
 
-        result = ec.wait_for_search_results("9230", max_wait_seconds=0.5)
+        result = ec.wait_for_search_results("9234", max_wait_seconds=0.5)
 
         assert result["status"] == "error"
         assert "Connection refused" in result["message"]
@@ -570,7 +571,7 @@ class TestWaitForSearchResults:
         ]
 
         result = ec.wait_for_search_results(
-            "9230", max_wait_seconds=1.0, poll_interval_seconds=0.1
+            "9234", max_wait_seconds=1.0, poll_interval_seconds=0.1
         )
 
         assert result["status"] == "ready"
@@ -623,7 +624,7 @@ class TestWaitForSearchResults:
 
         target_url = "https://linkedin.com/talent/hire/123"
         ec.wait_for_search_results(
-            "9230",
+            "9234",
             max_wait_seconds=0.3,
             poll_interval_seconds=0.1,
             work_dir="/tmp/test",
@@ -680,7 +681,7 @@ class TestWaitForSearchResults:
         mock_recovery.return_value = mock_recovery_instance
 
         result = ec.wait_for_search_results(
-            "9230",
+            "9234",
             max_wait_seconds=0.3,
             poll_interval_seconds=0.1,
             work_dir="/tmp/test",
@@ -715,7 +716,7 @@ class TestWaitForSearchResults:
         mock_dialog.return_value = {"has_dialog": False}
 
         result = ec.wait_for_search_results(
-            "9230",
+            "9234",
             max_wait_seconds=0.3,
             poll_interval_seconds=0.1,
             attempt_recovery_on_timeout=False,  # Disable recovery for this test
@@ -789,7 +790,7 @@ class TestExtractCandidates:
             "error": None,
         }
 
-        result = ec.extract_candidates("9230")
+        result = ec.extract_candidates("9234")
 
         assert result["success"] is True
         assert result["exit_code"] == 0
@@ -814,13 +815,13 @@ class TestExtractCandidates:
         }
 
         target_url = "https://linkedin.com/talent/hire/123/discover/recruiterSearch"
-        result = ec.extract_candidates("9230", target_url=target_url)
+        result = ec.extract_candidates("9234", target_url=target_url)
 
         # Should call ensure_page_ready with target URL
         mock_ensure.assert_called_once()
         call_kwargs = mock_ensure.call_args[1]
         assert call_kwargs["target_url"] == target_url
-        assert call_kwargs["cdp_port"] == "9230"
+        assert call_kwargs["cdp_port"] == "9234"
 
     @patch("extract_candidates.ensure_page_ready")
     def test_fails_when_target_url_navigation_fails(self, mock_ensure):
@@ -833,7 +834,7 @@ class TestExtractCandidates:
         }
 
         target_url = "https://linkedin.com/talent/hire/123"
-        result = ec.extract_candidates("9230", target_url=target_url)
+        result = ec.extract_candidates("9234", target_url=target_url)
 
         assert result["success"] is False
         assert result["exit_code"] == 1
@@ -867,7 +868,7 @@ class TestExtractCandidates:
         }
 
         target_url = "https://linkedin.com/talent/hire/123"
-        ec.extract_candidates("9230", target_url=target_url)
+        ec.extract_candidates("9234", target_url=target_url)
 
         # Verify wait_for_search_results was called with target_url
         mock_wait.assert_called_once()
@@ -889,7 +890,7 @@ class TestExtractCandidates:
             },
         }
 
-        result = ec.extract_candidates("9230")
+        result = ec.extract_candidates("9234")
 
         assert result["success"] is False
         assert result["exit_code"] == 3  # Selector mismatch
@@ -911,7 +912,7 @@ class TestExtractCandidates:
             "dialog_info": {"has_dialog": False},
         }
 
-        result = ec.extract_candidates("9230")
+        result = ec.extract_candidates("9234")
 
         assert result["success"] is False
         assert result["exit_code"] == 1  # Timeout
@@ -936,7 +937,7 @@ class TestExtractCandidates:
             },
         }
 
-        result = ec.extract_candidates("9230")
+        result = ec.extract_candidates("9234")
 
         assert result["success"] is False
         assert result["exit_code"] == 1  # Timeout
@@ -953,7 +954,7 @@ class TestExtractCandidates:
             "details": {"noResultsText": "no results found"},
         }
 
-        result = ec.extract_candidates("9230")
+        result = ec.extract_candidates("9234")
 
         assert result["success"] is False  # No results is a failure condition
         assert result["exit_code"] == 2  # No results code
@@ -974,7 +975,7 @@ class TestExtractCandidates:
             "error": None,
         }
 
-        result = ec.extract_candidates("9230")
+        result = ec.extract_candidates("9234")
 
         assert result["success"] is False  # Selector mismatch is a failure
         assert result["exit_code"] == 3  # Selector mismatch code
@@ -994,7 +995,7 @@ class TestExtractCandidates:
             "error": "Browser disconnected",
         }
 
-        result = ec.extract_candidates("9230")
+        result = ec.extract_candidates("9234")
 
         assert result["success"] is False
         assert result["exit_code"] == 3
@@ -1082,7 +1083,7 @@ class TestTargetUrlVerification:
         }
 
         result = ec.verify_target_url_match(
-            "9230",
+            "9234",
             "https://linkedin.com/talent/hire/123/discover/recruiterSearch",
         )
 
@@ -1100,7 +1101,7 @@ class TestTargetUrlVerification:
         }
 
         result = ec.verify_target_url_match(
-            "9230",
+            "9234",
             "https://linkedin.com/talent/hire/123/discover/recruiterSearch",
         )
 
@@ -1118,7 +1119,7 @@ class TestTargetUrlVerification:
         }
 
         result = ec.verify_target_url_match(
-            "9230",
+            "9234",
             "https://linkedin.com/talent/hire/123/discover/recruiterSearch",
         )
 
@@ -1134,7 +1135,7 @@ class TestTargetUrlVerification:
         }
 
         result = ec.verify_target_url_match(
-            "9230",
+            "9234",
             "https://linkedin.com/talent/hire/123/discover/recruiterSearch",
         )
 
@@ -1150,7 +1151,7 @@ class TestTargetUrlVerification:
         }
 
         result = ec.verify_target_url_match(
-            "9230",
+            "9234",
             "https://linkedin.com/talent/hire/123/discover/recruiterSearch",
         )
 
@@ -1164,7 +1165,7 @@ class TestTargetUrlVerification:
         mock_run.return_value = {"error": "Connection refused", "parsed": None}
 
         result = ec.verify_target_url_match(
-            "9230",
+            "9234",
             "https://linkedin.com/talent/hire/123/discover/recruiterSearch",
         )
 
@@ -1180,7 +1181,7 @@ class TestTargetUrlVerification:
         }
 
         result = ec.verify_target_url_match(
-            "9230",
+            "9234",
             "https://linkedin.com/talent/hire/123/discover/recruiterSearch",
         )
 
@@ -1197,7 +1198,7 @@ class TestTargetUrlVerification:
         }
 
         result = ec.verify_target_url_match(
-            "9230",
+            "9234",
             "https://linkedin.com/talent/hire/123",
         )
 
@@ -1216,7 +1217,7 @@ class TestTargetUrlVerification:
         }
 
         result = ec.verify_target_url_match(
-            "9230",
+            "9234",
             "https://linkedin.com/talent/hire/123/discover/recruiterSearch",
         )
 
@@ -1235,7 +1236,7 @@ class TestTargetUrlVerification:
         }
 
         result = ec.verify_target_url_match(
-            "9230",
+            "9234",
             "https://evil.com/talent/hire/123/discover/recruiterSearch",
         )
 
@@ -1253,7 +1254,7 @@ class TestTargetUrlVerification:
         }
 
         result = ec.verify_target_url_match(
-            "9230",
+            "9234",
             "https://linkedin.com/talent/hire/123/discover/recruiterSearch",
         )
 
@@ -1270,7 +1271,7 @@ class TestTargetUrlVerification:
         }
 
         result = ec.verify_target_url_match(
-            "9230",
+            "9234",
             "https://linkedin.com/talent/hire/123/discover/recruiterSearch",
         )
 
@@ -1287,7 +1288,7 @@ class TestTargetUrlVerification:
         }
 
         result = ec.verify_target_url_match(
-            "9230",
+            "9234",
             "https://linkedin.com/talent/hire/123/discover/recruiterSearch",
         )
 
@@ -1320,7 +1321,7 @@ class TestExtractCandidatesWithUrlVerification:
         }
 
         target_url = "https://linkedin.com/talent/hire/123/discover/recruiterSearch"
-        result = ec.extract_candidates("9230", target_url=target_url)
+        result = ec.extract_candidates("9234", target_url=target_url)
 
         assert result["success"] is False
         assert result["exit_code"] == 1
@@ -1353,7 +1354,7 @@ class TestExtractCandidatesWithUrlVerification:
         }
 
         target_url = "https://linkedin.com/talent/hire/123/discover/recruiterSearch"
-        result = ec.extract_candidates("9230", target_url=target_url)
+        result = ec.extract_candidates("9234", target_url=target_url)
 
         # Should proceed to wait_for_search_results
         mock_wait.assert_called_once()
@@ -1367,7 +1368,7 @@ class TestMain:
     def test_successful_run(self, mock_parse_args, mock_extract):
         """Should return 0 on success."""
         mock_args = Mock()
-        mock_args.cdp_port = "9230"
+        mock_args.cdp_port = "9234"
         mock_args.target_url = None
         mock_args.project_config = None
         mock_parse_args.return_value = mock_args
@@ -1388,7 +1389,7 @@ class TestMain:
     def test_timeout_exit_code(self, mock_parse_args, mock_extract):
         """Should return 1 on timeout."""
         mock_args = Mock()
-        mock_args.cdp_port = "9230"
+        mock_args.cdp_port = "9234"
         mock_args.target_url = None
         mock_args.project_config = None
         mock_parse_args.return_value = mock_args
@@ -1409,7 +1410,7 @@ class TestMain:
     def test_no_results_exit_code(self, mock_parse_args, mock_extract):
         """Should return 2 on no results."""
         mock_args = Mock()
-        mock_args.cdp_port = "9230"
+        mock_args.cdp_port = "9234"
         mock_args.target_url = None
         mock_args.project_config = None
         mock_parse_args.return_value = mock_args
@@ -1430,7 +1431,7 @@ class TestMain:
     def test_selector_mismatch_exit_code(self, mock_parse_args, mock_extract):
         """Should return 3 on selector mismatch."""
         mock_args = Mock()
-        mock_args.cdp_port = "9230"
+        mock_args.cdp_port = "9234"
         mock_args.target_url = None
         mock_args.project_config = None
         mock_parse_args.return_value = mock_args
@@ -1451,7 +1452,7 @@ class TestMain:
     def test_passes_target_url_to_extract(self, mock_parse_args, mock_extract):
         """Should pass target URL to extract_candidates when provided."""
         mock_args = Mock()
-        mock_args.cdp_port = "9230"
+        mock_args.cdp_port = "9234"
         mock_args.target_url = "https://linkedin.com/talent/hire/123"
         mock_args.project_config = None
         mock_parse_args.return_value = mock_args
@@ -1523,6 +1524,53 @@ class TestLoadingPatterns:
         assert len(ec.NO_RESULTS_TEXT_PATTERNS) > 0
         for pattern in ec.NO_RESULTS_TEXT_PATTERNS:
             assert len(pattern) > 0
+
+
+class TestExtractCandidatesJsSchema:
+    """Tests for extraction JavaScript schema (profile_url vs url)."""
+
+    def test_extracts_profile_url_not_url(self):
+        """Should extract profile_url key, not url, for downstream compatibility."""
+        js = ec.extract_candidates_js()
+
+        # Should use profile_url, not url
+        assert "profile_url" in js
+        # Should NOT use bare url key (to avoid breaking downstream contract)
+        assert "url:" not in js or "profile_url:" in js
+
+    def test_returns_profile_url_in_output(self):
+        """JavaScript should return profile_url in the output object."""
+        js = ec.extract_candidates_js()
+
+        # The return object should contain profile_url
+        assert "profile_url" in js
+        # Should be part of the returned object structure
+        assert "profile_url:" in js or "profile_url :" in js or "profile_url," in js
+
+
+class TestParseExtractionOutputSchema:
+    """Tests for extraction output parsing with profile_url schema."""
+
+    def test_parses_profile_url_schema(self):
+        """Should parse candidate records with profile_url key."""
+        output = '[{"name": "John", "profile_url": "http://linkedin.com/in/john"}]'
+
+        result = ec.parse_extraction_output(output)
+
+        assert len(result) == 1
+        assert result[0]["name"] == "John"
+        assert result[0]["profile_url"] == "http://linkedin.com/in/john"
+
+    def test_parses_double_encoded_profile_url(self):
+        """Should handle double-encoded JSON with profile_url."""
+        output = (
+            '"[{\\"name\\": \\"Jane\\", \\"profile_url\\": \\"http://test.com\\"}]"'
+        )
+
+        result = ec.parse_extraction_output(output)
+
+        assert len(result) == 1
+        assert result[0]["profile_url"] == "http://test.com"
 
 
 if __name__ == "__main__":

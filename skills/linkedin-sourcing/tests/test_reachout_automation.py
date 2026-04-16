@@ -780,7 +780,7 @@ class TestIntegrationWithExcel:
         return str(wb_path)
 
     def test_filter_command(self, tmp_path):
-        """Test the filter command excludes correct titles."""
+        """Test the filter command excludes correct titles and routes to enrich."""
         config_file = tmp_path / "config.sh"
         config_file.write_text(
             'EXCLUDE_TITLES="Manager,Director,VP"\nPOSITION_TITLE="Engineer"\nTEAM_NAME="AI"\nLOCATION="SF"\nCORE_FUNCTION="training"\nBUSINESS_IMPACT="impact"\nUSER_EMAIL="test@test.com"'
@@ -822,16 +822,46 @@ class TestIntegrationWithExcel:
 
         assert result["kept"] == 1
         assert result["filtered"] == 3
+        assert result["target_phase"] == "enrich"
 
         wb = ra.load_workbook(wb_path)
         updated_rows = ra.read_all_rows(wb)
 
         john_row = next(r for r in updated_rows if r["name"] == "John")
-        assert john_row["next_action"] == "draft"
+        assert john_row["next_action"] == "enrich"  # Default routes to enrich
 
         jane_row = next(r for r in updated_rows if r["name"] == "Jane")
         assert jane_row["status"] == "Filtered"
         assert jane_row["next_action"] == "done"
+
+    def test_filter_command_no_enrichment_legacy(self, tmp_path):
+        """Test filter with --no-enrichment routes directly to draft (legacy)."""
+        config_file = tmp_path / "config.sh"
+        config_file.write_text(
+            'EXCLUDE_TITLES="Manager"\nPOSITION_TITLE="Engineer"\nTEAM_NAME="AI"\nLOCATION="SF"\nCORE_FUNCTION="training"\nBUSINESS_IMPACT="impact"\nUSER_EMAIL="test@test.com"'
+        )
+
+        rows = [
+            {
+                "name": "John",
+                "title": "Software Engineer",
+                "company": "Google",
+                "status": "Extracted",
+                "next_action": "filter",
+            },
+        ]
+
+        wb_path = self.create_test_workbook(tmp_path, rows)
+        result = ra.cmd_filter(wb_path, str(config_file), use_enrichment=False)
+
+        assert result["kept"] == 1
+        assert result["target_phase"] == "draft"
+
+        wb = ra.load_workbook(wb_path)
+        updated_rows = ra.read_all_rows(wb)
+
+        john_row = next(r for r in updated_rows if r["name"] == "John")
+        assert john_row["next_action"] == "draft"  # Legacy routes to draft
 
     def test_filter_preserves_already_drafted(self):
         """Already drafted rows should not be modified by filter."""
@@ -945,6 +975,73 @@ Team""")
 
         assert result["drafted"] == 1
         assert result["skipped"] == 1
+
+    def test_draft_uses_enrichment_notes(self, tmp_path):
+        """Draft command should use enrichment_notes for personalization when present."""
+        template_file = tmp_path / "template.txt"
+        template_file.write_text("""Subject: {FirstName}, {POSITION_TITLE} Opportunity
+
+Hi {FirstName},
+
+Your background: {current_title} at {Company}. {1 personalized sentence on why their background impressed you}
+
+Best,
+Team""")
+
+        config_file = tmp_path / "config.sh"
+        config_file.write_text(
+            'POSITION_TITLE="ML Engineer"\nTEAM_NAME="AI Platform"\nLOCATION="SF"\nCORE_FUNCTION="training"\nBUSINESS_IMPACT="impact"\nUSER_EMAIL="test@test.com"'
+        )
+
+        rows = [
+            {
+                "name": "John Smith",
+                "title": "Engineer",
+                "company": "Google",
+                "status": "Extracted",
+                "next_action": "draft",
+                "headline": "",  # Empty headline
+                "enrichment_notes": "Skills: PyTorch, CUDA | Experience: 5y at Google Research",
+            },
+        ]
+
+        wb_path = self.create_test_workbook(tmp_path, rows)
+        result = ra.cmd_draft(wb_path, str(config_file), str(template_file))
+
+        assert result["drafted"] == 1
+
+        wb = ra.load_workbook(wb_path)
+        updated_rows = ra.read_all_rows(wb)
+
+        john_row = updated_rows[0]
+        # Draft should mention skills from enrichment_notes
+        assert "PyTorch" in john_row["draft_body"] or "CUDA" in john_row["draft_body"]
+
+    def test_draft_allows_enriched_rows(self, tmp_path):
+        """Draft command should allow rows with next_action=enrich if already enriched."""
+        template_file = tmp_path / "template.txt"
+        template_file.write_text("Subject: Test\n\nBody for {FirstName}")
+
+        config_file = tmp_path / "config.sh"
+        config_file.write_text(
+            'POSITION_TITLE="Engineer"\nTEAM_NAME="AI"\nLOCATION="SF"\nCORE_FUNCTION="training"\nBUSINESS_IMPACT="impact"\nUSER_EMAIL="test@test.com"'
+        )
+
+        rows = [
+            {
+                "name": "Jane",
+                "title": "Engineer",
+                "company": "Meta",
+                "status": "Extracted",
+                "next_action": "enrich",  # Still marked as enrich
+                "enrichment_notes": "Skills: Python",  # But already enriched
+            },
+        ]
+
+        wb_path = self.create_test_workbook(tmp_path, rows)
+        result = ra.cmd_draft(wb_path, str(config_file), str(template_file))
+
+        assert result["drafted"] == 1  # Should draft the enriched row
 
     def test_approve_command(self, tmp_path):
         """Test the approve command updates drafted rows."""

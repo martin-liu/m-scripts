@@ -9,10 +9,10 @@ timeouts with structured recovery attempts before giving up.
 Usage:
     from recruiter_page_utils import PageStateProbe, RecoveryHelper
 
-    probe = PageStateProbe("9230")
+    probe = PageStateProbe("9234")
     state = probe.classify_state()
 
-    recovery = RecoveryHelper("9230", work_dir="/path/to/work")
+    recovery = RecoveryHelper("9234", work_dir="/path/to/work")
     result = recovery.attempt_recovery(target_url="https://...")
 """
 
@@ -31,7 +31,13 @@ from urllib.parse import urlparse
 # Import shared browser utilities
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
-from browser_utils import BrowserMode, check_dialog_status, run_browser_command
+from browser_utils import (
+    ActionRequired,
+    BrowserMode,
+    FailureCode,
+    check_dialog_status,
+    run_browser_command,
+)
 
 
 class PageState(Enum):
@@ -44,6 +50,15 @@ class PageState(Enum):
     BLOCKED_OR_CAPTCHA = "blocked_or_captcha"
     DIALOG_BLOCKED = "dialog_blocked"
     UNKNOWN = "unknown"
+
+
+def _is_browser_unavailable_error(error_text: str | None) -> bool:
+    """Return whether an error string indicates the browser is unavailable."""
+    if not error_text:
+        return False
+
+    lowered = error_text.lower()
+    return "browser not available" in lowered or "agent-browser not found" in lowered
 
 
 # JavaScript to classify page state
@@ -171,8 +186,14 @@ CLASSIFY_PAGE_STATE_JS = """
     const profileLinkCount = document.querySelectorAll('a[href*="/talent/profile/"]').length;
     const hasSearchResultsContent = (
         candidateCardCount > 0 ||
-        profileLinkCount > 0 ||
-        document.querySelector('.results-container') !== null
+        profileLinkCount > 0
+    );
+    const hasSearchCreationPrompt = (
+        bodyText.includes('start a search') ||
+        bodyText.includes('create a search from a job description') ||
+        bodyText.includes('generate or refine a boolean search') ||
+        bodyText.includes('create a search from a profile') ||
+        document.querySelector('button[aria-label*="Create a search" i]') !== null
     );
 
     return {
@@ -189,6 +210,7 @@ CLASSIFY_PAGE_STATE_JS = """
         hasProjectsListContent: hasProjectsListContent,
         hasOverviewContent: hasOverviewContent,
         hasSearchResultsContent: hasSearchResultsContent,
+        hasSearchCreationPrompt: hasSearchCreationPrompt,
         candidateCardCount: candidateCardCount,
         profileLinkCount: profileLinkCount,
         bodyPreview: bodyPreview,
@@ -235,9 +257,15 @@ class PageStateProbe:
         )
 
         if result.get("error"):
+            failure_code = None
+            if _is_browser_unavailable_error(result.get("error")):
+                failure_code = FailureCode.BROWSER_UNAVAILABLE
             return {
                 "state": PageState.UNKNOWN.value,
-                "details": {"error": result["error"]},
+                "details": {
+                    "error": result["error"],
+                    "failure_code": failure_code,
+                },
                 "dialog_info": None,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             }
@@ -274,6 +302,9 @@ class PageStateProbe:
             return PageState.READY
 
         if details.get("hasSearchResultsContent"):
+            return PageState.READY
+
+        if details.get("hasSearchCreationPrompt"):
             return PageState.READY
 
         if details.get("isLoading"):
@@ -352,6 +383,8 @@ class RecoveryHelper:
                 - attempts_made: int - number of recovery attempts made
                 - actions_taken: list - log of recovery actions attempted
                 - error: str | None - error message if recovery failed
+                - action_required: dict | None - structured manual steps if failed
+                - failure_code: str | None - stable failure code if failed
         """
         self.attempt_count = 0
         self.recovery_log = []
@@ -359,6 +392,7 @@ class RecoveryHelper:
         # Get initial state
         initial_state = self.probe.classify_state()
         initial_state_value = initial_state["state"]
+        initial_details = initial_state.get("details", {})
 
         # If already ready, no recovery needed
         if initial_state_value == PageState.READY.value:
@@ -368,21 +402,55 @@ class RecoveryHelper:
                 "attempts_made": 0,
                 "actions_taken": [],
                 "error": None,
+                "action_required": None,
+                "failure_code": None,
             }
 
-        # Check for non-recoverable states
-        if initial_state_value in (
-            PageState.BLOCKED_OR_CAPTCHA.value,
-            PageState.LOGGED_OUT_OR_WRONG_PRODUCT.value,
-        ):
+        # Check for non-recoverable states and provide structured action_required
+        if initial_state_value == PageState.BLOCKED_OR_CAPTCHA.value:
             error_msg = f"Non-recoverable state detected: {initial_state_value}"
             self._write_incident(initial_state, context, error_msg)
+            action_required = ActionRequired.blocked_or_captcha(
+                current_url=initial_details.get("url")
+            )
             return {
                 "success": False,
                 "final_state": initial_state_value,
                 "attempts_made": 0,
                 "actions_taken": [],
                 "error": error_msg,
+                "action_required": action_required.to_dict(),
+                "failure_code": FailureCode.BLOCKED_OR_CAPTCHA,
+            }
+
+        if initial_state_value == PageState.LOGGED_OUT_OR_WRONG_PRODUCT.value:
+            error_msg = f"Non-recoverable state detected: {initial_state_value}"
+            self._write_incident(initial_state, context, error_msg)
+            action_required = ActionRequired.auth_required(
+                current_url=initial_details.get("url")
+            )
+            return {
+                "success": False,
+                "final_state": initial_state_value,
+                "attempts_made": 0,
+                "actions_taken": [],
+                "error": error_msg,
+                "action_required": action_required.to_dict(),
+                "failure_code": FailureCode.AUTH_REQUIRED,
+            }
+
+        if initial_details.get("failure_code") == FailureCode.BROWSER_UNAVAILABLE:
+            error_msg = "Browser is not available for recovery"
+            self._write_incident(initial_state, context, error_msg)
+            action_required = ActionRequired.browser_unavailable()
+            return {
+                "success": False,
+                "final_state": initial_state_value,
+                "attempts_made": 0,
+                "actions_taken": [],
+                "error": error_msg,
+                "action_required": action_required.to_dict(),
+                "failure_code": FailureCode.BROWSER_UNAVAILABLE,
             }
 
         # Attempt recovery
@@ -394,6 +462,7 @@ class RecoveryHelper:
             # Check current state
             current_state = self.probe.classify_state()
             current_state_value = current_state["state"]
+            current_details = current_state.get("details", {})
 
             # If recovered, return success
             if current_state_value == PageState.READY.value:
@@ -403,22 +472,44 @@ class RecoveryHelper:
                     "attempts_made": attempt,
                     "actions_taken": actions_taken,
                     "error": None,
+                    "action_required": None,
+                    "failure_code": None,
                 }
 
             # Handle dialog blocking
             if current_state_value == PageState.DIALOG_BLOCKED.value:
                 # Dialogs require manual intervention - not recoverable via script
+                dialog_info = current_state.get("dialog_info", {})
                 error_msg = (
-                    f"Blocking dialog detected on attempt {attempt}: "
-                    f"{current_state.get('dialog_info', {})}"
+                    f"Blocking dialog detected on attempt {attempt}: {dialog_info}"
                 )
                 self._write_incident(current_state, context, error_msg)
+                action_required = ActionRequired.dialog_blocked(
+                    dialog_type=dialog_info.get("dialog_type"),
+                    message=dialog_info.get("message"),
+                )
                 return {
                     "success": False,
                     "final_state": current_state_value,
                     "attempts_made": attempt,
                     "actions_taken": actions_taken,
                     "error": error_msg,
+                    "action_required": action_required.to_dict(),
+                    "failure_code": FailureCode.DIALOG_BLOCKED,
+                }
+
+            if current_details.get("failure_code") == FailureCode.BROWSER_UNAVAILABLE:
+                error_msg = "Browser became unavailable during recovery"
+                self._write_incident(current_state, context, error_msg)
+                action_required = ActionRequired.browser_unavailable()
+                return {
+                    "success": False,
+                    "final_state": current_state_value,
+                    "attempts_made": attempt,
+                    "actions_taken": actions_taken,
+                    "error": error_msg,
+                    "action_required": action_required.to_dict(),
+                    "failure_code": FailureCode.BROWSER_UNAVAILABLE,
                 }
 
             # Attempt recovery action based on state
@@ -465,6 +556,7 @@ class RecoveryHelper:
         # Max attempts reached - check final state
         final_state = self.probe.classify_state()
         final_state_value = final_state["state"]
+        final_details = final_state.get("details", {})
 
         if final_state_value == PageState.READY.value:
             return {
@@ -473,14 +565,35 @@ class RecoveryHelper:
                 "attempts_made": self.max_attempts,
                 "actions_taken": actions_taken,
                 "error": None,
+                "action_required": None,
+                "failure_code": None,
             }
 
-        # Recovery failed
+        # Recovery failed - provide structured action_required
         error_msg = (
             f"Recovery failed after {self.max_attempts} attempts. "
             f"Final state: {final_state_value}"
         )
         self._write_incident(final_state, context, error_msg)
+
+        # Determine appropriate action_required based on final state
+        if final_state_value == PageState.BAD_PAGE.value:
+            action_required = ActionRequired.wrong_page(
+                expected_url=target_url,
+                actual_url=final_details.get("url"),
+            )
+            failure_code = FailureCode.WRONG_PAGE
+        elif final_state_value == PageState.LOADING.value:
+            action_required = ActionRequired.timeout(operation="page load")
+            failure_code = FailureCode.TIMEOUT
+        elif final_details.get("failure_code") == FailureCode.BROWSER_UNAVAILABLE:
+            action_required = ActionRequired.browser_unavailable()
+            failure_code = FailureCode.BROWSER_UNAVAILABLE
+        else:
+            action_required = ActionRequired.ambiguous_state(
+                details=f"Recovery failed. Final state: {final_state_value}"
+            )
+            failure_code = FailureCode.AMBIGUOUS_STATE
 
         return {
             "success": False,
@@ -488,6 +601,8 @@ class RecoveryHelper:
             "attempts_made": self.max_attempts,
             "actions_taken": actions_taken,
             "error": error_msg,
+            "action_required": action_required.to_dict(),
+            "failure_code": failure_code,
         }
 
     def _navigate_to_url(self, url: str) -> None:
@@ -606,6 +721,38 @@ def urls_match_allowing_params(url1: str, url2: str) -> bool:
     return normalize_url_for_comparison(url1) == normalize_url_for_comparison(url2)
 
 
+# Volatile query parameters that change on every page load and should be ignored
+# when comparing URLs for identity validation (Recruiter session IDs, etc.)
+_VOLATILE_QUERY_PARAMS = {
+    "searchRequestId",
+    "searchContextId",
+    "searchHistoryId",
+    "trackingId",
+    "trackingid",
+    "trk",
+    "refId",
+    "refid",
+    "sessionId",
+    "sessionid",
+}
+
+
+def _filter_volatile_params(params: dict[str, list[str]]) -> dict[str, list[str]]:
+    """Remove volatile query parameters from parsed query params.
+
+    Args:
+        params: Dict from parse_qs with param names as keys
+
+    Returns:
+        Filtered dict with volatile params removed
+    """
+    return {
+        k: v
+        for k, v in params.items()
+        if k.lower() not in {p.lower() for p in _VOLATILE_QUERY_PARAMS}
+    }
+
+
 def _validate_target_url_match(
     browser_mode: "BrowserMode | str",
     target_url: str,
@@ -618,8 +765,9 @@ def _validate_target_url_match(
 
     The validation ensures:
     - Path matches exactly
-    - All query params in target_url are present in current_url
-    - Current URL can have additional query params (trackingId, etc.)
+    - All non-volatile query params in target_url are present in current_url
+    - Current URL can have additional query params (trackingId, searchRequestId, etc.)
+    - Volatile params like searchRequestId, searchContextId are ignored
 
     Args:
         browser_mode: BrowserMode instance or CDP port string for browser operations
@@ -633,7 +781,7 @@ def _validate_target_url_match(
             - expected_patterns: list - the target URL that was checked
             - error: str | None - error message if mismatch
     """
-    from urllib.parse import urlparse, parse_qs, urlencode
+    from urllib.parse import parse_qs, urlencode, urlparse
 
     result = run_browser_command(
         browser_mode, "eval", "({ url: window.location.href })"
@@ -672,11 +820,16 @@ def _validate_target_url_match(
         }
 
     # All query params in target must be present in current
+    # (excluding volatile params that change on every page load)
     target_params = parse_qs(parsed_target.query)
     current_params = parse_qs(parsed_current.query)
 
-    for key, target_values in target_params.items():
-        current_values = current_params.get(key, [])
+    # Filter out volatile params before comparison
+    target_params_filtered = _filter_volatile_params(target_params)
+    current_params_filtered = _filter_volatile_params(current_params)
+
+    for key, target_values in target_params_filtered.items():
+        current_values = current_params_filtered.get(key, [])
         # For each expected value, check it exists in current
         for val in target_values:
             if val not in current_values:
@@ -806,6 +959,8 @@ def ensure_page_ready(
             - recovery_result: dict | None - recovery result if attempted
             - identity_check: dict | None - identity validation result if performed
             - waited_seconds: float - how long we waited
+            - action_required: dict | None - structured manual steps if not ready
+            - failure_code: str | None - stable failure code if not ready
     """
     import time
 
@@ -852,12 +1007,19 @@ def ensure_page_ready(
                             expected_url_patterns=expected_url_patterns,
                             _recursion_depth=_recursion_depth + 1,
                         )
+                    # Build action_required for wrong page
+                    action_required = ActionRequired.wrong_page(
+                        expected_url=target_url,
+                        actual_url=identity_result.get("current_url"),
+                    )
                     return {
                         "ready": False,
                         "state": PageState.READY.value,
                         "recovery_result": None,
                         "identity_check": identity_result,
                         "waited_seconds": time.time() - start_time,
+                        "action_required": action_required.to_dict(),
+                        "failure_code": FailureCode.WRONG_PAGE,
                     }
             elif target_url:
                 # Validate target_url matches current URL, allowing extra query params
@@ -884,12 +1046,19 @@ def ensure_page_ready(
                             expected_url_patterns=expected_url_patterns,
                             _recursion_depth=_recursion_depth + 1,
                         )
+                    # Build action_required for wrong page
+                    action_required = ActionRequired.wrong_page(
+                        expected_url=target_url,
+                        actual_url=identity_result.get("current_url"),
+                    )
                     return {
                         "ready": False,
                         "state": PageState.READY.value,
                         "recovery_result": None,
                         "identity_check": identity_result,
                         "waited_seconds": time.time() - start_time,
+                        "action_required": action_required.to_dict(),
+                        "failure_code": FailureCode.WRONG_PAGE,
                     }
                 if not identity_result["matches"]:
                     # Wrong page: navigate to target and re-validate
@@ -949,12 +1118,34 @@ def ensure_page_ready(
     # Check if blocked (non-recoverable)
     if probe.is_blocked():
         state = probe.classify_state()
+        state_value = state["state"]
+        details = state.get("details", {})
+
+        # Determine appropriate action_required based on state
+        if state_value == PageState.BLOCKED_OR_CAPTCHA.value:
+            action_required = ActionRequired.blocked_or_captcha(
+                current_url=details.get("url")
+            )
+            failure_code = FailureCode.BLOCKED_OR_CAPTCHA
+        elif state_value == PageState.LOGGED_OUT_OR_WRONG_PRODUCT.value:
+            action_required = ActionRequired.auth_required(
+                current_url=details.get("url")
+            )
+            failure_code = FailureCode.AUTH_REQUIRED
+        else:
+            action_required = ActionRequired.ambiguous_state(
+                details=f"Page blocked with state: {state_value}"
+            )
+            failure_code = FailureCode.AMBIGUOUS_STATE
+
         return {
             "ready": False,
-            "state": state["state"],
+            "state": state_value,
             "recovery_result": None,
             "identity_check": None,
             "waited_seconds": time.time() - start_time,
+            "action_required": action_required.to_dict(),
+            "failure_code": failure_code,
         }
 
     # Attempt recovery
@@ -972,7 +1163,8 @@ def ensure_page_ready(
         time.sleep(min(2, max_wait_seconds - elapsed))
 
     final_state = probe.classify_state()
-    is_ready = final_state["state"] == PageState.READY.value
+    final_state_value = final_state["state"]
+    is_ready = final_state_value == PageState.READY.value
 
     # Validate identity if required and page is ready
     identity_result = None
@@ -995,10 +1187,41 @@ def ensure_page_ready(
             if not identity_result["matches"]:
                 is_ready = False
 
+    # Build action_required if not ready
+    action_required = None
+    failure_code = None
+    if not is_ready:
+        if recovery_result and recovery_result.get("action_required"):
+            # Use recovery's action_required
+            action_required = recovery_result["action_required"]
+            failure_code = recovery_result.get("failure_code")
+        elif identity_result and not identity_result.get("matches"):
+            # Identity check failed
+            action_required = ActionRequired.wrong_page(
+                expected_url=target_url or str(expected_url_patterns),
+                actual_url=identity_result.get("current_url"),
+            ).to_dict()
+            failure_code = FailureCode.WRONG_PAGE
+        else:
+            # Generic not ready
+            if (
+                final_state.get("details", {}).get("failure_code")
+                == FailureCode.BROWSER_UNAVAILABLE
+            ):
+                action_required = ActionRequired.browser_unavailable().to_dict()
+                failure_code = FailureCode.BROWSER_UNAVAILABLE
+            else:
+                action_required = ActionRequired.ambiguous_state(
+                    details=f"Page not ready. State: {final_state_value}"
+                ).to_dict()
+                failure_code = FailureCode.AMBIGUOUS_STATE
+
     return {
         "ready": is_ready,
-        "state": final_state["state"],
+        "state": final_state_value,
         "recovery_result": recovery_result,
         "identity_check": identity_result,
         "waited_seconds": time.time() - start_time,
+        "action_required": action_required,
+        "failure_code": failure_code,
     }

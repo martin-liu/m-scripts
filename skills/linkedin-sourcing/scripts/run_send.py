@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
-"""Canonical runtime-driven send macro for LinkedIn InMail workbook rows.
+"""Canonical send macro for LinkedIn InMail workbook rows.
 
-Executes through the runtime bundle model and resolves scripts/profile context cleanly.
+Resolves scripts from canonical skill paths with optional WORK_DIR overrides.
 Handles send outcomes and updates workbook with proper reconciliation.
 
 Usage:
     # Send all rows with next_action=send
-    python3 run_send.py --project-id <PROJECT_ID>
+    python3 run_send.py --project <PROJECT_ID>
 
     # Verify-only mode for one or more rows
-    python3 run_send.py --project-id <PROJECT_ID> --verify-only --row-id 5
-    python3 run_send.py --project-id <PROJECT_ID> --verify-only --row-id 5,6,7
+    python3 run_send.py --project <PROJECT_ID> --verify-only --row-id 5
+    python3 run_send.py --project <PROJECT_ID> --verify-only --row-id 5,6,7
 
     # With custom CDP port
-    python3 run_send.py --project-id <PROJECT_ID> --cdp-port 9231
+    python3 run_send.py --project <PROJECT_ID> --cdp-port 9231
 
 Exit codes:
     0 - All sends completed successfully (or verify-only passed)
@@ -33,7 +33,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-
 SCRIPT_DIR = Path(__file__).resolve().parent
 SKILL_DIR = SCRIPT_DIR.parent
 
@@ -50,8 +49,14 @@ class SendError(Exception):
 class BrowserStateError(SendError):
     """Raised when browser state is not clean - requires operator intervention."""
 
-    def __init__(self, message: str, row_id: int | None = None):
+    def __init__(
+        self,
+        message: str,
+        row_id: int | None = None,
+        action_required: dict[str, Any] | None = None,
+    ):
         super().__init__(message, exit_code=2, row_id=row_id)
+        self.action_required = action_required
 
 
 class ConfigError(SendError):
@@ -88,11 +93,11 @@ def load_runtime_context() -> dict[str, Any]:
 
 
 def resolve_send_script(ctx: dict[str, Any]) -> Path:
-    """Resolve the send_inmail.sh script path.
+    """Resolve the send_inmail.sh script path using canonical resolution.
 
-    Resolution order:
-    1. WORK_DIR/runtime/current/scripts/send_inmail.sh (runtime bundle)
-    2. SKILL_DIR/scripts/send_inmail.sh (canonical fallback)
+    Uses RuntimeManager.resolve_script for consistent resolution:
+    1. WORK_DIR/scripts/send_inmail.sh (user override)
+    2. SKILL_DIR/scripts/send_inmail.sh (canonical)
 
     Args:
         ctx: Runtime context dict.
@@ -103,27 +108,32 @@ def resolve_send_script(ctx: dict[str, Any]) -> Path:
     Raises:
         ConfigError: If script cannot be found.
     """
-    skill_dir = Path(ctx.get("skill_dir", SKILL_DIR))
+    sys.path.insert(0, str(SCRIPT_DIR))
+    try:
+        from runtime_manager import RuntimeManager
 
-    # Check runtime bundle
-    current_link = Path(ctx["current_link"])
-    runtime_script = current_link / "scripts" / "send_inmail.sh"
-    if runtime_script.exists():
-        return runtime_script
+        manager = RuntimeManager()
+        # Use work_dir from context if available
+        if ctx.get("work_dir"):
+            manager._work_dir = Path(ctx["work_dir"])
 
-    # Fall back to canonical
-    canonical_path = skill_dir / "scripts" / "send_inmail.sh"
-    if canonical_path.exists():
-        return canonical_path
-
-    raise ConfigError(
-        f"send_inmail.sh not found in any location: "
-        f"runtime={runtime_script}, canonical={canonical_path}"
-    )
+        script_path = manager.resolve_script("send_inmail.sh")
+        if script_path is None:
+            raise ConfigError(
+                "send_inmail.sh not found in WORK_DIR/scripts or SKILL_DIR/scripts"
+            )
+        return script_path
+    finally:
+        if str(SCRIPT_DIR) in sys.path:
+            sys.path.remove(str(SCRIPT_DIR))
 
 
 def resolve_excel_utils(ctx: dict[str, Any]) -> Path:
-    """Resolve the excel_utils.py script path.
+    """Resolve the excel_utils.py script path using canonical resolution.
+
+    Uses RuntimeManager.resolve_script for consistent resolution:
+    1. WORK_DIR/scripts/excel_utils.py (user override)
+    2. SKILL_DIR/scripts/excel_utils.py (canonical)
 
     Args:
         ctx: Runtime context dict.
@@ -134,85 +144,66 @@ def resolve_excel_utils(ctx: dict[str, Any]) -> Path:
     Raises:
         ConfigError: If script cannot be found.
     """
-    work_dir = Path(ctx["work_dir"])
-    skill_dir = Path(ctx.get("skill_dir", SKILL_DIR))
+    sys.path.insert(0, str(SCRIPT_DIR))
+    try:
+        from runtime_manager import RuntimeManager
 
-    # Check override first
-    override_path = work_dir / "scripts" / "excel_utils.py"
-    if override_path.exists():
-        return override_path
+        manager = RuntimeManager()
+        # Use work_dir from context if available
+        if ctx.get("work_dir"):
+            manager._work_dir = Path(ctx["work_dir"])
 
-    # Check runtime bundle
-    current_link = Path(ctx["current_link"])
-    runtime_script = current_link / "scripts" / "excel_utils.py"
-    if runtime_script.exists():
-        return runtime_script
-
-    # Fall back to canonical
-    canonical_path = skill_dir / "scripts" / "excel_utils.py"
-    if canonical_path.exists():
-        return canonical_path
-
-    raise ConfigError("excel_utils.py not found")
+        script_path = manager.resolve_script("excel_utils.py")
+        if script_path is None:
+            raise ConfigError(
+                "excel_utils.py not found in WORK_DIR/scripts or SKILL_DIR/scripts"
+            )
+        return script_path
+    finally:
+        if str(SCRIPT_DIR) in sys.path:
+            sys.path.remove(str(SCRIPT_DIR))
 
 
-def get_workbook_path(ctx: dict[str, Any], project_id: str) -> Path:
-    """Get the workbook path for a project.
+def get_workbook_path(ctx: dict[str, Any], project_ref: str) -> Path:
+    """Get the workbook path for a project using canonical resolution.
 
-    Supports both new layout (workbook.xlsx in project dir) and legacy layout
-    ({PROJECT_ID}.xlsx at projects root).
+    Uses project_ref_utils.resolve_project_ref for consistent resolution
+    of project references (local ID, Recruiter URL, or numeric ID).
 
     Args:
         ctx: Runtime context dict.
-        project_id: Project identifier.
+        project_ref: Project reference (ID, URL, or config path).
 
     Returns:
         Path to the workbook file.
 
     Raises:
-        ConfigError: If workbook does not exist.
+        ConfigError: If workbook cannot be resolved.
     """
-    work_dir = Path(ctx["work_dir"])
+    sys.path.insert(0, str(SCRIPT_DIR))
+    try:
+        from project_ref_utils import resolve_project_ref
 
-    # First, scan for project directory by reading config.sh files
-    # This finds the correct directory regardless of folder naming
-    projects_dir = work_dir / "projects"
-    if projects_dir.exists():
-        for project_dir in projects_dir.iterdir():
-            if not project_dir.is_dir():
-                continue
-            config_path = project_dir / "config.sh"
-            if not config_path.exists():
-                continue
-            try:
-                # Read PROJECT_ID from config.sh
-                config_content = config_path.read_text()
-                for line in config_content.splitlines():
-                    line = line.strip()
-                    if line.startswith("PROJECT_ID="):
-                        # Extract value from PROJECT_ID="value" or PROJECT_ID=value
-                        import re
+        resolution = resolve_project_ref(
+            project_ref,
+            work_dir=Path(ctx["work_dir"]) if ctx.get("work_dir") else None,
+        )
 
-                        match = re.search(r'PROJECT_ID=["\']?([^"\'\n]+)', line)
-                        if match and match.group(1) == project_id:
-                            # Found the project directory - check for new layout workbook
-                            new_layout_path = project_dir / "workbook.xlsx"
-                            if new_layout_path.exists():
-                                return new_layout_path
-                        break
-            except (OSError, IOError):
-                continue
+        if not resolution["success"]:
+            raise ConfigError(
+                f"Failed to resolve project '{project_ref}': {resolution.get('error', 'Unknown error')}"
+            )
 
-    # Check legacy layout: {PROJECT_ID}.xlsx at projects root
-    legacy_path = work_dir / "projects" / f"{project_id}.xlsx"
-    if legacy_path.exists():
-        return legacy_path
+        workbook_path = resolution.get("workbook_path")
+        if not workbook_path:
+            raise ConfigError(
+                f"Resolution succeeded but no workbook path returned for '{project_ref}'"
+            )
 
-    # If neither found, raise error with helpful message
-    raise ConfigError(
-        f"Workbook not found for project '{project_id}'. "
-        f"Checked: {projects_dir}/*/workbook.xlsx and {legacy_path}"
-    )
+        return Path(workbook_path)
+    finally:
+        if str(SCRIPT_DIR) in sys.path:
+            sys.path.remove(str(SCRIPT_DIR))
 
 
 def read_sendable_rows(
@@ -262,6 +253,7 @@ def read_sendable_rows(
 def send_inmail(
     send_script: Path,
     cdp_port: str,
+    work_dir: str | None,
     profile_url: str,
     subject: str,
     body: str,
@@ -272,6 +264,7 @@ def send_inmail(
     Args:
         send_script: Path to send_inmail.sh.
         cdp_port: Chrome DevTools Protocol port.
+        work_dir: Runtime work directory for browser mode resolution.
         profile_url: LinkedIn profile URL.
         subject: Message subject.
         body: Message body.
@@ -294,6 +287,8 @@ def send_inmail(
 
     # Set CDP_PORT environment variable while preserving parent environment
     env = {**os.environ, "CDP_PORT": cdp_port}
+    if work_dir:
+        env["WORK_DIR"] = work_dir
 
     try:
         result = subprocess.run(
@@ -355,18 +350,35 @@ def update_row_after_send(
 
     Raises:
         SendError: If update fails or result requires failure.
-        BrowserStateError: If browser state is not clean.
+        BrowserStateError: If browser state is not clean or manual intervention required.
     """
     row_id = row.get("row_id")
     status = send_result.get("status", "FAILED")
     clean_state = send_result.get("clean_state", False)
     reason = send_result.get("reason", "")
     verify_only = send_result.get("verify_only", False)
+    action_required = send_result.get("action_required")
+    failure_code = send_result.get("failure_code")
 
     # Check for unclean browser state - this is fatal
     if not clean_state:
         raise BrowserStateError(
-            f"Browser state not clean after send: {reason}", row_id=row_id
+            f"Browser state not clean after send: {reason}",
+            row_id=row_id,
+            action_required=action_required,
+        )
+
+    # Check for structured action_required in FAILED status - raise BrowserStateError
+    # for browser/manual-intervention lane failures
+    if status == "FAILED" and action_required:
+        # Browser/manual intervention required - exit code 2
+        error_msg = f"Send failed for row {row_id}: {reason}"
+        if failure_code:
+            error_msg += f" (code: {failure_code})"
+        raise BrowserStateError(
+            error_msg,
+            row_id=row_id,
+            action_required=action_required,
         )
 
     # Fail-closed: verify-only mode must not accept real-send statuses
@@ -456,7 +468,7 @@ def update_row_after_send(
 
 
 def run_send_macro(
-    project_id: str,
+    project_ref: str,
     cdp_port: str | None = None,
     verify_only: bool = False,
     row_ids: list[int] | None = None,
@@ -464,8 +476,8 @@ def run_send_macro(
     """Run the send macro for workbook rows.
 
     Args:
-        project_id: Project identifier.
-        cdp_port: Optional CDP port (defaults to profile value or 9230).
+        project_ref: Project reference (local ID, Recruiter URL, or numeric ID).
+        cdp_port: Optional CDP port (defaults to profile value or 9234).
         verify_only: If True, only verify without sending.
         row_ids: Optional list of specific row IDs to process.
 
@@ -478,14 +490,29 @@ def run_send_macro(
         # Load runtime context
         ctx = load_runtime_context()
 
-        # Resolve paths
+        # Resolve paths using canonical resolvers
         send_script = resolve_send_script(ctx)
         excel_utils = resolve_excel_utils(ctx)
-        workbook_path = get_workbook_path(ctx, project_id)
+        workbook_path = get_workbook_path(ctx, project_ref)
+
+        # Resolve project directory for state updates
+        sys.path.insert(0, str(SCRIPT_DIR))
+        try:
+            from project_ref_utils import resolve_project_ref
+
+            resolution = resolve_project_ref(project_ref)
+            project_dir = (
+                Path(resolution["config_path"]).parent
+                if resolution.get("success") and resolution.get("config_path")
+                else None
+            )
+        finally:
+            if str(SCRIPT_DIR) in sys.path:
+                sys.path.remove(str(SCRIPT_DIR))
 
         # Get CDP port from context if not provided
         if cdp_port is None:
-            cdp_port = ctx.get("profile", {}).get("CDP_PORT", "9230")
+            cdp_port = ctx.get("profile", {}).get("CDP_PORT", "9234")
 
         print(f"Workbook: {workbook_path}")
         print(f"CDP Port: {cdp_port}")
@@ -531,6 +558,7 @@ def run_send_macro(
                 result = send_inmail(
                     send_script=send_script,
                     cdp_port=cdp_port,
+                    work_dir=ctx.get("work_dir"),
                     profile_url=profile_url,
                     subject=subject,
                     body=body,
@@ -552,9 +580,46 @@ def run_send_macro(
                 print(f"  FATAL: {e}")
                 print()
                 print("Browser state is not clean. Operator intervention required.")
-                print(
-                    "Please check the browser and resolve any open dialogs or composers."
-                )
+                print()
+                # Surface structured action_required if available
+                if e.action_required:
+                    ar = e.action_required
+                    print(f"Issue: {ar.get('summary', 'Unknown issue')}")
+                    print(f"Code: {ar.get('code', 'unknown')}")
+                    print()
+                    print("Manual steps to resolve:")
+                    for i, step in enumerate(ar.get("steps", []), 1):
+                        print(f"  {i}. {step}")
+                    print()
+                    if ar.get("context"):
+                        print(f"Context: {ar['context']}")
+                else:
+                    print(
+                        "Please check the browser and resolve any open dialogs or composers."
+                    )
+                if project_dir:
+                    sys.path.insert(0, str(SCRIPT_DIR))
+                    try:
+                        from project_state import update_project_state
+
+                        update_project_state(
+                            project_dir=project_dir,
+                            current_phase="send",
+                            status="action_required",
+                            action_required=e.action_required
+                            or {
+                                "code": "browser_state_not_clean",
+                                "summary": str(e),
+                                "steps": [
+                                    "Check the browser and resolve the visible issue before retrying"
+                                ],
+                            },
+                            last_result_summary="Send blocked by browser/manual intervention",
+                            last_error=str(e),
+                        )
+                    finally:
+                        if str(SCRIPT_DIR) in sys.path:
+                            sys.path.remove(str(SCRIPT_DIR))
                 return e.exit_code
             except SendError as e:
                 print(f"  ERROR: {e}")
@@ -567,6 +632,33 @@ def run_send_macro(
         print(f"Processed: {len(rows)} row(s)")
         print(f"Successful: {success_count}")
         print(f"Failed: {len(failed_rows)}")
+
+        # Update project state based on results
+        if project_dir:
+            sys.path.insert(0, str(SCRIPT_DIR))
+            try:
+                from project_state import update_project_state
+
+                if failed_rows:
+                    update_project_state(
+                        project_dir=project_dir,
+                        current_phase="send",
+                        status="failed",
+                        last_result_summary=f"Send: {success_count} succeeded, {len(failed_rows)} failed",
+                        last_error=f"Failed rows: {', '.join(str(r[0]) for r in failed_rows)}",
+                    )
+                else:
+                    update_project_state(
+                        project_dir=project_dir,
+                        current_phase="send",
+                        status="completed",
+                        action_required=False,
+                        last_result_summary=f"Send complete: {success_count} row(s) processed",
+                        last_error=False,
+                    )
+            finally:
+                if str(SCRIPT_DIR) in sys.path:
+                    sys.path.remove(str(SCRIPT_DIR))
 
         if failed_rows:
             print()
@@ -592,20 +684,15 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Send InMails for workbook rows with next_action=send"
     )
-    # Support both --project (new) and --project-id (legacy) with --project taking precedence
     parser.add_argument(
         "--project",
         dest="project_ref",
+        required=True,
         help="Project reference: local PROJECT_ID, Recruiter URL, or numeric ID",
     )
     parser.add_argument(
-        "--project-id",
-        dest="project_id_legacy",
-        help="Project identifier (legacy, use --project instead)",
-    )
-    parser.add_argument(
         "--cdp-port",
-        help="Chrome DevTools Protocol port (default: from profile or 9230)",
+        help="Chrome DevTools Protocol port (default: from profile or 9234)",
     )
     parser.add_argument(
         "--verify-only",
@@ -619,39 +706,7 @@ def main() -> int:
 
     args = parser.parse_args()
 
-    # Determine project reference: --project takes precedence over --project-id
-    project_ref: str | None = args.project_ref or args.project_id_legacy
-    if not project_ref:
-        print("Error: --project is required", file=sys.stderr)
-        return 3
-
-    # Resolve project reference only if --project was explicitly used
-    # Legacy --project-id is used literally without resolution
-    sys.path.insert(0, str(SCRIPT_DIR))
-    try:
-        from project_ref_utils import resolve_project_ref
-
-        if args.project_ref:
-            # --project was explicitly used: resolve via resolver (fail closed)
-            resolution = resolve_project_ref(project_ref)
-            if not resolution["success"]:
-                print(f"Error: {resolution['error']}", file=sys.stderr)
-                return 3
-            # Use the local_project_id for workbook lookup
-            project_id = resolution["local_project_id"] or project_ref
-        else:
-            # Legacy --project-id: use literally without resolution
-            project_id = project_ref
-    except Exception as e:
-        # If resolution fails unexpectedly, fail closed for --project
-        # For --project-id, use literally (backward compatibility)
-        if args.project_ref:
-            print(f"Error: Failed to resolve project reference: {e}", file=sys.stderr)
-            return 3
-        project_id = project_ref
-    finally:
-        if str(SCRIPT_DIR) in sys.path:
-            sys.path.remove(str(SCRIPT_DIR))
+    project_ref: str = args.project_ref
 
     # Parse row IDs if provided
     row_ids: list[int] | None = None
@@ -662,8 +717,10 @@ def main() -> int:
             print("Error: --row-id must be comma-separated integers", file=sys.stderr)
             return 3
 
+    # run_send_macro now uses canonical resolution via get_workbook_path
+    # which internally calls project_ref_utils.resolve_project_ref
     return run_send_macro(
-        project_id=project_id,
+        project_ref=project_ref,
         cdp_port=args.cdp_port,
         verify_only=args.verify_only,
         row_ids=row_ids,

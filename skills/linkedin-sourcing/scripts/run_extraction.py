@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Canonical operator-facing extraction macro for LinkedIn Recruiter.
 
-Runs from $WORK_DIR/runtime/current and performs page-by-page extraction
+Runs from the canonical skill scripts and performs page-by-page extraction
 into the workbook with deduplication and resumability.
 
 Usage:
-    # From runtime/current (config-driven)
+    # From the canonical skill scripts (config-driven)
     python3 run_extraction.py --config $WORK_DIR/projects/{PROJECT_ID}/config.sh
 
     # With explicit workbook path
@@ -50,31 +50,106 @@ sys.path.insert(0, str(SCRIPT_DIR))
 
 from runtime_manager import RuntimeManager
 from excel_utils import upsert, get_existing_keys, create
-from browser_utils import run_browser_command
+from browser_utils import run_browser_command, safe_get_parsed
 from project_ref_utils import resolve_project_ref
+from config_utils import parse_config_file
+from recruiter_url_utils import (
+    extract_recruiter_id_from_url,
+    is_contextual_search_url,
+    build_project_overview_url,
+)
 
 
-def parse_config_file(config_path: str) -> dict[str, str]:
-    """Parse a shell config file and extract key-value pairs.
+def _copy_action_required_fields(
+    result: dict[str, Any],
+    source: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Copy structured manual-fallback fields from a nested result."""
+    if not source:
+        return result
 
-    Handles simple VAR="value" or VAR='value' syntax.
+    if source.get("action_required") is not None:
+        result["action_required"] = source.get("action_required")
+    if source.get("failure_code") is not None:
+        result["failure_code"] = source.get("failure_code")
+
+    return result
+
+
+def _ok_result(**kwargs: Any) -> dict[str, Any]:
+    """Build a success result dict with common fields.
+
+    Args:
+        **kwargs: Additional fields to include (e.g., current_url, is_last_page).
+
+    Returns:
+        Dict with success=True and provided fields.
     """
-    config: dict[str, str] = {}
-    path = Path(config_path)
-    if not path.exists():
-        return config
+    result: dict[str, Any] = {"success": True}
+    result.update(kwargs)
+    return result
 
-    for line in path.read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if "=" in line:
-            key, value = line.split("=", 1)
-            key = key.strip()
-            value = value.strip().strip('"').strip("'")
-            config[key] = value
 
-    return config
+def _err_result(
+    error: str,
+    failure_code: str | None = None,
+    action_required: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> dict[str, Any]:
+    """Build an error result dict with structured failure fields.
+
+    Args:
+        error: Error message.
+        failure_code: Optional stable failure code.
+        action_required: Optional structured fallback dict.
+        **kwargs: Additional fields to include.
+
+    Returns:
+        Dict with success=False and provided fields.
+    """
+    result: dict[str, Any] = {"success": False, "error": error}
+    if failure_code is not None:
+        result["failure_code"] = failure_code
+    if action_required is not None:
+        result["action_required"] = action_required
+    result.update(kwargs)
+    return result
+
+
+def _nav_result(
+    success: bool,
+    url: str,
+    state: str,
+    method: str,
+    error: str | None = None,
+    is_last_page: bool = False,
+    **kwargs: Any,
+) -> dict[str, Any]:
+    """Build a navigation result dict with standard fields.
+
+    Args:
+        success: Whether navigation succeeded.
+        url: The resulting URL.
+        state: Page state classification.
+        method: Navigation method used.
+        error: Optional error message.
+        is_last_page: Whether this is the last page (clean stop).
+        **kwargs: Additional fields to include.
+
+    Returns:
+        Dict with navigation result fields.
+    """
+    result: dict[str, Any] = {
+        "success": success,
+        "url": url,
+        "state": state,
+        "method": method,
+        "is_last_page": is_last_page,
+    }
+    if error is not None:
+        result["error"] = error
+    result.update(kwargs)
+    return result
 
 
 def parse_args() -> argparse.Namespace:
@@ -122,7 +197,7 @@ Examples:
     )
     parser.add_argument(
         "--cdp-port",
-        help="Chrome DevTools Protocol port (default: from profile or 9230)",
+        help="Chrome DevTools Protocol port (default: from profile or 9234)",
     )
     parser.add_argument(
         "--dry-run",
@@ -480,7 +555,6 @@ def extract_project_id_from_url(url: str) -> str | None:
     Returns:
         Project ID string if found, None otherwise
     """
-    import re
     from urllib.parse import urlparse
 
     # Validate URL is from LinkedIn domain
@@ -489,22 +563,8 @@ def extract_project_id_from_url(url: str) -> str | None:
     if not (hostname == "linkedin.com" or hostname.endswith(".linkedin.com")):
         return None
 
-    # Match /talent/hire/{numeric_id} followed by /, ?, #, or end of string
-    # This accepts URLs with or without trailing slash, and with query params or hash
-    match = re.search(r"/talent/hire/(\d+)(?:/|$|\?|#)", url)
-    return match.group(1) if match else None
-
-
-def build_project_overview_url(project_id: str) -> str:
-    """Build a stable project overview URL from project ID.
-
-    Args:
-        project_id: The project ID
-
-    Returns:
-        Project overview URL
-    """
-    return f"https://www.linkedin.com/talent/hire/{project_id}/overview"
+    # Use shared implementation for ID extraction
+    return extract_recruiter_id_from_url(url)
 
 
 def is_contextual_recruiter_search_url(url: str, project_id: str) -> bool:
@@ -521,21 +581,8 @@ def is_contextual_recruiter_search_url(url: str, project_id: str) -> bool:
     Returns:
         True if URL is a contextual recruiterSearch URL for the project
     """
-    if "discover/recruiterSearch" not in url:
-        return False
-
-    # Must contain the project ID in the path
-    if f"/talent/hire/{project_id}/" not in url:
-        return False
-
-    # Must have at least one contextual search parameter
-    context_params = [
-        "searchContextId=",
-        "searchHistoryId=",
-        "searchRequestId=",
-        "projectId=",
-    ]
-    return any(param in url for param in context_params)
+    # Use shared implementation with project_id validation
+    return is_contextual_search_url(url, project_id)
 
 
 def check_current_page_ready_for_extraction(
@@ -560,11 +607,12 @@ def check_current_page_ready_for_extraction(
             - state: str - page state classification
     """
     from recruiter_page_utils import PageStateProbe
-    from browser_utils import run_browser_command
+    from browser_utils import run_browser_command, safe_get_parsed
 
     # Get current URL
     result = run_browser_command(cdp_port, "eval", "({ url: window.location.href })")
-    current_url = result.get("parsed", {}).get("url", "")
+    # Use safe_get_parsed to avoid AttributeError when parsed is None or not a dict
+    current_url = safe_get_parsed(result, default={}).get("url", "")
 
     # Check if already on contextual search page for this project
     if not is_contextual_recruiter_search_url(current_url, project_id):
@@ -587,10 +635,17 @@ def check_current_page_ready_for_extraction(
             "state": state,
         }
 
-    # Require concrete evidence of search results content, not just generic ready
-    # classify_state() can return ready via generic recruiter fallback even when
-    # no search results are present (e.g., on overview pages)
-    if not details.get("hasSearchResultsContent"):
+    # Fail closed when the project is still on Recruiter's search-creation UI.
+    if details.get("hasSearchCreationPrompt"):
+        return {
+            "ready": False,
+            "current_url": current_url,
+            "state": "search_not_configured",
+        }
+
+    # Keep failing closed on generic/stale ready states that still look like an
+    # overview or non-results shell even though the URL is contextual.
+    if not details.get("hasSearchResultsContent") and details.get("hasOverviewContent"):
         return {
             "ready": False,
             "current_url": current_url,
@@ -630,6 +685,8 @@ def resolve_fresh_search_context(
             - success: bool - whether resolution succeeded
             - fresh_url: str | None - the fresh contextual URL if successful
             - error: str | None - error message if failed
+            - action_required: dict | None - structured fallback if manual intervention needed
+            - failure_code: str | None - stable failure code if failed
     """
     # Import here to avoid circular imports
     from ensure_recruiter_project import (
@@ -638,6 +695,8 @@ def resolve_fresh_search_context(
         is_contextual_search_url,
     )
     from recruiter_page_utils import RecoveryHelper, ensure_page_ready
+    from urllib.parse import urlparse
+    from browser_utils import safe_get_parsed, FailureCode, ActionRequired
 
     # Extract project ID from configured URL
     project_id = extract_project_id_from_url(configured_url)
@@ -646,6 +705,11 @@ def resolve_fresh_search_context(
             "success": False,
             "fresh_url": None,
             "error": f"Could not extract project ID from URL: {configured_url}",
+            "failure_code": FailureCode.WRONG_PAGE,
+            "action_required": ActionRequired.wrong_page(
+                expected_url="/talent/hire/{numeric_id}",
+                actual_url=configured_url,
+            ).to_dict(),
         }
 
     # OPTIMIZATION: Check if browser is already on a valid contextual search page
@@ -658,6 +722,8 @@ def resolve_fresh_search_context(
             "success": True,
             "fresh_url": current_check["current_url"],
             "error": None,
+            "action_required": None,
+            "failure_code": None,
         }
 
     # Build stable project overview URL
@@ -696,7 +762,7 @@ def resolve_fresh_search_context(
         break
 
     if not ensure_result or not ensure_result["ready"]:
-        return {
+        result = {
             "success": False,
             "fresh_url": None,
             "error": (
@@ -704,11 +770,17 @@ def resolve_fresh_search_context(
                 f"Identity check: {ensure_result.get('identity_check', {})}. "
                 "Cannot resolve fresh search context without confirmed project context."
             ),
+            "failure_code": FailureCode.WRONG_PAGE,
+            "action_required": ActionRequired.wrong_page(
+                expected_url=overview_url,
+                actual_url=ensure_result.get("current_url") if ensure_result else None,
+            ).to_dict(),
         }
+        return _copy_action_required_fields(result, ensure_result)
 
     # Validate we're on the correct project
     context_validation = validate_project_context(
-        cdp_port=cdp_port,
+        browser_mode=cdp_port,
         project_name="",  # We don't have the project name here, skip name validation
         expected_project_id=project_id,
     )
@@ -718,6 +790,11 @@ def resolve_fresh_search_context(
             "success": False,
             "fresh_url": None,
             "error": f"Project context validation failed: {context_validation.get('error', 'Unknown error')}",
+            "failure_code": FailureCode.VERIFICATION_FAILED,
+            "action_required": ActionRequired.verification_failed(
+                verification_type="project_context",
+                details=context_validation.get("error"),
+            ).to_dict(),
         }
 
     # Get current URL after confirmed navigation to overview
@@ -733,6 +810,11 @@ def resolve_fresh_search_context(
                 f"Expected project {project_id} overview. "
                 "Cannot resolve fresh search context from non-overview page."
             ),
+            "failure_code": FailureCode.WRONG_PAGE,
+            "action_required": ActionRequired.wrong_page(
+                expected_url=overview_url,
+                actual_url=current_url,
+            ).to_dict(),
         }
 
     # Use canonical resolve_search_url to get fresh contextual URL
@@ -755,13 +837,16 @@ def resolve_fresh_search_context(
             result = run_browser_command(
                 cdp_port, "eval", "({ url: window.location.href })"
             )
-            check_url = result.get("parsed", {}).get("url", "")
+            # Use safe_get_parsed to avoid AttributeError when parsed is None
+            check_url = safe_get_parsed(result, default={}).get("url", "")
 
             if is_contextual_search_url(check_url):
                 return {
                     "success": True,
                     "fresh_url": check_url,
                     "error": None,
+                    "action_required": None,
+                    "failure_code": None,
                 }
 
             # Try resolve_search_url again
@@ -778,12 +863,48 @@ def resolve_fresh_search_context(
                 "The configured URL may be stale or the project may not have active search context. "
                 "Try visiting the project in LinkedIn Recruiter and performing a search first."
             ),
+            "failure_code": FailureCode.AMBIGUOUS_STATE,
+            "action_required": ActionRequired.ambiguous_state(
+                details=f"Could not resolve contextual search URL from {current_url}"
+            ).to_dict(),
+        }
+
+    readiness = check_current_page_ready_for_extraction(cdp_port, project_id)
+    if not readiness.get("ready") and readiness.get("state") == "search_not_configured":
+        current_url = readiness.get("current_url") or fresh_url
+        return {
+            "success": False,
+            "fresh_url": None,
+            "error": (
+                "Recruiter project does not have a candidate search yet. "
+                "Create a search from the JD or boolean query, review the generated filters, "
+                "and make sure candidates are visible before extraction."
+            ),
+            "failure_code": FailureCode.WRONG_PAGE,
+            "action_required": {
+                "code": FailureCode.WRONG_PAGE,
+                "summary": "Recruiter project is still on the search-creation screen",
+                "steps": [
+                    "Open the Recruiter project in Chrome",
+                    "Use Create a search from a job description, Boolean search, or profile",
+                    "Review and fix the generated filters, including titles, companies, locations, and excludes",
+                    "Confirm candidate cards or a real results count are visible in Recruiter",
+                    "Retry extraction after the search is configured",
+                ],
+                "can_retry": True,
+                "context": {
+                    "current_url": current_url,
+                    "project_id": project_id,
+                },
+            },
         }
 
     return {
         "success": True,
         "fresh_url": fresh_url,
         "error": None,
+        "action_required": None,
+        "failure_code": None,
     }
 
 
@@ -812,13 +933,15 @@ def click_next_page_pagination(
             - previous_url: str - URL before click
             - current_url: str - URL after click
             - error: str | None - error message if failed (not for last page)
+            - failure_code: str | None - stable failure code if failed
+            - action_required: dict | None - structured fallback if manual intervention needed
     """
     # JavaScript to click pagination and return URL change info
     # CRITICAL: Restrict matching to actual Recruiter pagination controls.
     # LinkedIn pages can contain unrelated carousel/buttons with text like "Next"
     # that do not paginate the search results. Prefer result-list pagination
     # controls, then fall back to mini-pagination in the header.
-    CLICK_NEXT_PAGE_JS = """
+    CLICK_NEXT_PAGE_JS = r"""
     (function() {
         const previousUrl = window.location.href;
 
@@ -841,24 +964,31 @@ def click_next_page_pagination(
 
         function getPaginationScore(el) {
             const root = getPaginationRoot(el);
-            if (!root) return -1;
-
-            const rootClass = root.className || '';
+            const rootClass = root ? (root.className || '') : '';
             const elClass = el.className || '';
             let score = 0;
 
-            if (root.matches('.profile-list-container__pagination, .pagination')) score += 100;
-            if (root.matches('.mini-pagination')) score += 50;
-            if (root.hasAttribute('data-test-ts-pagination')) score += 25;
+            if (!root && !elClass.includes('artdeco-pagination__button--next')) {
+                return -1;
+            }
+
+            if (root && root.matches('.profile-list-container__pagination, .pagination')) score += 100;
+            if (root && root.matches('.mini-pagination')) score += 50;
+            if (root && root.hasAttribute('data-test-ts-pagination')) score += 25;
             if (el.hasAttribute('data-test-pagination-next') || elClass.includes('pagination__quick-link--next')) score += 20;
             if (el.hasAttribute('data-test-mini-pagination-next') || elClass.includes('mini-pagination__quick-link')) score += 10;
             if ((el.getAttribute('rel') || '').toLowerCase() === 'next') score += 5;
+            // Live UI pattern: artdeco-pagination__button--next
+            if (elClass.includes('artdeco-pagination__button--next')) score += 15;
             if (rootClass.includes('artdeco-carousel')) score -= 200;
 
             return score;
         }
 
         function isPaginationCandidate(el) {
+            const elClass = el.className || '';
+            // Allow artdeco pagination buttons even without traditional pagination root
+            if (elClass.includes('artdeco-pagination__button--next')) return true;
             return getPaginationScore(el) >= 0;
         }
 
@@ -903,6 +1033,7 @@ def click_next_page_pagination(
 
         // Strategy 2: Look for ENABLED pagination button with chevron/right arrow
         // Exclude both attribute-disabled and class-disabled elements
+        // Includes live UI pattern: button.artdeco-pagination__button--next[aria-label="Next"]
         const enabledPaginationButtons = Array.from(document.querySelectorAll(
             '[data-test-ts-pagination] a[rel="next"]:not([disabled]):not(.artdeco-button--disabled), ' +
             '[data-test-ts-pagination] a[data-test-pagination-next]:not([disabled]):not(.artdeco-button--disabled), ' +
@@ -910,12 +1041,85 @@ def click_next_page_pagination(
             '.profile-list-container__pagination a[rel="next"]:not([disabled]):not(.artdeco-button--disabled), ' +
             '.profile-list-container__pagination [data-test-pagination-next]:not([disabled]):not(.artdeco-button--disabled), ' +
             '.mini-pagination a[rel="next"]:not([disabled]):not(.artdeco-button--disabled), ' +
-            '.mini-pagination [data-test-mini-pagination-next]:not([disabled]):not(.artdeco-button--disabled)'
+            '.mini-pagination [data-test-mini-pagination-next]:not([disabled]):not(.artdeco-button--disabled), ' +
+            'button.artdeco-pagination__button--next:not([disabled]):not(.artdeco-button--disabled)'
         )).filter(isPaginationCandidate).sort((a, b) => getPaginationScore(b) - getPaginationScore(a));
 
+        // CRITICAL: Before clicking artdeco header button, verify we're NOT on the last page.
+        // On the last page, the header may show an enabled "Next" button that leads to 404.
+        // Trust explicit numbered page links over the header button when in doubt.
         if (enabledPaginationButtons.length > 0) {
-            enabledPaginationButtons[0].scrollIntoView({ block: 'center' });
-            enabledPaginationButtons[0].click();
+            const btn = enabledPaginationButtons[0];
+            const btnClass = btn.className || '';
+            const isArtdecoHeaderButton = btnClass.includes('artdeco-pagination__button--next');
+
+            if (isArtdecoHeaderButton) {
+                // Check for evidence of another page: look for numbered links higher than current
+                const pageLinks = Array.from(document.querySelectorAll(
+                    'nav a, nav button, nav li, [aria-current="page"], [role="listitem"]'
+                ));
+                const currentPageMatch = previousUrl.match(/[?&]start=(\d+)/);
+                const currentStart = currentPageMatch ? parseInt(currentPageMatch[1], 10) : 0;
+                const currentPageNum = Math.floor(currentStart / 25) + 1;
+
+                // Find the highest page number visible in pagination
+                let highestVisiblePage = currentPageNum;
+                let hasForwardPageLink = false;
+                let hasVisiblePageEvidence = false;
+                let hasCurrentPageMarker = false;
+
+                for (const link of pageLinks) {
+                    const text = (link.textContent || '').replace(/\s+/g, ' ').trim();
+                    const aria = (link.getAttribute('aria-label') || '').trim();
+                    const ariaCurrent = (link.getAttribute('aria-current') || '').trim();
+                    const pageTextMatch = text.match(/(?:^|\b)Page\s+(\d+)(?:\b|\s*\(current\))/i) ||
+                                          text.match(/^(\d+)$/);
+                    const pageAriaMatch = aria.match(/page\s+(\d+)/i);
+                    const pageNum = pageTextMatch ? parseInt(pageTextMatch[1], 10) :
+                                    pageAriaMatch ? parseInt(pageAriaMatch[1], 10) : 0;
+                    if (pageNum > 0) {
+                        hasVisiblePageEvidence = true;
+                    }
+                    if (pageNum > highestVisiblePage) {
+                        highestVisiblePage = pageNum;
+                    }
+                    if (pageNum > currentPageNum) {
+                        hasForwardPageLink = true;
+                    }
+                    if (
+                        pageNum == currentPageNum &&
+                        (text.toLowerCase().includes('(current)') || ariaCurrent.toLowerCase() == 'page')
+                    ) {
+                        hasCurrentPageMarker = true;
+                    }
+                }
+
+                // Only infer last page on positive pagination evidence.
+                if (
+                    hasVisiblePageEvidence &&
+                    hasCurrentPageMarker &&
+                    currentPageNum >= highestVisiblePage &&
+                    !hasForwardPageLink
+                ) {
+                    return {
+                        clicked: false,
+                        isLastPage: true,
+                        method: 'last_page_inferred',
+                        previousUrl: previousUrl,
+                        error: null,
+                        debug: {
+                            currentPageNum,
+                            highestVisiblePage,
+                            hasForwardPageLink,
+                            hasVisiblePageEvidence,
+                            hasCurrentPageMarker,
+                        }
+                    };
+                }
+            }
+
+            btn.scrollIntoView({ block: 'center' });
+            btn.click();
             return {
                 clicked: true,
                 isLastPage: false,
@@ -927,6 +1131,7 @@ def click_next_page_pagination(
         // Strategy 3: Check for disabled next button (last page detection)
         // Only check for disabled buttons if NO enabled controls were found.
         // This handles the clean end-of-results case where there truly is no next page.
+        // Includes live UI pattern: button.artdeco-pagination__button--next.artdeco-button--disabled
         const disabledSelectors = [
             '[data-test-ts-pagination] button[disabled][aria-label*="next" i]',
             '[data-test-ts-pagination] button[disabled][data-test-pagination-next]',
@@ -942,7 +1147,9 @@ def click_next_page_pagination(
             '.mini-pagination button[disabled][data-test-mini-pagination-next]',
             '.mini-pagination a[disabled][rel="next"]',
             '.mini-pagination button.artdeco-button--disabled[aria-label*="next" i]',
-            '.mini-pagination button.artdeco-button--disabled[data-test-mini-pagination-next]'
+            '.mini-pagination button.artdeco-button--disabled[data-test-mini-pagination-next]',
+            'button.artdeco-pagination__button--next.artdeco-button--disabled',
+            'button.artdeco-pagination__button--next[disabled]'
         ];
         for (const selector of disabledSelectors) {
             const disabledNext = document.querySelector(selector);
@@ -971,39 +1178,130 @@ def click_next_page_pagination(
     })()
     """
 
+    from browser_utils import safe_get_parsed, FailureCode, ActionRequired
+
+    pagination_state_js = r"""
+    (() => {
+        const currentUrl = window.location.href;
+        const currentPageMatch = currentUrl.match(/[?&]start=(\d+)/);
+        const currentStart = currentPageMatch ? parseInt(currentPageMatch[1], 10) : 0;
+        const currentPageNum = Math.floor(currentStart / 25) + 1;
+        const pageLinks = Array.from(document.querySelectorAll(
+            'nav a, nav button, nav li, [aria-current="page"], [role="listitem"]'
+        ));
+        let highestVisiblePage = currentPageNum;
+        let hasForwardPageLink = false;
+        let hasVisiblePageEvidence = false;
+        let hasCurrentPageMarker = false;
+
+        for (const link of pageLinks) {
+            const text = (link.textContent || '').replace(/\s+/g, ' ').trim();
+            const aria = (link.getAttribute('aria-label') || '').trim();
+            const ariaCurrent = (link.getAttribute('aria-current') || '').trim();
+            const pageTextMatch = text.match(/(?:^|\b)Page\s+(\d+)(?:\b|\s*\(current\))/i) ||
+                                  text.match(/^(\d+)$/);
+            const pageAriaMatch = aria.match(/page\s+(\d+)/i);
+            const pageNum = pageTextMatch ? parseInt(pageTextMatch[1], 10) :
+                            pageAriaMatch ? parseInt(pageAriaMatch[1], 10) : 0;
+            if (pageNum > 0) {
+                hasVisiblePageEvidence = true;
+            }
+            if (pageNum > highestVisiblePage) {
+                highestVisiblePage = pageNum;
+            }
+            if (pageNum > currentPageNum) {
+                hasForwardPageLink = true;
+            }
+            if (
+                pageNum == currentPageNum &&
+                (text.toLowerCase().includes('(current)') || ariaCurrent.toLowerCase() == 'page')
+            ) {
+                hasCurrentPageMarker = true;
+            }
+        }
+
+        const disabledNext = !!document.querySelector(
+            'button.artdeco-pagination__button--next[disabled], ' +
+            'button.artdeco-pagination__button--next.artdeco-button--disabled, ' +
+            '[data-test-ts-pagination] button[disabled][aria-label*="next" i], ' +
+            '.profile-list-container__pagination button[disabled][aria-label*="next" i], ' +
+            '.mini-pagination button[disabled][aria-label*="next" i]'
+        );
+
+        return {
+            isLastPage: disabledNext || (
+                hasVisiblePageEvidence &&
+                hasCurrentPageMarker &&
+                !hasForwardPageLink &&
+                currentPageNum >= highestVisiblePage
+            ),
+            currentPageNum,
+            highestVisiblePage,
+            hasForwardPageLink,
+            disabledNext,
+            hasVisiblePageEvidence,
+            hasCurrentPageMarker,
+        };
+    })()
+    """
+
     result = run_browser_command(cdp_port, "eval", CLICK_NEXT_PAGE_JS)
 
     if result.get("error"):
-        return {
-            "success": False,
-            "is_last_page": False,
-            "previous_url": "",
-            "current_url": "",
-            "error": f"Browser command failed: {result['error']}",
-        }
+        return _err_result(
+            error=f"Browser command failed: {result['error']}",
+            failure_code=FailureCode.TIMEOUT
+            if result.get("timed_out")
+            else FailureCode.AMBIGUOUS_STATE,
+            action_required=ActionRequired.ambiguous_state(
+                details=f"Pagination click failed: {result['error']}"
+            ).to_dict()
+            if not result.get("timed_out")
+            else None,
+            is_last_page=False,
+            previous_url="",
+            current_url="",
+        )
 
-    parsed = result.get("parsed", {})
+    parsed = safe_get_parsed(result, default={})
 
-    # Handle clean end-of-results (last page)
     if parsed.get("isLastPage"):
-        return {
-            "success": True,  # Success - just no more pages
-            "is_last_page": True,
-            "previous_url": parsed.get("previousUrl", ""),
-            "current_url": parsed.get(
-                "previousUrl", ""
-            ),  # URL doesn't change on last page
-            "error": None,
-        }
+        return _ok_result(
+            is_last_page=True,
+            previous_url=parsed.get("previousUrl", ""),
+            current_url=parsed.get("previousUrl", ""),
+            error=None,
+            failure_code=None,
+            action_required=None,
+        )
 
     if not parsed.get("clicked"):
-        return {
-            "success": False,
-            "is_last_page": False,
-            "previous_url": parsed.get("previousUrl", ""),
-            "current_url": parsed.get("previousUrl", ""),
-            "error": parsed.get("error", "Next page pagination control not found"),
-        }
+        pagination_state = safe_get_parsed(
+            run_browser_command(cdp_port, "eval", pagination_state_js),
+            default={},
+        )
+        if pagination_state.get("isLastPage"):
+            return _ok_result(
+                is_last_page=True,
+                previous_url=parsed.get("previousUrl", ""),
+                current_url=parsed.get("previousUrl", ""),
+                error=None,
+                failure_code=None,
+                action_required=None,
+            )
+
+        error_msg = parsed.get("error", "Next page pagination control not found")
+        return _err_result(
+            error=error_msg,
+            failure_code=FailureCode.ELEMENT_MISSING,
+            action_required=ActionRequired.element_missing(
+                selector="next page pagination control",
+                page_url=parsed.get("previousUrl", ""),
+            ).to_dict(),
+            is_last_page=False,
+            previous_url=parsed.get("previousUrl", ""),
+            current_url=parsed.get("previousUrl", ""),
+        )
 
     # Wait for navigation to complete with bounded polling
     # For page > 1, we expect the URL to contain the specific start offset
@@ -1015,7 +1313,20 @@ def click_next_page_pagination(
         url_result = run_browser_command(
             cdp_port, "eval", "({ url: window.location.href })"
         )
-        current_url = url_result.get("parsed", {}).get("url", "")
+        url_parsed = safe_get_parsed(url_result, default={})
+        current_url = url_parsed.get("url", "")
+
+        if not current_url:
+            return _err_result(
+                error="Failed to read current URL from browser during pagination",
+                failure_code=FailureCode.BROWSER_UNAVAILABLE,
+                action_required=ActionRequired.browser_unavailable(
+                    cdp_port=cdp_port
+                ).to_dict(),
+                is_last_page=False,
+                previous_url=parsed.get("previousUrl", ""),
+                current_url="",
+            )
 
         # If we have an expected start parameter, wait for it to appear
         if expected_start_param:
@@ -1031,13 +1342,45 @@ def click_next_page_pagination(
         # Timeout reached - still return the current URL for validation to handle
         pass
 
-    return {
-        "success": True,
-        "is_last_page": False,
-        "previous_url": parsed.get("previousUrl", ""),
-        "current_url": current_url,
-        "error": None,
-    }
+    previous_url = parsed.get("previousUrl", "")
+
+    if expected_start_param and current_url == previous_url:
+        pagination_state = safe_get_parsed(
+            run_browser_command(cdp_port, "eval", pagination_state_js),
+            default={},
+        )
+        if pagination_state.get("isLastPage"):
+            return _ok_result(
+                is_last_page=True,
+                previous_url=previous_url,
+                current_url=current_url,
+                error=None,
+                failure_code=None,
+                action_required=None,
+            )
+
+        return _err_result(
+            error="Pagination click did not reach the expected next page",
+            failure_code=FailureCode.AMBIGUOUS_STATE,
+            action_required=ActionRequired.ambiguous_state(
+                details=(
+                    f"Pagination click did not change URL from {previous_url} "
+                    f"while waiting for {expected_start_param}"
+                )
+            ).to_dict(),
+            is_last_page=False,
+            previous_url=previous_url,
+            current_url=current_url,
+        )
+
+    return _ok_result(
+        is_last_page=False,
+        previous_url=previous_url,
+        current_url=current_url,
+        error=None,
+        failure_code=None,
+        action_required=None,
+    )
 
 
 def validate_pagination_result(
@@ -1152,30 +1495,76 @@ def get_current_page_from_browser(cdp_port: str, project_id: str) -> dict[str, A
 
     Returns:
         Dict with:
+            - success: bool - whether browser state was read successfully
             - current_page: int - detected page number (1 if unknown)
             - current_url: str - the current URL
             - is_contextual: bool - whether on valid contextual search page
             - same_project: bool - whether on same project
+            - error: str | None - error message if browser state could not be read
+            - failure_code: str | None - stable failure code if failed
+            - action_required: dict | None - structured fallback if failed
     """
+    from urllib.parse import urlparse
+
+    from browser_utils import safe_get_parsed, FailureCode, ActionRequired
+
     result = run_browser_command(cdp_port, "eval", "({ url: window.location.href })")
-    current_url = result.get("parsed", {}).get("url", "")
+    if result.get("error"):
+        return _err_result(
+            error=f"Failed to read current URL from browser: {result['error']}",
+            failure_code=FailureCode.AMBIGUOUS_STATE,
+            action_required=ActionRequired.ambiguous_state(
+                details=f"Could not read current URL from browser: {result['error']}"
+            ).to_dict(),
+            current_page=1,
+            current_url="",
+            is_contextual=False,
+            same_project=False,
+        )
 
-    # Check if on contextual search page for this project
+    parsed = safe_get_parsed(result, default={})
+    current_url = parsed.get("url", "")
+    if not isinstance(current_url, str) or not current_url:
+        return _err_result(
+            error="Failed to read current URL from browser",
+            failure_code=FailureCode.AMBIGUOUS_STATE,
+            action_required=ActionRequired.ambiguous_state(
+                details="Could not read current URL from browser"
+            ).to_dict(),
+            current_page=1,
+            current_url="",
+            is_contextual=False,
+            same_project=False,
+        )
+
+    parsed_url = urlparse(current_url)
+    if not parsed_url.scheme or not parsed_url.netloc:
+        return _err_result(
+            error=f"Browser returned malformed current URL: {current_url}",
+            failure_code=FailureCode.AMBIGUOUS_STATE,
+            action_required=ActionRequired.ambiguous_state(
+                details=f"Browser returned malformed current URL: {current_url}"
+            ).to_dict(),
+            current_page=1,
+            current_url=current_url,
+            is_contextual=False,
+            same_project=False,
+        )
+
     is_contextual = is_contextual_recruiter_search_url(current_url, project_id)
-
-    # Check if same project (even if not on search page)
     current_project_id = extract_project_id_from_url(current_url)
     same_project = current_project_id == project_id
-
-    # Extract page number if contextual, otherwise default to 1
     current_page = get_page_number_from_url(current_url) if is_contextual else 1
 
-    return {
-        "current_page": current_page,
-        "current_url": current_url,
-        "is_contextual": is_contextual,
-        "same_project": same_project,
-    }
+    return _ok_result(
+        current_page=current_page,
+        current_url=current_url,
+        is_contextual=is_contextual,
+        same_project=same_project,
+        error=None,
+        failure_code=None,
+        action_required=None,
+    )
 
 
 def build_paginated_url(base_url: str, page: int, page_size: int = 25) -> str:
@@ -1257,7 +1646,6 @@ def navigate_to_page(
     """
     from recruiter_page_utils import ensure_page_ready
 
-    # Page 1: use base URL directly (it's already a fresh contextual URL)
     if page == 1:
         ensure_result = ensure_page_ready(
             cdp_port=cdp_port,
@@ -1265,24 +1653,36 @@ def navigate_to_page(
             target_url=base_url,
             context=f"navigate_to_page_{page}",
         )
-        return {
-            "success": ensure_result["ready"],
-            "is_last_page": False,
-            "url": base_url,
-            "state": ensure_result["state"],
-            "method": "direct",
-        }
+        return _copy_action_required_fields(
+            _nav_result(
+                success=ensure_result["ready"],
+                url=base_url,
+                state=ensure_result["state"],
+                method="direct",
+            ),
+            ensure_result,
+        )
 
-    # Page > 1: Determine actual current page from browser state
-    # This handles resumed runs where browser may already be on page 2+
     if project_id:
         browser_state = get_current_page_from_browser(cdp_port, project_id)
+        if not browser_state.get("success", True):
+            return _copy_action_required_fields(
+                _nav_result(
+                    success=False,
+                    url=browser_state.get("current_url", ""),
+                    state="browser_state_read_failed",
+                    method="browser_state",
+                    error=browser_state.get(
+                        "error", "Failed to read current page from browser"
+                    ),
+                ),
+                browser_state,
+            )
         current_page = browser_state["current_page"]
         current_url = browser_state["current_url"]
         is_contextual = browser_state["is_contextual"]
         same_project = browser_state["same_project"]
 
-        # If already on target page and contextual, ensure ready and return
         if current_page == page and is_contextual:
             ensure_result = ensure_page_ready(
                 cdp_port=cdp_port,
@@ -1290,20 +1690,17 @@ def navigate_to_page(
                 target_url=current_url,
                 context=f"navigate_to_page_{page}_already_there",
             )
-            return {
-                "success": ensure_result["ready"],
-                "is_last_page": False,
-                "url": current_url,
-                "state": ensure_result["state"],
-                "method": "already_on_page",
-            }
+            return _copy_action_required_fields(
+                _nav_result(
+                    success=ensure_result["ready"],
+                    url=current_url,
+                    state=ensure_result["state"],
+                    method="already_on_page",
+                ),
+                ensure_result,
+            )
 
-        # If on same project and contextual but different page, start from there
-        # Only do this if current page is before target (can't go backwards via next)
         if is_contextual and same_project and current_page < page:
-            # Start from detected current page
-            # CRITICAL: Verify the detected page is ready before first click
-            # This prevents clicking from a still-loading page which could misroute
             ensure_result = ensure_page_ready(
                 cdp_port=cdp_port,
                 work_dir=work_dir,
@@ -1311,19 +1708,19 @@ def navigate_to_page(
                 context=f"navigate_to_page_{current_page}_resume_ready",
             )
             if not ensure_result["ready"]:
-                return {
-                    "success": False,
-                    "is_last_page": False,
-                    "url": current_url,
-                    "state": f"page_{current_page}_not_ready",
-                    "method": "ui_pagination",
-                    "error": f"Resumed page {current_page} not ready: {ensure_result['state']}",
-                }
+                return _copy_action_required_fields(
+                    _nav_result(
+                        success=False,
+                        url=current_url,
+                        state=f"page_{current_page}_not_ready",
+                        method="ui_pagination",
+                        error=f"Resumed page {current_page} not ready: {ensure_result['state']}",
+                    ),
+                    ensure_result,
+                )
         else:
-            # Not safe to continue from current state - realign to base_url page 1
             current_page = 1
             current_url = base_url
-            # Ensure page 1 is ready before starting pagination sequence
             ensure_result = ensure_page_ready(
                 cdp_port=cdp_port,
                 work_dir=work_dir,
@@ -1331,14 +1728,16 @@ def navigate_to_page(
                 context=f"navigate_to_page_{page}_realign",
             )
             if not ensure_result["ready"]:
-                return {
-                    "success": False,
-                    "is_last_page": False,
-                    "url": base_url,
-                    "state": ensure_result["state"],
-                    "method": "realign_failed",
-                    "error": f"Failed to realign to page 1: {ensure_result['state']}",
-                }
+                return _copy_action_required_fields(
+                    _nav_result(
+                        success=False,
+                        url=base_url,
+                        state=ensure_result["state"],
+                        method="realign_failed",
+                        error=f"Failed to realign to page 1: {ensure_result['state']}",
+                    ),
+                    ensure_result,
+                )
     else:
         # No project_id for validation - start from page 1 (legacy behavior)
         current_page = 1
@@ -1354,33 +1753,41 @@ def navigate_to_page(
             cdp_port, expected_start=expected_start
         )
 
-        # Handle clean end-of-results (last page) - this is NOT a failure
         if pagination_result.get("is_last_page"):
-            return {
-                "success": True,
-                "is_last_page": True,
-                "url": pagination_result.get("current_url", current_url),
-                "state": "last_page",
-                "method": "ui_pagination",
-            }
+            return _nav_result(
+                success=True,
+                url=pagination_result.get("current_url", current_url),
+                state="last_page",
+                method="ui_pagination",
+                is_last_page=True,
+            )
 
-        # Check for pagination failure
         if not pagination_result.get("success"):
             error_msg = pagination_result.get("error", "Unknown pagination error")
 
-            # FAIL CLOSED: Missing next button indicates DOM drift or selector mismatch
-            # This is NOT a candidate for fallback - it's a structural failure
-            if "DOM drift" in error_msg or "selector mismatch" in error_msg:
-                return {
-                    "success": False,
-                    "is_last_page": False,
-                    "url": pagination_result.get("current_url", current_url),
-                    "state": "pagination_failed",
-                    "method": "ui_pagination",
-                    "error": error_msg,
-                }
+            if pagination_result.get("failure_code") or pagination_result.get(
+                "action_required"
+            ):
+                return _copy_action_required_fields(
+                    _nav_result(
+                        success=False,
+                        url=pagination_result.get("current_url", current_url),
+                        state="pagination_failed",
+                        method="ui_pagination",
+                        error=error_msg,
+                    ),
+                    pagination_result,
+                )
 
-            # UI pagination failed for other reasons - fall back to synthesized URL
+            if "DOM drift" in error_msg or "selector mismatch" in error_msg:
+                return _nav_result(
+                    success=False,
+                    url=pagination_result.get("current_url", current_url),
+                    state="pagination_failed",
+                    method="ui_pagination",
+                    error=error_msg,
+                )
+
             print(
                 f"  UI pagination failed at page {next_page}: {error_msg}. "
                 f"Falling back to synthesized URL.",
@@ -1396,29 +1803,28 @@ def navigate_to_page(
                 context=f"navigate_to_page_{page}_fallback",
             )
 
-            return {
-                "success": ensure_result["ready"],
-                "is_last_page": False,
-                "url": paginated_url,
-                "state": ensure_result["state"],
-                "method": "synthesized_fallback",
-            }
+            return _copy_action_required_fields(
+                _nav_result(
+                    success=ensure_result["ready"],
+                    url=paginated_url,
+                    state=ensure_result["state"],
+                    method="synthesized_fallback",
+                ),
+                ensure_result,
+            )
 
-        # Validate the pagination result if we have project_id
         if project_id:
             validation = validate_pagination_result(
                 pagination_result, next_page, project_id
             )
             if not validation["valid"]:
-                # Pagination succeeded but landed on wrong page - this is an error
-                return {
-                    "success": False,
-                    "is_last_page": False,
-                    "url": pagination_result.get("current_url", ""),
-                    "state": "pagination_validation_failed",
-                    "method": "ui_pagination",
-                    "error": validation["error"],
-                }
+                return _nav_result(
+                    success=False,
+                    url=pagination_result.get("current_url", ""),
+                    state="pagination_validation_failed",
+                    method="ui_pagination",
+                    error=validation["error"],
+                )
 
         # Successfully advanced to next_page
         current_page = next_page
@@ -1434,17 +1840,17 @@ def navigate_to_page(
                 context=f"navigate_to_page_{current_page}_ready",
             )
             if not ensure_result["ready"]:
-                # Page not ready - fail closed
-                return {
-                    "success": False,
-                    "is_last_page": False,
-                    "url": current_url,
-                    "state": f"page_{current_page}_not_ready",
-                    "method": "ui_pagination",
-                    "error": f"Page {current_page} not ready: {ensure_result['state']}",
-                }
+                return _copy_action_required_fields(
+                    _nav_result(
+                        success=False,
+                        url=current_url,
+                        state=f"page_{current_page}_not_ready",
+                        method="ui_pagination",
+                        error=f"Page {current_page} not ready: {ensure_result['state']}",
+                    ),
+                    ensure_result,
+                )
 
-    # Reached target page - ensure it's ready for extraction
     ensure_result = ensure_page_ready(
         cdp_port=cdp_port,
         work_dir=work_dir,
@@ -1452,13 +1858,15 @@ def navigate_to_page(
         context=f"navigate_to_page_{page}_ui",
     )
 
-    return {
-        "success": ensure_result["ready"],
-        "is_last_page": False,
-        "url": current_url,
-        "state": ensure_result["state"],
-        "method": "ui_pagination",
-    }
+    return _copy_action_required_fields(
+        _nav_result(
+            success=ensure_result["ready"],
+            url=current_url,
+            state=ensure_result["state"],
+            method="ui_pagination",
+        ),
+        ensure_result,
+    )
 
 
 def extract_candidates_from_page(
@@ -1508,7 +1916,8 @@ def process_candidates(
 
     for candidate in candidates:
         stats["total"] += 1
-        profile_url = candidate.get("url", "")
+        # Support both new schema (profile_url) and legacy schema (url) for backward compatibility
+        profile_url = candidate.get("profile_url") or candidate.get("url", "")
 
         if dry_run:
             # In dry-run mode, track as new if not seen, skipped if seen
@@ -1576,6 +1985,7 @@ def run_preflight(
             - work_dir: str | None - working directory for incident reporting
     """
     from recruiter_page_utils import PageStateProbe
+    from browser_utils import ActionRequired, FailureCode
 
     result: dict[str, Any] = {
         "success": False,
@@ -1586,6 +1996,8 @@ def run_preflight(
         "project_id": None,
         "cdp_port": None,
         "work_dir": None,
+        "failure_code": None,
+        "action_required": None,
     }
 
     # Verify RECRUITER_PROJECT_URL is set
@@ -1626,7 +2038,7 @@ def run_preflight(
         cdp_port = config.get("CDP_PORT")
         if not cdp_port:
             profile = manager._resolve_profile()
-            cdp_port = profile.get("CDP_PORT", "9230")
+            cdp_port = profile.get("CDP_PORT", "9234")
     result["cdp_port"] = cdp_port
 
     # Get work_dir for incident reporting
@@ -1678,6 +2090,30 @@ def run_preflight(
         "blocked_or_captcha",
     }
     if state in failing_states:
+        details = state_result.get("details", {})
+        current_url = details.get("url") or details.get("current_url")
+        dialog_info = state_result.get("dialog_info") or details.get("dialog") or {}
+        if state == "dialog_blocked":
+            result["failure_code"] = FailureCode.DIALOG_BLOCKED
+            result["action_required"] = ActionRequired.dialog_blocked(
+                dialog_type=dialog_info.get("dialog_type"),
+                message=dialog_info.get("message"),
+            ).to_dict()
+        elif state == "logged_out_or_wrong_product":
+            result["failure_code"] = FailureCode.AUTH_REQUIRED
+            result["action_required"] = ActionRequired.auth_required(
+                current_url=current_url
+            ).to_dict()
+        elif state == "blocked_or_captcha":
+            result["failure_code"] = FailureCode.BLOCKED_OR_CAPTCHA
+            result["action_required"] = ActionRequired.blocked_or_captcha(
+                current_url=current_url
+            ).to_dict()
+        else:
+            result["failure_code"] = FailureCode.WRONG_PAGE
+            result["action_required"] = ActionRequired.wrong_page(
+                actual_url=current_url
+            ).to_dict()
         result["message"] = f"Browser preflight failed: page state is '{state}'"
         result["exit_code"] = 1
         return result
@@ -1686,12 +2122,18 @@ def run_preflight(
     if state == "unknown":
         details = state_result.get("details", {})
         error_text = details.get("error", "Unknown browser/CDP error")
+        result["failure_code"] = details.get(
+            "failure_code", FailureCode.AMBIGUOUS_STATE
+        )
+        result["action_required"] = ActionRequired.ambiguous_state(
+            details=error_text
+        ).to_dict()
         result["message"] = f"Browser preflight failed: {error_text}"
         result["exit_code"] = 1
         return result
 
-    # Note: We don't reject ordinary recruiter pages that are merely not on
-    # search results yet - this preflight is only for obviously bad states
+    # Note: Search-not-configured detection happens later during fresh search
+    # context resolution so we can distinguish it from ordinary preflight.
 
     result["success"] = True
     return result
@@ -1730,6 +2172,21 @@ def run_extraction(args: argparse.Namespace) -> dict[str, Any]:
     if not preflight["success"]:
         result["message"] = preflight["message"]
         result["exit_code"] = preflight["exit_code"]
+        _copy_action_required_fields(result, preflight)
+        # Update project state for preflight failure
+        try:
+            from project_state import update_project_state
+
+            project_dir = config_path.parent if config_path else Path(".")
+            update_project_state(
+                project_dir=project_dir,
+                current_phase="extract",
+                status="failed",
+                last_result_summary="Preflight checks failed",
+                last_error=preflight.get("message", "Unknown preflight error"),
+            )
+        except Exception:
+            pass
         return result
 
     # Extract preflight results
@@ -1876,16 +2333,31 @@ def run_extraction(args: argparse.Namespace) -> dict[str, Any]:
     if not context_result["success"]:
         result["message"] = context_result["error"]
         result["exit_code"] = 1
+        _copy_action_required_fields(result, context_result)
+        # Update project state for context resolution failure
+        try:
+            from project_state import update_project_state
+
+            project_dir = config_path.parent if config_path else Path(work_dir)
+            update_project_state(
+                project_dir=project_dir,
+                current_phase="extract",
+                status="failed",
+                action_required=context_result.get("action_required"),
+                last_result_summary="Failed to resolve fresh search context",
+                last_error=context_result.get("error"),
+            )
+        except Exception:
+            pass
         return result
 
     target_url = context_result["fresh_url"]
     print(f"Fresh search context resolved: {target_url}")
 
-    # Process pages
     pages_to_process = args.max_pages if args.max_pages > 0 else float("inf")
     pages_processed_count = 0
     total_stats = {"total": 0, "new": 0, "updated": 0, "skipped": 0}
-    max_pages_reached = False  # Track if stopped due to --max-pages limit
+    max_pages_reached = False
 
     print(f"Starting extraction from page {current_page}")
     print(f"Target URL: {target_url}")
@@ -1893,6 +2365,26 @@ def run_extraction(args: argparse.Namespace) -> dict[str, Any]:
     if args.dry_run:
         print("DRY RUN: No changes will be written to workbook")
     print()
+
+    def _persist_state(
+        status: str,
+        last_completed_page: int | None,
+        next_start_page: int | None,
+        error: str | None = None,
+    ) -> bool:
+        """Persist extraction state with common fields bound."""
+        return save_extraction_state(
+            state_path=state_path,
+            project_id=project_id,
+            workbook_path=workbook_path,
+            config_path=args.config,
+            status=status,
+            last_completed_page=last_completed_page,
+            next_start_page=next_start_page,
+            error=error,
+            fresh_url=target_url,
+            dry_run=args.dry_run,
+        )
 
     try:
         while pages_processed_count < pages_to_process:
@@ -1920,20 +2412,13 @@ def run_extraction(args: argparse.Namespace) -> dict[str, Any]:
                 if not nav_result["success"]:
                     error_msg = nav_result.get("error", nav_result["state"])
                     print(f"  Failed to navigate to page {current_page}: {error_msg}")
-                    # Persist failed state for resume
-                    state_saved = save_extraction_state(
-                        state_path=state_path,
-                        project_id=project_id,
-                        workbook_path=workbook_path,
-                        config_path=args.config,
+                    state_saved = _persist_state(
                         status="failed",
                         last_completed_page=current_page - 1
                         if current_page > 1
                         else None,
                         next_start_page=current_page,
                         error=f"Navigation failed: {error_msg}",
-                        fresh_url=target_url,
-                        dry_run=args.dry_run,
                     )
                     if not state_saved:
                         result["message"] = (
@@ -1941,11 +2426,13 @@ def run_extraction(args: argparse.Namespace) -> dict[str, Any]:
                             f"additionally, failed to persist state to {state_path}"
                         )
                         result["exit_code"] = 2
+                        _copy_action_required_fields(result, nav_result)
                         return result
                     result["message"] = (
                         f"Navigation failed on page {current_page}: {error_msg}"
                     )
                     result["exit_code"] = 1
+                    _copy_action_required_fields(result, nav_result)
                     return result
 
                 # Use the actual URL from pagination (not a synthesized one)
@@ -1967,20 +2454,13 @@ def run_extraction(args: argparse.Namespace) -> dict[str, Any]:
                     print(f"No results on page {current_page}. Extraction complete.")
                     break
                 else:
-                    # Persist failed state for resume
-                    state_saved = save_extraction_state(
-                        state_path=state_path,
-                        project_id=project_id,
-                        workbook_path=workbook_path,
-                        config_path=args.config,
+                    state_saved = _persist_state(
                         status="failed",
                         last_completed_page=current_page - 1
                         if current_page > 1
                         else None,
                         next_start_page=current_page,
                         error=f"Extraction failed: {extraction_result.get('message', 'Unknown error')}",
-                        fresh_url=target_url,
-                        dry_run=args.dry_run,
                     )
                     if not state_saved:
                         result["message"] = (
@@ -1989,7 +2469,6 @@ def run_extraction(args: argparse.Namespace) -> dict[str, Any]:
                         )
                         result["exit_code"] = 2
                         return result
-                    # Propagate the extraction failure exit code
                     result["message"] = (
                         f"Extraction failed on page {current_page}: {extraction_result['message']}"
                     )
@@ -2013,20 +2492,12 @@ def run_extraction(args: argparse.Namespace) -> dict[str, Any]:
                 dry_run=args.dry_run,
             )
 
-            # Check for workbook I/O failure
             if page_stats.get("error"):
-                # Persist failed state for resume
-                state_saved = save_extraction_state(
-                    state_path=state_path,
-                    project_id=project_id,
-                    workbook_path=workbook_path,
-                    config_path=args.config,
+                state_saved = _persist_state(
                     status="failed",
                     last_completed_page=current_page - 1 if current_page > 1 else None,
                     next_start_page=current_page,
                     error=f"Workbook write failed: {page_stats['message']}",
-                    fresh_url=target_url,
-                    dry_run=args.dry_run,
                 )
                 if not state_saved:
                     result["message"] = (
@@ -2052,79 +2523,72 @@ def run_extraction(args: argparse.Namespace) -> dict[str, Any]:
             current_page += 1
             pages_processed_count += 1
 
-            # Update running state after successful page processing
-            state_saved = save_extraction_state(
-                state_path=state_path,
-                project_id=project_id,
-                workbook_path=workbook_path,
-                config_path=args.config,
+            state_saved = _persist_state(
                 status="running",
                 last_completed_page=current_page - 1,
                 next_start_page=current_page,
-                fresh_url=target_url,
-                dry_run=args.dry_run,
             )
             if not state_saved:
                 result["message"] = f"Failed to persist running state to {state_path}"
                 result["exit_code"] = 2
                 return result
 
-            # Brief pause between pages to avoid overwhelming the browser
             if pages_processed_count < pages_to_process:
                 time.sleep(1)
             else:
-                # Loop condition will fail on next iteration - max_pages reached
                 max_pages_reached = True
 
     except KeyboardInterrupt:
-        # Persist resumable state for the current page before exiting
-        # This ensures interrupted runs remain resumable/retryable
         print(f"\n  Interrupted during page {current_page}. Persisting state...")
-        state_saved = save_extraction_state(
-            state_path=state_path,
-            project_id=project_id,
-            workbook_path=workbook_path,
-            config_path=args.config,
+        state_saved = _persist_state(
             status="running",
             last_completed_page=current_page - 1 if current_page > 1 else None,
             next_start_page=current_page,
-            fresh_url=target_url,
-            dry_run=args.dry_run,
         )
         if not state_saved:
-            # Fail-closed: report state persistence failure but still exit
             print(
                 f"  Warning: failed to persist state to {state_path}",
                 file=sys.stderr,
             )
         else:
             print(f"  State persisted. Resume with: --resume")
-        raise  # Re-raise KeyboardInterrupt to exit with code 130
+        raise
 
-    # Determine final state: completed only for true clean completion
-    # max-pages partial stop persists as running with next_start_page set
-    if max_pages_reached and pages_processed_count >= args.max_pages > 0:
-        # Partial run due to --max-pages limit - remain resumable
-        final_status = "running"
-        final_next_start_page = current_page
-        completion_message = f"Partial extraction: {result['pages_processed']} pages processed (max-pages limit reached)"
+    # Determine final status:
+    # - Resume state: remains "running" when max-pages stops before exhaustion
+    #   (so extraction can be resumed to process remaining pages)
+    # - Project state: reflects "completed" for bounded success (clean outcome)
+    bounded_extraction_complete = (
+        args.max_pages > 0 and pages_processed_count >= args.max_pages
+    )
+    reached_end_of_results = not max_pages_reached
+
+    if bounded_extraction_complete:
+        # Resume state stays running/resumable; project state shows clean completion
+        resume_final_status = "running"
+        resume_next_start_page = current_page
+        project_final_status = "completed"
+        completion_message = f"Extraction complete: {result['pages_processed']} pages processed (bounded extraction finished)"
+    elif reached_end_of_results:
+        # True completion - no more results available
+        resume_final_status = "completed"
+        resume_next_start_page = None
+        project_final_status = "completed"
+        completion_message = f"Extraction complete: {result['pages_processed']} pages (reached end of results)"
     else:
-        # True completion: last page reached or no more results
-        final_status = "completed"
-        final_next_start_page = None
-        completion_message = f"Extraction complete: {result['pages_processed']} pages"
+        # Partial extraction (should not happen in normal flow)
+        resume_final_status = "running"
+        resume_next_start_page = current_page
+        project_final_status = "running"
+        completion_message = (
+            f"Partial extraction: {result['pages_processed']} pages processed"
+        )
 
-    # Persist final state
-    state_saved = save_extraction_state(
-        state_path=state_path,
-        project_id=project_id,
-        workbook_path=workbook_path,
-        config_path=args.config,
-        status=final_status,
+    # Persist resume state (for --resume functionality)
+    state_saved = _persist_state(
+        status=resume_final_status,
         last_completed_page=current_page - 1 if current_page > 1 else None,
-        next_start_page=final_next_start_page,
-        fresh_url=target_url,
-        dry_run=args.dry_run,
+        next_start_page=resume_next_start_page,
     )
     if not state_saved:
         result["message"] = f"Failed to persist completed state to {state_path}"
@@ -2142,6 +2606,23 @@ def run_extraction(args: argparse.Namespace) -> dict[str, Any]:
         f"{total_stats['new']} new, {total_stats['updated']} updated, "
         f"{total_stats['skipped']} skipped"
     )
+
+    # Update project state (user-facing status)
+    try:
+        from project_state import update_project_state
+
+        project_dir = config_path.parent if config_path else Path(work_dir)
+        update_project_state(
+            project_dir=project_dir,
+            current_phase="extract",
+            status=project_final_status,
+            action_required=False,
+            last_result_summary=result["message"],
+            last_error=False,
+        )
+    except Exception:
+        # Project state update is best-effort; don't fail extraction
+        pass
 
     return result
 

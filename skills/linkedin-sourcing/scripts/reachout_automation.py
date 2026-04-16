@@ -1,17 +1,22 @@
 #!/usr/bin/env python3
 """Reachout automation for LinkedIn sourcing - handles filter, draft, approve, summary phases.
 
+Part of the workflow: Extract -> Filter -> Enrich -> Draft -> Review -> Send
+
 Usage:
-    python3 reachout_automation.py filter <workbook_path> <config_path>
+    python3 reachout_automation.py filter <workbook_path> <config_path> [--no-enrichment]
     python3 reachout_automation.py draft <workbook_path> <config_path> <template_path>
     python3 reachout_automation.py approve <workbook_path>
     python3 reachout_automation.py summary <workbook_path>
 
 Commands:
-    filter   - Exclude candidates by title, update status to Filtered or keep for drafting
-    draft    - Generate personalized inmail drafts from templates
+    filter   - Exclude candidates by title, route kept rows to enrich (or draft with --no-enrichment)
+    draft    - Generate personalized inmail drafts from templates (uses enrichment_notes if present)
     approve  - Auto-approve all Drafted rows for testing
     summary  - Print counts by status and next_action
+
+Options:
+    --no-enrichment  - Route filtered-in rows directly to draft (legacy behavior)
 """
 
 from __future__ import annotations
@@ -29,6 +34,7 @@ SKILL_DIR = SCRIPT_DIR.parent
 # Import COLUMNS from excel_utils for single source of truth
 sys.path.insert(0, str(SCRIPT_DIR))
 from excel_utils import COLUMNS, ensure_schema
+from config_utils import parse_config_file
 
 
 def get_openpyxl():
@@ -118,22 +124,15 @@ def update_row(wb, row_id: int, updates: dict[str, Any]):
 
 
 def parse_config(config_path: str) -> dict[str, str]:
-    """Parse a bash-style config file into a dictionary."""
-    config = {}
+    """Parse a bash-style config file into a dictionary.
+
+    This is a thin wrapper around config_utils.parse_config_file that raises
+    FileNotFoundError for missing files (for backward compatibility).
+    """
     path = Path(config_path)
     if not path.exists():
         raise FileNotFoundError(f"Config file not found: {config_path}")
-
-    for line in path.read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if "=" in line:
-            key, value = line.split("=", 1)
-            key = key.strip()
-            value = value.strip().strip('"').strip("'")
-            config[key] = value
-    return config
+    return parse_config_file(config_path)
 
 
 def load_merged_config(project_config_path: str) -> dict[str, str]:
@@ -402,13 +401,19 @@ def fill_template(
     return subject, body
 
 
-def cmd_filter(workbook_path: str, config_path: str):
+def cmd_filter(workbook_path: str, config_path: str, use_enrichment: bool = True):
     """Filter candidates by title exclusion.
 
     Processes rows where next_action indicates filtering is needed
     (either 'filter' or when status=Extracted but next_action=draft).
     Excluded rows get status=Filtered, next_action=done.
-    Kept rows get next_action=draft.
+    Kept rows get next_action=enrich (if use_enrichment) or next_action=draft.
+
+    Args:
+        workbook_path: Path to candidate workbook
+        config_path: Path to project config
+        use_enrichment: If True, route kept rows to enrichment phase.
+                       If False, route directly to draft (legacy behavior).
     """
     config = load_merged_config(config_path)
     exclude_titles = config.get("EXCLUDE_TITLES", "")
@@ -429,6 +434,10 @@ def cmd_filter(workbook_path: str, config_path: str):
             needs_filter = True
         elif status == "Extracted" and next_action == "draft":
             needs_filter = True
+        elif status == "Extracted" and next_action == "enrich":
+            # Already routed to enrichment - skip re-processing
+            skipped += 1
+            continue
         elif status == "Extracted" and not next_action:
             needs_filter = True
         else:
@@ -451,26 +460,37 @@ def cmd_filter(workbook_path: str, config_path: str):
             )
             filtered += 1
         else:
+            # Route to enrichment or draft based on use_enrichment flag
+            next_action_value = "enrich" if use_enrichment else "draft"
             update_row(
                 wb,
                 row_id,
                 {
-                    "next_action": "draft",
+                    "next_action": next_action_value,
                 },
             )
             kept += 1
 
     save_workbook(wb, workbook_path)
 
-    print(f"Filter complete: {kept} kept, {filtered} filtered, {skipped} skipped")
-    return {"kept": kept, "filtered": filtered, "skipped": skipped}
+    target_phase = "enrich" if use_enrichment else "draft"
+    print(
+        f"Filter complete: {kept} kept (→{target_phase}), {filtered} filtered, {skipped} skipped"
+    )
+    return {
+        "kept": kept,
+        "filtered": filtered,
+        "skipped": skipped,
+        "target_phase": target_phase,
+    }
 
 
 def cmd_draft(workbook_path: str, config_path: str, template_path: str):
     """Generate draft inmails for candidates ready for drafting.
 
-    Processes rows where next_action=draft.
+    Processes rows where next_action=draft or (next_action=enrich and already enriched).
     Generates personalized subject/body from template.
+    Uses enrichment_notes when available for better personalization.
     Updates status=Drafted, next_action=review.
     """
     config = load_merged_config(config_path)
@@ -487,7 +507,17 @@ def cmd_draft(workbook_path: str, config_path: str, template_path: str):
         status = row.get("status") or ""
         row_id = row.get("row_id")
 
-        if next_action != "draft":
+        # Allow drafting for:
+        # 1. next_action=draft (standard path)
+        # 2. next_action=enrich but already enriched (manual override path)
+        can_draft = False
+        if next_action == "draft":
+            can_draft = True
+        elif next_action == "enrich" and row.get("enrichment_notes"):
+            # Already enriched but still marked enrich - allow manual draft
+            can_draft = True
+
+        if not can_draft:
             skipped += 1
             continue
 
@@ -495,7 +525,23 @@ def cmd_draft(workbook_path: str, config_path: str, template_path: str):
             skipped += 1
             continue
 
-        subject, body = fill_template(template_subject, template_body, row, config)
+        # Merge enrichment_notes into effective headline for personalization
+        # This allows draft to use enrichment data without changing fill_template signature
+        enrichment_notes = row.get("enrichment_notes") or ""
+        if enrichment_notes:
+            # Create effective row with enrichment merged into headline for personalization
+            effective_row = dict(row)
+            current_headline = row.get("headline") or ""
+            if current_headline:
+                effective_row["headline"] = f"{current_headline} | {enrichment_notes}"
+            else:
+                effective_row["headline"] = enrichment_notes
+        else:
+            effective_row = row
+
+        subject, body = fill_template(
+            template_subject, template_body, effective_row, config
+        )
 
         update_row(
             wb,
@@ -592,7 +638,9 @@ if __name__ == "__main__":
         if len(sys.argv) < 4:
             usage()
         config_path = sys.argv[3]
-        cmd_filter(workbook_path, config_path)
+        # Check for --no-enrichment flag for backward compatibility
+        use_enrichment = "--no-enrichment" not in sys.argv
+        cmd_filter(workbook_path, config_path, use_enrichment=use_enrichment)
     elif cmd == "draft":
         if len(sys.argv) < 5:
             usage()

@@ -18,7 +18,7 @@ Required (one of):
 Optional:
     --work-dir DIR        Working directory for projects (default: ~/Desktop/linkedin-sourcing)
     --recruiter-url URL   LinkedIn Recruiter project URL (if not provided, will create/ensure project)
-    --cdp-port PORT       Chrome DevTools Protocol port for ensure_recruiter_project (default: 9230)
+    --cdp-port PORT       Chrome DevTools Protocol port for ensure_recruiter_project (default: 9234)
     --project-id ID       Override project identifier (only for advanced use; normally derived from Recruiter)
     --position-title TITLE    Override position title
     --team-name NAME      Override team name
@@ -81,6 +81,11 @@ from excel_utils import create
 
 # Import auth_bootstrap for browser availability check
 import auth_bootstrap
+from config_utils import parse_config_file
+from recruiter_url_utils import (
+    extract_recruiter_id_from_url,
+    build_project_overview_url,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -128,8 +133,8 @@ Notes:
     parser.add_argument(
         "--cdp-port",
         metavar="PORT",
-        default="9230",
-        help="Chrome DevTools Protocol port for ensure_recruiter_project (default: 9230)",
+        default="9234",
+        help="Chrome DevTools Protocol port for ensure_recruiter_project (default: 9234)",
     )
     parser.add_argument(
         "--project-id",
@@ -197,21 +202,6 @@ def get_work_dir(cli_value: str | None) -> Path:
     return manager.work_dir
 
 
-def extract_recruiter_id_from_url(url: str) -> str | None:
-    """Extract numeric recruiter project ID from a LinkedIn Recruiter URL.
-
-    Args:
-        url: LinkedIn Recruiter URL (e.g., https://linkedin.com/talent/hire/12345/...)
-
-    Returns:
-        Recruiter project ID string if found, None otherwise
-    """
-    # Match /talent/hire/{numeric_id} followed by /, ?, #, or end of string
-    # This accepts URLs with or without trailing slash, and with query params
-    match = re.search(r"/talent/hire/(\d+)(?:/|$|\?|#)", url)
-    return match.group(1) if match else None
-
-
 def check_existing_project_by_recruiter_id(
     work_dir: Path, recruiter_id: str
 ) -> Path | None:
@@ -236,21 +226,11 @@ def check_existing_project_by_recruiter_id(
         if not config_path.exists():
             continue
 
-        try:
-            content = config_path.read_text()
-            for line in content.splitlines():
-                line = line.strip()
-                if line.startswith("RECRUITER_PROJECT_URL="):
-                    url_match = re.search(
-                        r'RECRUITER_PROJECT_URL=["\']?([^"\'\n]+)', line
-                    )
-                    if url_match:
-                        url = url_match.group(1)
-                        existing_id = extract_recruiter_id_from_url(url)
-                        if existing_id == recruiter_id:
-                            return config_path
-        except (OSError, IOError):
-            continue
+        config = parse_config_file(config_path)
+        recruiter_url = config.get("RECRUITER_PROJECT_URL", "")
+        existing_id = extract_recruiter_id_from_url(recruiter_url)
+        if existing_id == recruiter_id:
+            return config_path
 
     return None
 
@@ -270,7 +250,11 @@ def ensure_browser_auth(work_dir: Path, cdp_port: str) -> dict[str, Any]:
         - success: bool - whether browser is available and authenticated
         - mode: BrowserMode | None - the browser mode to use for operations
         - error: str | None - error message if failed
+        - action_required: dict | None - structured fallback for manual intervention
+        - failure_code: str | None - stable failure code if failed
     """
+    from browser_utils import ActionRequired, FailureCode
+
     result = auth_bootstrap.bootstrap_auth_session(
         work_dir=work_dir,
         preferred_cdp_port=cdp_port,
@@ -299,12 +283,43 @@ def ensure_browser_auth(work_dir: Path, cdp_port: str) -> dict[str, Any]:
                 cdp_port=result.get("cdp_port", cdp_port),
                 headed=headed,
             )
-        return {"success": True, "mode": mode, "error": None}
+        return {
+            "success": True,
+            "mode": mode,
+            "error": None,
+            "action_required": None,
+            "failure_code": None,
+        }
+
+    # Determine appropriate failure code and action_required
+    error = result.get("error", "Unknown error")
+    error_lower = error.lower()
+
+    if "chrome" in error_lower and (
+        "not found" in error_lower or "launch" in error_lower
+    ):
+        failure_code = FailureCode.BROWSER_UNAVAILABLE
+        action_required = ActionRequired.browser_unavailable(cdp_port=cdp_port)
+    elif (
+        "auth" in error_lower
+        or "login" in error_lower
+        or "not authenticated" in error_lower
+    ):
+        failure_code = FailureCode.AUTH_REQUIRED
+        action_required = ActionRequired.auth_required()
+    elif "captcha" in error_lower or "blocked" in error_lower:
+        failure_code = FailureCode.BLOCKED_OR_CAPTCHA
+        action_required = ActionRequired.blocked_or_captcha()
+    else:
+        failure_code = FailureCode.AMBIGUOUS_STATE
+        action_required = ActionRequired.ambiguous_state(details=error)
 
     return {
         "success": False,
         "mode": None,
-        "error": result.get("error", "Unknown error"),
+        "error": error,
+        "action_required": action_required.to_dict(),
+        "failure_code": failure_code,
     }
 
 
@@ -342,6 +357,8 @@ def ensure_recruiter_project_and_get_id(
         "url": result.get("url"),
         "status": result["status"],
         "message": result.get("message", ""),
+        "failure_code": result.get("failure_code"),
+        "action_required": result.get("action_required"),
     }
 
 
@@ -377,6 +394,76 @@ def fetch_url(url: str, timeout: int = 30) -> tuple[int, str]:
         return 0, f"URL Error: {e.reason}"
     except Exception as e:
         return 0, f"Error: {str(e)}"
+
+
+def normalize_to_plain_text(content: str) -> str:
+    """Normalize content to UTF-8 plain text, stripping HTML if present.
+
+    Best-effort conversion that:
+    - Strips HTML tags, scripts, and styles
+    - Preserves basic paragraph and list structure
+    - Normalizes whitespace
+    - Keeps UTF-8 plain text output
+
+    If content is already plain text (no HTML markers), applies light
+    whitespace normalization only.
+
+    Args:
+        content: Raw content (may be HTML or plain text)
+
+    Returns:
+        Normalized plain text
+    """
+    if not content:
+        return ""
+
+    # Check if content looks like HTML
+    looks_like_html = bool(
+        re.search(
+            r"<\s*!doctype|<\s*html|<\s*head|<\s*body|<\s*div|<\s*p\b|<\s*h[1-6]\b|"
+            r"<\s*title\b|<\s*meta\b|<\s*script\b|<\s*style\b|</[a-z][^>]*>",
+            content,
+            re.IGNORECASE,
+        )
+    )
+
+    if not looks_like_html:
+        # Already plain text - just normalize whitespace
+        return re.sub(r"\s+", " ", content).strip()
+
+    # HTML content - convert to plain text
+    text = content
+
+    # Remove scripts and styles first (they may contain text that looks like content)
+    text = re.sub(
+        r"<script\b[^>]*>.*?</script>", " ", text, flags=re.IGNORECASE | re.DOTALL
+    )
+    text = re.sub(
+        r"<style\b[^>]*>.*?</style>", " ", text, flags=re.IGNORECASE | re.DOTALL
+    )
+
+    # Convert common block elements to newlines for structure preservation
+    block_elements = r"<(p|div|h[1-6]|li|tr|td|th|br)\b[^>]*>"
+    text = re.sub(block_elements, "\n", text, flags=re.IGNORECASE)
+
+    # Remove remaining HTML tags
+    text = re.sub(r"<[^>]+>", " ", text)
+
+    # Decode HTML entities
+    text = html.unescape(text)
+
+    # Normalize whitespace: collapse multiple spaces, preserve paragraph breaks
+    lines = text.split("\n")
+    normalized_lines = []
+    for line in lines:
+        line = re.sub(r"\s+", " ", line).strip()
+        if line:
+            normalized_lines.append(line)
+
+    # Join with double newlines for paragraph separation
+    text = "\n\n".join(normalized_lines)
+
+    return text.strip()
 
 
 def extract_tiktok_metadata(html: str) -> dict[str, str]:
@@ -638,24 +725,8 @@ def parse_existing_config(config_path: Path) -> dict[str, str]:
     Returns:
         Dict of existing config key-value pairs
     """
-    config: dict[str, str] = {}
-    if not config_path.exists():
-        return config
-
-    try:
-        for line in config_path.read_text().splitlines():
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            if "=" in line:
-                key, value = line.split("=", 1)
-                key = key.strip()
-                value = value.strip().strip('"').strip("'")
-                config[key] = value
-    except (OSError, IOError):
-        pass
-
-    return config
+    # Use shared implementation
+    return parse_config_file(config_path)
 
 
 def build_config(
@@ -1109,10 +1180,17 @@ def bootstrap_project(args: argparse.Namespace) -> dict[str, Any]:
         # First ensure browser is available and authenticated
         browser_check = ensure_browser_auth(work_dir, args.cdp_port)
         if not browser_check["success"]:
-            raise RuntimeError(
+            # Include structured fallback in error for agent handling
+            error_msg = (
                 f"Browser authentication required but failed: {browser_check.get('error', 'Unknown error')}. "
                 "Please provide --recruiter-url or ensure Chrome is running with CDP."
             )
+            # Re-raise with structured context if available
+            if browser_check.get("action_required"):
+                raise RuntimeError(
+                    f"{error_msg} [action_required: {browser_check['action_required']}]"
+                )
+            raise RuntimeError(error_msg)
 
         # Use the browser mode returned from auth bootstrap (CDP or agent-browser)
         browser_mode = browser_check.get("mode")
@@ -1140,10 +1218,29 @@ def bootstrap_project(args: argparse.Namespace) -> dict[str, Any]:
         )
 
         if not ensure_result["success"]:
-            raise RuntimeError(
-                f"Failed to ensure Recruiter project: {ensure_result.get('message', 'Unknown error')}. "
-                "Please provide --recruiter-url or ensure Chrome with CDP is running."
-            )
+            # Preserve structured failure info for agent manual guidance
+            failure_code = ensure_result.get("failure_code")
+            action_required = ensure_result.get("action_required")
+            message = ensure_result.get("message", "Unknown error")
+
+            # Build error message with structured guidance if available
+            if action_required:
+                steps = "\n".join(
+                    f"  - {step}" for step in action_required.get("steps", [])
+                )
+                error_msg = (
+                    f"Failed to ensure Recruiter project: {message}\n"
+                    f"Failure code: {failure_code}\n"
+                    f"Action required: {action_required.get('summary', 'Manual intervention needed')}\n"
+                    f"Steps:\n{steps}"
+                )
+            else:
+                error_msg = (
+                    f"Failed to ensure Recruiter project: {message}. "
+                    "Please provide --recruiter-url or ensure Chrome with CDP is running."
+                )
+
+            raise RuntimeError(error_msg)
 
         project_id = ensure_result["project_id"]
         if not project_id:
@@ -1191,10 +1288,23 @@ def bootstrap_project(args: argparse.Namespace) -> dict[str, Any]:
     result["project_dir"] = str(project_dir)
     result["recruiter_url"] = recruiter_url
 
-    # Save raw JD
+    # Save JD as normalized plain text (not raw HTML)
     jd_path = project_dir / "job_description.txt"
-    jd_path.write_text(jd_content, encoding="utf-8")
+    normalized_jd = normalize_to_plain_text(jd_content)
+    jd_path.write_text(normalized_jd, encoding="utf-8")
     result["jd_path"] = str(jd_path)
+
+    # Initialize project state
+    from project_state import update_project_state
+
+    update_project_state(
+        project_dir=project_dir,
+        project_id=project_id,
+        workflow_mode="reachout",
+        current_phase="bootstrap",
+        status="completed",
+        last_result_summary=f"Project bootstrapped with JD from {'URL' if args.jd_url else 'text input'}",
+    )
 
     # Build overrides dict
     overrides = {
@@ -1251,11 +1361,11 @@ def bootstrap_project(args: argparse.Namespace) -> dict[str, Any]:
     if recruiter_url:
         if "discover/recruiterSearch" in recruiter_url:
             next_steps.append(
-                "3. Recruiter project configured with search URL - ready for extraction"
+                "3. Open the Recruiter project search page and create/review the candidate search before extraction"
             )
         else:
             next_steps.append(
-                "3. Recruiter project configured - run ensure_recruiter_project.py to get search URL"
+                "3. Recruiter project configured - run ensure_recruiter_project.py to get the project search page URL"
             )
     else:
         next_steps.append(
@@ -1265,7 +1375,7 @@ def bootstrap_project(args: argparse.Namespace) -> dict[str, Any]:
     next_steps.extend(
         [
             f"4. Workbook ready at: {workbook_path}",
-            "5. Run extraction when ready: see SKILL.md for workflow",
+            "5. After the search shows candidates in Recruiter, run extraction: see SKILL.md for workflow",
         ]
     )
 

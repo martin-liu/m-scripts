@@ -10,7 +10,7 @@ import json
 import sys
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
@@ -59,7 +59,7 @@ class TestPageStateProbe:
             "error": None,
         }
 
-        probe = PageStateProbe("9230")
+        probe = PageStateProbe("9234")
         result = probe.classify_state()
 
         assert result["state"] == "ready"
@@ -75,7 +75,7 @@ class TestPageStateProbe:
             "message": "Session expired",
         }
 
-        probe = PageStateProbe("9230")
+        probe = PageStateProbe("9234")
         result = probe.classify_state()
 
         assert result["state"] == "dialog_blocked"
@@ -101,7 +101,7 @@ class TestPageStateProbe:
             "error": None,
         }
 
-        probe = PageStateProbe("9230")
+        probe = PageStateProbe("9234")
         result = probe.classify_state()
 
         assert result["state"] == "bad_page"
@@ -125,7 +125,7 @@ class TestPageStateProbe:
             "error": None,
         }
 
-        probe = PageStateProbe("9230")
+        probe = PageStateProbe("9234")
         result = probe.classify_state()
 
         assert result["state"] == "blocked_or_captcha"
@@ -149,7 +149,7 @@ class TestPageStateProbe:
             "error": None,
         }
 
-        probe = PageStateProbe("9230")
+        probe = PageStateProbe("9234")
         result = probe.classify_state()
 
         assert result["state"] == "logged_out_or_wrong_product"
@@ -174,7 +174,7 @@ class TestPageStateProbe:
             "error": None,
         }
 
-        probe = PageStateProbe("9230")
+        probe = PageStateProbe("9234")
         result = probe.classify_state()
 
         assert result["state"] == "loading"
@@ -186,7 +186,7 @@ class TestPageStateProbe:
         mock_dialog.return_value = {"has_dialog": False}
         mock_run.return_value = {"error": "Connection refused", "parsed": None}
 
-        probe = PageStateProbe("9230")
+        probe = PageStateProbe("9234")
         result = probe.classify_state()
 
         assert result["state"] == "unknown"
@@ -209,7 +209,7 @@ class TestPageStateProbe:
             "error": None,
         }
 
-        probe = PageStateProbe("9230")
+        probe = PageStateProbe("9234")
         assert probe.is_ready() is True
 
     @patch("recruiter_page_utils.check_dialog_status")
@@ -229,7 +229,7 @@ class TestPageStateProbe:
             "error": None,
         }
 
-        probe = PageStateProbe("9230")
+        probe = PageStateProbe("9234")
         assert probe.is_blocked() is True
 
 
@@ -254,7 +254,7 @@ class TestRecoveryHelper:
             "error": None,
         }
 
-        helper = RecoveryHelper("9230")
+        helper = RecoveryHelper("9234")
         result = helper.attempt_recovery()
 
         assert result["success"] is True
@@ -332,7 +332,7 @@ class TestRecoveryHelper:
             },
         ]
 
-        helper = RecoveryHelper("9230", max_attempts=2)
+        helper = RecoveryHelper("9234", max_attempts=2)
         result = helper.attempt_recovery(
             target_url="https://linkedin.com/talent/projects"
         )
@@ -360,7 +360,7 @@ class TestRecoveryHelper:
             "error": None,
         }
 
-        helper = RecoveryHelper("9230")
+        helper = RecoveryHelper("9234")
         result = helper.attempt_recovery()
 
         assert result["success"] is False
@@ -376,7 +376,7 @@ class TestRecoveryHelper:
             "message": "Are you sure?",
         }
 
-        helper = RecoveryHelper("9230")
+        helper = RecoveryHelper("9234")
         result = helper.attempt_recovery()
 
         assert result["success"] is False
@@ -407,12 +407,72 @@ class TestRecoveryHelper:
         }
         mock_subprocess.return_value = Mock(returncode=0)
 
-        helper = RecoveryHelper("9230", max_attempts=2)
+        helper = RecoveryHelper("9234", max_attempts=2)
         result = helper.attempt_recovery()
 
         assert result["success"] is False
         assert result["attempts_made"] == 2
         assert "failed after 2 attempts" in result["error"]
+
+    @patch("recruiter_page_utils.check_dialog_status")
+    @patch("recruiter_page_utils.run_browser_command")
+    def test_browser_unavailable_returns_connect_guidance(self, mock_run, mock_dialog):
+        """Should return browser_unavailable with reconnect guidance."""
+        mock_dialog.return_value = {"has_dialog": False}
+        mock_run.return_value = {
+            "parsed": None,
+            "error": "Browser not available in cdp mode",
+        }
+
+        helper = RecoveryHelper("9234")
+        result = helper.attempt_recovery()
+
+        assert result["success"] is False
+        assert result["failure_code"] == "browser_unavailable"
+        assert result["action_required"]["code"] == "browser_unavailable"
+
+
+class TestBrowserUnavailableReadiness:
+    """Tests for browser unavailable readiness failures."""
+
+    @patch("recruiter_page_utils.PageStateProbe.is_ready")
+    @patch("recruiter_page_utils.PageStateProbe.is_blocked")
+    @patch("recruiter_page_utils.RecoveryHelper.attempt_recovery")
+    @patch("recruiter_page_utils.PageStateProbe.classify_state")
+    def test_ensure_page_ready_surfaces_browser_unavailable(
+        self,
+        mock_classify,
+        mock_recovery,
+        mock_is_blocked,
+        mock_is_ready,
+    ):
+        """ensure_page_ready should preserve browser_unavailable failure details."""
+        mock_is_ready.return_value = False
+        mock_is_blocked.return_value = False
+        mock_recovery.return_value = {
+            "success": False,
+            "action_required": {
+                "code": "browser_unavailable",
+                "summary": "Chrome browser is not available for automation",
+                "steps": ["reconnect"],
+                "can_retry": True,
+                "context": {},
+            },
+            "failure_code": "browser_unavailable",
+        }
+        mock_classify.return_value = {
+            "state": "unknown",
+            "details": {
+                "error": "Browser not available in cdp mode",
+                "failure_code": "browser_unavailable",
+            },
+        }
+
+        result = rpu.ensure_page_ready("9234")
+
+        assert result["ready"] is False
+        assert result["failure_code"] == "browser_unavailable"
+        assert result["action_required"]["code"] == "browser_unavailable"
 
     @patch("recruiter_page_utils.check_dialog_status")
     @patch("recruiter_page_utils.run_browser_command")
@@ -453,7 +513,7 @@ class TestRecoveryHelper:
             ready_state,  # Final check
         ]
 
-        helper = RecoveryHelper("9230", max_attempts=2)
+        helper = RecoveryHelper("9234", max_attempts=2)
         result = helper.attempt_recovery()
 
         assert result["success"] is True
@@ -480,7 +540,7 @@ class TestRecoveryHelper:
                 "error": None,
             }
 
-            helper = RecoveryHelper("9230", work_dir=tmp_path)
+            helper = RecoveryHelper("9234", work_dir=tmp_path)
             result = helper.attempt_recovery(context="test_context")
 
             # Check incident was written
@@ -516,7 +576,7 @@ class TestConvenienceFunctions:
             "error": None,
         }
 
-        result = rpu.with_recovery("9230")
+        result = rpu.with_recovery("9234")
 
         assert result["success"] is True
         assert result["final_state"] == "ready"
@@ -538,7 +598,7 @@ class TestConvenienceFunctions:
             "error": None,
         }
 
-        result = rpu.ensure_page_ready("9230")
+        result = rpu.ensure_page_ready("9234")
 
         assert result["ready"] is True
         assert result["state"] == "ready"
@@ -561,7 +621,7 @@ class TestConvenienceFunctions:
             "error": None,
         }
 
-        result = rpu.ensure_page_ready("9230")
+        result = rpu.ensure_page_ready("9234")
 
         assert result["ready"] is False
         assert result["state"] == "logged_out_or_wrong_product"
@@ -699,7 +759,7 @@ class TestLoadingWrapperRegression:
             "error": None,
         }
 
-        probe = PageStateProbe("9230")
+        probe = PageStateProbe("9234")
         result = probe.classify_state()
 
         assert result["state"] == "ready", (
@@ -742,7 +802,7 @@ class TestLoadingWrapperRegression:
             "error": None,
         }
 
-        probe = PageStateProbe("9230")
+        probe = PageStateProbe("9234")
         result = probe.classify_state()
 
         assert result["state"] == "loading", (
@@ -779,7 +839,7 @@ class TestLoadingWrapperRegression:
             "error": None,
         }
 
-        probe = PageStateProbe("9230")
+        probe = PageStateProbe("9234")
         result = probe.classify_state()
 
         assert result["state"] == "loading", (
@@ -820,7 +880,7 @@ class TestLoadingWrapperRegression:
             "error": None,
         }
 
-        probe = PageStateProbe("9230")
+        probe = PageStateProbe("9234")
         result = probe.classify_state()
 
         assert result["state"] == "ready", (
@@ -885,7 +945,7 @@ class TestPageIdentityAssertions:
         }
 
         result = _validate_target_url_match(
-            "9230",
+            "9234",
             target_url="https://linkedin.com/search/results/people/?keywords=python&start=25",
         )
 
@@ -906,7 +966,7 @@ class TestPageIdentityAssertions:
         }
 
         result = _validate_target_url_match(
-            "9230",
+            "9234",
             target_url="https://linkedin.com/search/results/people/?keywords=python&start=25",
         )
 
@@ -924,7 +984,7 @@ class TestPageIdentityAssertions:
         }
 
         result = _validate_target_url_match(
-            "9230",
+            "9234",
             target_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch",
         )
 
@@ -942,12 +1002,88 @@ class TestPageIdentityAssertions:
         }
 
         result = _validate_target_url_match(
-            "9230",
+            "9234",
             target_url="https://linkedin.com/talent/projects",
         )
 
         assert result["matches"] is True
         assert result["error"] is None
+
+    @patch("recruiter_page_utils.run_browser_command")
+    def test_validate_target_url_match_ignores_volatile_search_params(self, mock_run):
+        """REGRESSION: Should ignore volatile Recruiter search params like searchRequestId.
+
+        Issue: run_create_search.py returned wrong_page because URLs differed only in
+        volatile params like searchRequestId, searchContextId, searchHistoryId.
+        Both URLs were the same project and same /discover/recruiterSearch page.
+
+        Fix: _validate_target_url_match now filters out volatile params before comparison.
+        """
+        from recruiter_page_utils import _validate_target_url_match
+
+        # Current URL has volatile params that differ from target
+        mock_run.return_value = {
+            "parsed": {
+                "url": "https://linkedin.com/talent/hire/1692252652/discover/recruiterSearch?searchRequestId=abc123&searchContextId=xyz789"
+            },
+            "error": None,
+        }
+
+        # Target URL doesn't have the volatile params (they're generated per-session)
+        result = _validate_target_url_match(
+            "9234",
+            target_url="https://linkedin.com/talent/hire/1692252652/discover/recruiterSearch",
+        )
+
+        assert result["matches"] is True, (
+            f"Expected match for same page with different volatile params, "
+            f"got error: {result.get('error')}"
+        )
+        assert result["error"] is None
+
+    @patch("recruiter_page_utils.run_browser_command")
+    def test_validate_target_url_match_ignores_tracking_id(self, mock_run):
+        """Should ignore trackingId parameter when comparing URLs."""
+        from recruiter_page_utils import _validate_target_url_match
+
+        mock_run.return_value = {
+            "parsed": {
+                "url": "https://linkedin.com/talent/hire/123/discover/recruiterSearch?start=25&trackingId=abc123&trk=xyz"
+            },
+            "error": None,
+        }
+
+        result = _validate_target_url_match(
+            "9234",
+            target_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch?start=25",
+        )
+
+        assert result["matches"] is True
+        assert result["error"] is None
+
+    @patch("recruiter_page_utils.run_browser_command")
+    def test_validate_target_url_match_still_requires_non_volatile_params(
+        self, mock_run
+    ):
+        """Should still fail when non-volatile params like pagination are missing."""
+        from recruiter_page_utils import _validate_target_url_match
+
+        # Current URL is page 1 (no start param)
+        mock_run.return_value = {
+            "parsed": {
+                "url": "https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchRequestId=abc"
+            },
+            "error": None,
+        }
+
+        # Target URL is page 2 (has start=25)
+        result = _validate_target_url_match(
+            "9234",
+            target_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch?start=25",
+        )
+
+        assert result["matches"] is False
+        assert "start=25" in result["error"]
 
     @patch("recruiter_page_utils.run_browser_command")
     def test_assert_page_identity_matches(self, mock_run):
@@ -960,7 +1096,7 @@ class TestPageIdentityAssertions:
         }
 
         result = rpu.assert_page_identity(
-            "9230",
+            "9234",
             expected_url_patterns=["/talent/hire/", "/discover/recruiterSearch"],
         )
 
@@ -980,7 +1116,7 @@ class TestPageIdentityAssertions:
         }
 
         result = rpu.assert_page_identity(
-            "9230",
+            "9234",
             expected_url_patterns=["/discover/recruiterSearch"],
             context="test_context",
         )
@@ -995,7 +1131,7 @@ class TestPageIdentityAssertions:
         mock_run.return_value = {"error": "Connection refused", "parsed": None}
 
         result = rpu.assert_page_identity(
-            "9230",
+            "9234",
             expected_url_patterns=["/talent/"],
         )
 
@@ -1011,7 +1147,7 @@ class TestPageIdentityAssertions:
         }
 
         result = rpu.assert_page_identity(
-            "9230",
+            "9234",
             expected_path_patterns=["/talent/hire/"],
         )
 
@@ -1062,7 +1198,7 @@ class TestEnsurePageReadyWithIdentity:
         }
 
         result = rpu.ensure_page_ready(
-            "9230",
+            "9234",
             target_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch",
             require_page_identity=True,
         )
@@ -1104,7 +1240,7 @@ class TestEnsurePageReadyWithIdentity:
         }
 
         result = rpu.ensure_page_ready(
-            "9230",
+            "9234",
             target_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch",
             require_page_identity=True,
         )
@@ -1150,7 +1286,7 @@ class TestEnsurePageReadyWithIdentity:
         )
 
         result = rpu.ensure_page_ready(
-            "9230",
+            "9234",
             target_url=target_url,
             require_page_identity=True,
         )
@@ -1192,7 +1328,7 @@ class TestEnsurePageReadyWithIdentity:
         )
 
         result = rpu.ensure_page_ready(
-            "9230",
+            "9234",
             target_url=target_url,
             require_page_identity=True,
         )
@@ -1229,7 +1365,7 @@ class TestEnsurePageReadyWithIdentity:
 
         # When explicit patterns are provided, they should be used
         result = rpu.ensure_page_ready(
-            "9230",
+            "9234",
             target_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch",
             expected_url_patterns=["/discover/recruiterSearch"],
             require_page_identity=True,
@@ -1269,7 +1405,7 @@ class TestEnsurePageReadyWithIdentity:
 
         # But we expect to be on recruiterSearch page
         result = rpu.ensure_page_ready(
-            "9230",
+            "9234",
             target_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch",
             expected_url_patterns=["/discover/recruiterSearch"],
             require_page_identity=True,
@@ -1326,7 +1462,7 @@ class TestEnsurePageReadyWithIdentity:
 
         # We want to navigate to page 2 (has start=25)
         result = rpu.ensure_page_ready(
-            "9230",
+            "9234",
             target_url="https://linkedin.com/search/results/people/?keywords=python&start=25",
             require_page_identity=True,
         )
@@ -1370,7 +1506,7 @@ class TestEnsurePageReadyWithIdentity:
 
         # Target URL is page 2 without the extra params
         result = rpu.ensure_page_ready(
-            "9230",
+            "9234",
             target_url="https://linkedin.com/search/results/people/?keywords=python&start=25",
             require_page_identity=True,
         )
@@ -1424,7 +1560,7 @@ class TestEnsurePageReadyWithIdentity:
 
         # Target is page 2, but we're on page 1
         result = rpu.ensure_page_ready(
-            "9230",
+            "9234",
             target_url="https://linkedin.com/search?start=25",
             require_page_identity=True,
         )
@@ -1465,7 +1601,7 @@ class TestEnsurePageReadyWithIdentity:
 
         # No target_url provided, so can't navigate
         result = rpu.ensure_page_ready(
-            "9230",
+            "9234",
             expected_url_patterns=["/discover/recruiterSearch"],
             require_page_identity=True,
             target_url=None,  # Explicitly no target URL
@@ -1521,7 +1657,7 @@ class TestIntegrationPatterns:
         ]
         mock_subprocess.return_value = Mock(returncode=0)
 
-        helper = RecoveryHelper("9230")
+        helper = RecoveryHelper("9234")
         result = helper.attempt_recovery(
             target_url="https://linkedin.com/talent/projects",
             context="test_recovery",
@@ -1550,7 +1686,7 @@ class TestIntegrationPatterns:
             "error": None,
         }
 
-        probe = PageStateProbe("9230")
+        probe = PageStateProbe("9234")
         state = probe.classify_state()
 
         assert state["state"] == "logged_out_or_wrong_product"
@@ -1578,7 +1714,7 @@ class TestBackwardsCompatibility:
         }
 
         # Using cdp_port= as keyword argument (old API)
-        result = rpu.ensure_page_ready(cdp_port="9230")
+        result = rpu.ensure_page_ready(cdp_port="9234")
 
         assert result["ready"] is True
         assert result["state"] == "ready"
@@ -1603,7 +1739,7 @@ class TestBackwardsCompatibility:
         }
 
         # Both provided - browser_mode should be used
-        result = rpu.ensure_page_ready(browser_mode="9230", cdp_port="9999")
+        result = rpu.ensure_page_ready(browser_mode="9234", cdp_port="9999")
 
         assert result["ready"] is True
 
@@ -1611,6 +1747,211 @@ class TestBackwardsCompatibility:
         """ensure_page_ready should raise TypeError if neither argument provided."""
         with pytest.raises(TypeError, match="requires either browser_mode or cdp_port"):
             rpu.ensure_page_ready()
+
+
+class TestActionRequiredInRecovery:
+    """Tests for action_required payloads in recovery results."""
+
+    @patch("recruiter_page_utils.check_dialog_status")
+    @patch("recruiter_page_utils.run_browser_command")
+    def test_blocked_state_returns_action_required(self, mock_run, mock_dialog):
+        """Blocked/CAPTCHA state should return structured action_required."""
+        mock_dialog.return_value = {"has_dialog": False}
+        mock_run.return_value = {
+            "parsed": {
+                "url": "https://linkedin.com/checkpoint/challenge",
+                "title": "Security Check",
+                "is404": False,
+                "isLoginPage": False,
+                "isWrongProduct": False,
+                "isBlocked": True,
+                "isLoading": False,
+                "hasRecruiterContent": False,
+            },
+            "error": None,
+        }
+
+        helper = RecoveryHelper("9234")
+        result = helper.attempt_recovery()
+
+        assert result["success"] is False
+        assert result["final_state"] == "blocked_or_captcha"
+        assert result["action_required"] is not None
+        assert result["action_required"]["code"] == "blocked_or_captcha"
+        assert result["failure_code"] == "blocked_or_captcha"
+        assert "steps" in result["action_required"]
+        assert len(result["action_required"]["steps"]) >= 3
+
+    @patch("recruiter_page_utils.check_dialog_status")
+    @patch("recruiter_page_utils.run_browser_command")
+    def test_logged_out_state_returns_action_required(self, mock_run, mock_dialog):
+        """Logged out state should return structured action_required."""
+        mock_dialog.return_value = {"has_dialog": False}
+        mock_run.return_value = {
+            "parsed": {
+                "url": "https://linkedin.com/login",
+                "title": "Login",
+                "is404": False,
+                "isLoginPage": True,
+                "isWrongProduct": False,
+                "isBlocked": False,
+                "isLoading": False,
+                "hasRecruiterContent": False,
+            },
+            "error": None,
+        }
+
+        helper = RecoveryHelper("9234")
+        result = helper.attempt_recovery()
+
+        assert result["success"] is False
+        assert result["final_state"] == "logged_out_or_wrong_product"
+        assert result["action_required"] is not None
+        assert result["action_required"]["code"] == "auth_required"
+        assert result["failure_code"] == "auth_required"
+        assert "steps" in result["action_required"]
+
+    @patch("recruiter_page_utils.check_dialog_status")
+    def test_dialog_blocked_returns_action_required(self, mock_dialog):
+        """Dialog blocked state should return structured action_required."""
+        mock_dialog.return_value = {
+            "has_dialog": True,
+            "dialog_type": "confirm",
+            "message": "Are you sure you want to leave?",
+        }
+
+        helper = RecoveryHelper("9234")
+        result = helper.attempt_recovery()
+
+        assert result["success"] is False
+        assert result["final_state"] == "dialog_blocked"
+        assert result["action_required"] is not None
+        assert result["action_required"]["code"] == "dialog_blocked"
+        assert result["failure_code"] == "dialog_blocked"
+        assert result["action_required"]["context"]["dialog_type"] == "confirm"
+
+    @patch("recruiter_page_utils.check_dialog_status")
+    @patch("recruiter_page_utils.run_browser_command")
+    @patch("recruiter_page_utils.subprocess.run")
+    @patch("recruiter_page_utils.time.sleep")
+    def test_recovery_failure_returns_action_required(
+        self, mock_sleep, mock_subprocess, mock_run, mock_dialog
+    ):
+        """Failed recovery should return structured action_required."""
+        mock_dialog.return_value = {"has_dialog": False}
+        # Always return bad page
+        mock_run.return_value = {
+            "parsed": {
+                "url": "https://linkedin.com/404",
+                "is404": True,
+                "isLoginPage": False,
+                "isWrongProduct": False,
+                "isBlocked": False,
+                "isLoading": False,
+                "hasRecruiterContent": False,
+            },
+            "error": None,
+        }
+        mock_subprocess.return_value = Mock(returncode=0)
+
+        helper = RecoveryHelper("9234", max_attempts=2)
+        result = helper.attempt_recovery(target_url="https://linkedin.com/talent/home")
+
+        assert result["success"] is False
+        assert result["action_required"] is not None
+        assert result["failure_code"] is not None
+
+
+class TestActionRequiredInEnsurePageReady:
+    """Tests for action_required in ensure_page_ready results."""
+
+    @patch("recruiter_page_utils.check_dialog_status")
+    @patch("recruiter_page_utils.run_browser_command")
+    def test_blocked_in_ensure_page_ready_returns_action_required(
+        self, mock_run, mock_dialog
+    ):
+        """ensure_page_ready should return action_required for blocked state."""
+        mock_dialog.return_value = {"has_dialog": False}
+        mock_run.return_value = {
+            "parsed": {
+                "url": "https://linkedin.com/checkpoint",
+                "is404": False,
+                "isLoginPage": False,
+                "isWrongProduct": False,
+                "isBlocked": True,
+                "isLoading": False,
+                "hasRecruiterContent": False,
+            },
+            "error": None,
+        }
+
+        result = rpu.ensure_page_ready("9234")
+
+        assert result["ready"] is False
+        assert result["action_required"] is not None
+        assert result["action_required"]["code"] == "blocked_or_captcha"
+        assert result["failure_code"] == "blocked_or_captcha"
+
+    @patch("recruiter_page_utils.check_dialog_status")
+    @patch("recruiter_page_utils.run_browser_command")
+    def test_logged_out_in_ensure_page_ready_returns_action_required(
+        self, mock_run, mock_dialog
+    ):
+        """ensure_page_ready should return action_required for logged out state."""
+        mock_dialog.return_value = {"has_dialog": False}
+        mock_run.return_value = {
+            "parsed": {
+                "url": "https://linkedin.com/login",
+                "is404": False,
+                "isLoginPage": True,
+                "isWrongProduct": False,
+                "isBlocked": False,
+                "isLoading": False,
+                "hasRecruiterContent": False,
+            },
+            "error": None,
+        }
+
+        result = rpu.ensure_page_ready("9234")
+
+        assert result["ready"] is False
+        assert result["action_required"] is not None
+        assert result["action_required"]["code"] == "auth_required"
+        assert result["failure_code"] == "auth_required"
+
+    @patch("recruiter_page_utils.PageStateProbe")
+    @patch("recruiter_page_utils.run_browser_command")
+    @patch("recruiter_page_utils.check_dialog_status")
+    def test_wrong_page_returns_action_required(
+        self, mock_dialog, mock_run, mock_probe
+    ):
+        """ensure_page_ready should return action_required for wrong page."""
+        mock_dialog.return_value = {"has_dialog": False}
+        mock_run.return_value = {
+            "parsed": {"url": "https://linkedin.com/talent/projects"},
+            "error": None,
+        }
+
+        # Mock probe to return ready
+        mock_probe_instance = MagicMock()
+        mock_probe_instance.is_ready.return_value = True
+        mock_probe_instance.is_blocked.return_value = False
+        mock_probe_instance.classify_state.return_value = {
+            "state": "ready",
+            "details": {"hasRecruiterContent": True},
+        }
+        mock_probe.return_value = mock_probe_instance
+
+        result = rpu.ensure_page_ready(
+            "9234",
+            target_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch",
+            require_page_identity=True,
+        )
+
+        assert result["ready"] is False
+        assert result["action_required"] is not None
+        assert result["action_required"]["code"] == "wrong_page"
+        assert result["failure_code"] == "wrong_page"
 
 
 if __name__ == "__main__":

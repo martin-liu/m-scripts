@@ -419,6 +419,28 @@ class TestResolveProjectRef:
         assert result["local_project_id"] == "my_project"
 
     @patch("project_ref_utils.RuntimeManager")
+    def test_resolves_local_project_id_with_inline_comment(
+        self, mock_manager_class, tmp_path
+    ):
+        """Should honor shared config parsing for inline-comment project IDs."""
+        mock_manager = MagicMock()
+        mock_manager.work_dir = tmp_path
+        mock_manager_class.return_value = mock_manager
+
+        projects_dir = tmp_path / "projects" / "my_project"
+        projects_dir.mkdir(parents=True)
+        config_file = projects_dir / "config.sh"
+        config_file.write_text(
+            'PROJECT_ID=my_project # note\nRECRUITER_PROJECT_URL="https://linkedin.com/talent/hire/123/overview"'
+        )
+
+        result = pru.resolve_project_ref("my_project")
+
+        assert result["success"] is True
+        assert result["config_path"] == config_file
+        assert result["local_project_id"] == "my_project"
+
+    @patch("project_ref_utils.RuntimeManager")
     def test_resolves_project_id_when_folder_name_differs(
         self, mock_manager_class, tmp_path
     ):

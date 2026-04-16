@@ -23,13 +23,26 @@ class TestColumns:
         assert "headline" in eu.COLUMNS
         assert "location" in eu.COLUMNS
 
+    def test_columns_includes_enrichment_fields(self):
+        """Schema should include enrichment columns."""
+        assert "enrichment_notes" in eu.COLUMNS
+        assert "enriched_at" in eu.COLUMNS
+
     def test_columns_has_expected_count(self):
-        """Schema should have 20 columns (18 old + headline + location)."""
-        assert len(eu.COLUMNS) == 20
+        """Schema should have 22 columns (18 old + headline + location + enrichment_notes + enriched_at)."""
+        assert len(eu.COLUMNS) == 22
 
     def test_row_id_is_first_column(self):
         """row_id should always be the first column."""
         assert eu.COLUMNS[0] == "row_id"
+
+    def test_enrichment_notes_position(self):
+        """enrichment_notes should be after location."""
+        assert eu.COLUMNS.index("enrichment_notes") == 20
+
+    def test_enriched_at_position(self):
+        """enriched_at should be the last column."""
+        assert eu.COLUMNS.index("enriched_at") == 21
 
 
 class TestCreate:
@@ -90,7 +103,7 @@ class TestEnsureSchema:
         return str(wb_path)
 
     def test_migrate_adds_missing_columns(self, tmp_path):
-        """Migration should add headline and location columns."""
+        """Migration should add headline, location, and enrichment columns."""
         rows = [{"name": "John", "title": "Engineer", "status": "Extracted"}]
         wb_path = self.create_old_workbook(tmp_path, rows)
 
@@ -104,7 +117,9 @@ class TestEnsureSchema:
 
         assert "headline" in headers
         assert "location" in headers
-        assert len(headers) == 20
+        assert "enrichment_notes" in headers
+        assert "enriched_at" in headers
+        assert len(headers) == 22
 
     def test_migrate_preserves_existing_data(self, tmp_path):
         """Migration should not lose existing data."""

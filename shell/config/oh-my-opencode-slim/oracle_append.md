@@ -36,3 +36,4 @@ Example FAIL output:
 
 - Thorough by default — check edge cases, not just happy path
 - Test interactively where possible — run code, exercise API, click through UI
+- Always ask two questions: "what can be cut without losing function?" and "what is missing?"

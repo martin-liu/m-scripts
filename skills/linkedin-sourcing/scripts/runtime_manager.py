@@ -1,22 +1,25 @@
 #!/usr/bin/env python3
 """Runtime manager for linkedin-sourcing skill.
 
-Handles runtime environment setup, versioned bundle management, and dependency tracking.
+Handles runtime environment setup, dependency tracking, and canonical script resolution.
 Provides a canonical init/preflight that other workflows can rely on.
 
 Responsibilities:
 - Resolve profile/config (WORK_DIR, CDP_PORT, CHROME_PROFILE, etc.)
 - Compute bundle version/hash from canonical scripts/ + templates/ + SKILL.md
 - Ensure $WORK_DIR/.permission_probe (one-time permission trigger)
-- Ensure runtime directory structure (releases/, current/, incidents/)
-- Stage and atomically install runtime release bundles
+- Ensure runtime directory structure (incidents/, auth/)
 - Write runtime_state.json and dependency_state.json
 - Return structured runtime context dict
+
+Script/Template Resolution:
+- WORK_DIR/scripts or WORK_DIR/templates overrides (if present)
+- Canonical SKILL_DIR/scripts or SKILL_DIR/templates (default)
 
 Usage:
     from runtime_manager import RuntimeManager
     ctx = RuntimeManager().initialize()
-    print(ctx["current_release"]["scripts_dir"])  # Path to active scripts
+    print(ctx["canonical_paths"]["scripts_dir"])  # Path to canonical scripts
 """
 
 from __future__ import annotations
@@ -24,10 +27,8 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import shutil
 import subprocess
 import sys
-import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -38,13 +39,13 @@ SKILL_DIR = SCRIPT_DIR.parent
 
 DEFAULT_PROFILE_PATH = Path.home() / ".config" / "linkedin-sourcing" / "profile.sh"
 DEFAULT_WORK_DIR = Path.home() / "Desktop" / "linkedin-sourcing"
-DEFAULT_CDP_PORT = "9230"
+DEFAULT_CDP_PORT = "9234"
 
-RUNTIME_SUBDIRS = ["releases", "current", "incidents"]
+RUNTIME_SUBDIRS = ["incidents", "auth"]
 BUNDLE_SOURCE_DIRS = ["scripts", "templates"]
 BUNDLE_SOURCE_FILES = ["SKILL.md"]
 
-# Transient artifacts to ignore when hashing/copying bundles
+# Transient artifacts to ignore when hashing
 BUNDLE_IGNORE_PATTERNS = {"__pycache__", ".pyc"}
 
 
@@ -73,7 +74,7 @@ class RuntimeManager:
     This class handles all aspects of runtime initialization:
     - Profile resolution from config files
     - Permission probe creation
-    - Versioned bundle management with atomic releases
+    - Bundle hash computation for version visibility
     - Dependency state tracking
     - Structured context provision for downstream workflows
 
@@ -81,15 +82,14 @@ class RuntimeManager:
         $WORK_DIR/
           .permission_probe          # One-time permission trigger file
           runtime/
-            releases/                # Versioned bundle releases
-              {hash}/
-                scripts/             # Copied from SKILL_DIR/scripts/
-                templates/           # Copied from SKILL_DIR/templates/
-                SKILL.md             # Copied from SKILL_DIR/SKILL.md
-            current/                 # Symlink to active release
             incidents/               # Runtime incident logs
+            auth/                    # Auth state files
           runtime_state.json         # Current runtime state
           dependency_state.json      # Dependency availability state
+
+    Script/Template Resolution Order:
+        1. $WORK_DIR/scripts or $WORK_DIR/templates (user overrides)
+        2. $SKILL_DIR/scripts or $SKILL_DIR/templates (canonical)
     """
 
     def __init__(
@@ -174,16 +174,6 @@ class RuntimeManager:
         return self.work_dir / "runtime"
 
     @property
-    def releases_dir(self) -> Path:
-        """Releases directory path."""
-        return self.runtime_dir / "releases"
-
-    @property
-    def current_link(self) -> Path:
-        """Current symlink path."""
-        return self.runtime_dir / "current"
-
-    @property
     def incidents_dir(self) -> Path:
         """Incidents directory path."""
         return self.runtime_dir / "incidents"
@@ -240,8 +230,9 @@ class RuntimeManager:
     def compute_bundle_hash(self) -> str:
         """Compute a content hash of the canonical bundle sources.
 
-        Hashes the contents of scripts/, templates/, and SKILL.md to determine
-        if the runtime bundle needs to be resynced.
+        Hashes the contents of scripts/, templates/, and SKILL.md to provide
+        version visibility for tracking purposes. This hash is informational
+        only - scripts are resolved directly from canonical paths.
 
         Returns:
             Hex digest of the bundle hash (first 16 chars for readability)
@@ -268,89 +259,6 @@ class RuntimeManager:
                 hasher.update(file_path.read_bytes())
 
         return hasher.hexdigest()[:16]
-
-    def _copy_bundle_to_staging(self, staging_dir: Path) -> None:
-        """Copy bundle sources to a staging directory.
-
-        Args:
-            staging_dir: Temporary staging directory for the release
-        """
-        # Copy directories, ignoring transient artifacts
-        for dir_name in BUNDLE_SOURCE_DIRS:
-            src = self._skill_dir / dir_name
-            dst = staging_dir / dir_name
-            if src.exists():
-                shutil.copytree(
-                    src,
-                    dst,
-                    dirs_exist_ok=True,
-                    ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
-                )
-
-        # Copy individual files
-        for file_name in BUNDLE_SOURCE_FILES:
-            src = self._skill_dir / file_name
-            dst = staging_dir / file_name
-            if src.exists():
-                shutil.copy2(src, dst)
-
-    def _atomic_install_release(self, release_hash: str, staging_dir: Path) -> Path:
-        """Atomically install a release bundle.
-
-        Uses rename for atomicity on POSIX systems. Falls back to copy
-        if atomic rename is not available.
-
-        Args:
-            release_hash: The bundle hash identifying this release
-            staging_dir: Staging directory containing the prepared bundle
-
-        Returns:
-            Path to the installed release directory
-        """
-        release_dir = self.releases_dir / release_hash
-
-        # If release already exists, skip installation
-        if release_dir.exists():
-            return release_dir
-
-        # Atomic install: rename staging to final location
-        # On POSIX, rename is atomic
-        staging_dir.rename(release_dir)
-
-        return release_dir
-
-    def _update_current_symlink(self, release_dir: Path) -> bool:
-        """Update the 'current' symlink to point to the active release.
-
-        Args:
-            release_dir: Path to the release directory to activate
-
-        Returns:
-            True if symlink was updated, False if already correct
-        """
-        # Check if current symlink already points to this release
-        if self.current_link.is_symlink():
-            try:
-                if self.current_link.resolve() == release_dir.resolve():
-                    return False
-            except (OSError, ValueError):
-                pass
-
-        # Remove existing symlink or directory
-        if self.current_link.exists() or self.current_link.is_symlink():
-            if self.current_link.is_symlink():
-                self.current_link.unlink()
-            else:
-                shutil.rmtree(self.current_link)
-
-        # Create new symlink
-        try:
-            self.current_link.symlink_to(release_dir)
-            return True
-        except (OSError, NotImplementedError):
-            # Fallback: copy instead of symlink
-            shutil.copytree(release_dir, self.current_link, dirs_exist_ok=True)
-            return True
 
     def _check_dependencies(self) -> dict[str, Any]:
         """Check runtime dependencies and return their state.
@@ -409,30 +317,27 @@ class RuntimeManager:
 
     def _write_runtime_state(
         self,
-        release_hash: str,
-        release_dir: Path,
-        sync_happened: bool,
+        bundle_hash: str,
+        sync_happened: bool = False,
     ) -> None:
         """Write runtime_state.json with current state.
 
         Args:
-            release_hash: The active bundle hash
-            release_dir: Path to the active release directory
-            sync_happened: Whether a sync occurred this run
+            bundle_hash: The bundle hash for version visibility
         """
         state = {
-            "version": "1.0.0",
+            "version": "2.0.0",
             "updated_at": datetime.now(timezone.utc).isoformat(),
             "work_dir": str(self.work_dir),
             "skill_dir": str(self._skill_dir),
-            "current_release": {
-                "hash": release_hash,
-                "path": str(release_dir),
-                "scripts_dir": str(release_dir / "scripts"),
-                "templates_dir": str(release_dir / "templates"),
-            },
-            "sync_happened": sync_happened,
+            "bundle_hash": bundle_hash,
             "profile": self._resolve_profile(),
+            "sync_happened": sync_happened,
+            "canonical_paths": {
+                "scripts_dir": str(self._skill_dir / "scripts"),
+                "templates_dir": str(self._skill_dir / "templates"),
+                "skill_md": str(self._skill_dir / "SKILL.md"),
+            },
         }
 
         self.runtime_state_path.write_text(json.dumps(state, indent=2))
@@ -453,17 +358,15 @@ class RuntimeManager:
         This is the main entry point for runtime initialization. It:
         1. Ensures permission probe exists
         2. Ensures runtime directory structure
-        3. Computes bundle hash and checks if sync is needed
-        4. Stages and atomically installs the runtime bundle
-        5. Updates the 'current' symlink
-        6. Writes runtime_state.json and dependency_state.json
-        7. Returns structured context dict
+        3. Computes bundle hash for version visibility
+        4. Writes runtime_state.json and dependency_state.json
+        5. Returns structured context dict
 
         Args:
-            force_sync: Force a resync even if hash hasn't changed
+            force_sync: Ignored (kept for API compatibility)
 
         Returns:
-            Structured runtime context dict with paths, release info, and states
+            Structured runtime context dict with paths and states
         """
         # Step 1: Permission probe
         probe_created = self.ensure_permission_probe()
@@ -471,39 +374,22 @@ class RuntimeManager:
         # Step 2: Ensure directory structure
         self.ensure_runtime_dirs()
 
-        # Step 3: Compute bundle hash
+        previous_state = self.get_runtime_context()
+
+        # Step 3: Compute bundle hash (for version visibility)
         bundle_hash = self.compute_bundle_hash()
-        release_dir = self.releases_dir / bundle_hash
+        sync_happened = force_sync or previous_state is None
+        if (
+            previous_state is not None
+            and previous_state.get("bundle_hash") != bundle_hash
+        ):
+            sync_happened = True
 
-        # Step 4: Check if sync is needed
-        sync_needed = force_sync or not release_dir.exists()
-        sync_happened = False
-
-        if sync_needed:
-            # Stage bundle in temp directory
-            with tempfile.TemporaryDirectory(
-                prefix=f"linkedin-sourcing-{bundle_hash}-",
-                dir=self.releases_dir,
-            ) as tmpdir:
-                staging_dir = Path(tmpdir) / "staging"
-                staging_dir.mkdir()
-
-                # Copy bundle to staging
-                self._copy_bundle_to_staging(staging_dir)
-
-                # Atomic install
-                release_dir = self._atomic_install_release(bundle_hash, staging_dir)
-                sync_happened = True
-
-        # Step 5: Update current symlink
-        symlink_updated = self._update_current_symlink(release_dir)
-        sync_happened = sync_happened or symlink_updated
-
-        # Step 6: Check dependencies
+        # Step 4: Check dependencies
         deps = self._check_dependencies()
 
-        # Step 7: Write state files
-        self._write_runtime_state(bundle_hash, release_dir, sync_happened)
+        # Step 5: Write state files
+        self._write_runtime_state(bundle_hash, sync_happened)
         self._write_dependency_state(deps)
 
         # Build and return context
@@ -511,14 +397,12 @@ class RuntimeManager:
         context = {
             "work_dir": str(self.work_dir),
             "runtime_dir": str(self.runtime_dir),
-            "current_release": {
-                "hash": bundle_hash,
-                "path": str(release_dir),
-                "scripts_dir": str(release_dir / "scripts"),
-                "templates_dir": str(release_dir / "templates"),
-                "skill_md": str(release_dir / "SKILL.md"),
+            "bundle_hash": bundle_hash,
+            "canonical_paths": {
+                "scripts_dir": str(self._skill_dir / "scripts"),
+                "templates_dir": str(self._skill_dir / "templates"),
+                "skill_md": str(self._skill_dir / "SKILL.md"),
             },
-            "current_link": str(self.current_link),
             "incidents_dir": str(self.incidents_dir),
             "runtime_state_path": str(self.runtime_state_path),
             "dependency_state_path": str(self.dependency_state_path),
@@ -550,8 +434,8 @@ class RuntimeManager:
             return {
                 "work_dir": state.get("work_dir"),
                 "runtime_dir": str(Path(state["work_dir"]) / "runtime"),
-                "current_release": state.get("current_release"),
-                "current_link": str(Path(state["work_dir"]) / "runtime" / "current"),
+                "bundle_hash": state.get("bundle_hash"),
+                "canonical_paths": state.get("canonical_paths", {}),
                 "incidents_dir": str(Path(state["work_dir"]) / "runtime" / "incidents"),
                 "runtime_state_path": str(self.runtime_state_path),
                 "dependency_state_path": str(self.dependency_state_path),
@@ -566,9 +450,8 @@ class RuntimeManager:
         """Resolve a script path using the runtime resolution rules.
 
         Resolution order:
-        1. $WORK_DIR/scripts/{name} (runtime override)
-        2. $WORK_DIR/runtime/current/scripts/{name} (current release)
-        3. $SKILL_DIR/scripts/{name} (canonical)
+        1. $WORK_DIR/scripts/{name} (user override)
+        2. $SKILL_DIR/scripts/{name} (canonical)
 
         Args:
             script_name: Name of the script to resolve
@@ -576,16 +459,10 @@ class RuntimeManager:
         Returns:
             Path to the script if found, None otherwise
         """
-        # Check runtime override first
+        # Check user override first
         override_path = self.work_dir / "scripts" / script_name
         if override_path.exists():
             return override_path
-
-        # Check current release
-        if self.current_link.exists():
-            current_script = self.current_link / "scripts" / script_name
-            if current_script.exists():
-                return current_script
 
         # Fall back to canonical
         canonical_path = self._skill_dir / "scripts" / script_name
@@ -598,9 +475,8 @@ class RuntimeManager:
         """Resolve a template path using the runtime resolution rules.
 
         Resolution order:
-        1. $WORK_DIR/templates/{name} (runtime override)
-        2. $WORK_DIR/runtime/current/templates/{name} (current release)
-        3. $SKILL_DIR/templates/{name} (canonical)
+        1. $WORK_DIR/templates/{name} (user override)
+        2. $SKILL_DIR/templates/{name} (canonical)
 
         Args:
             template_name: Name of the template to resolve
@@ -608,16 +484,10 @@ class RuntimeManager:
         Returns:
             Path to the template if found, None otherwise
         """
-        # Check runtime override first
+        # Check user override first
         override_path = self.work_dir / "templates" / template_name
         if override_path.exists():
             return override_path
-
-        # Check current release
-        if self.current_link.exists():
-            current_template = self.current_link / "templates" / template_name
-            if current_template.exists():
-                return current_template
 
         # Fall back to canonical
         canonical_path = self._skill_dir / "templates" / template_name

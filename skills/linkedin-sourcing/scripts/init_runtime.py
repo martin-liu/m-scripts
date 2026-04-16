@@ -3,14 +3,14 @@
 
 This script provides a canonical init/preflight that other workflows can rely on.
 It ensures the runtime environment is set up correctly and outputs structured JSON
-with paths, release info, and sync status.
+with canonical paths, state info, and dependency status.
 
 Usage:
     python3 init_runtime.py [--work-dir DIR] [--force-sync] [--json]
 
 Options:
     --work-dir DIR    Override WORK_DIR (default: from profile.sh or ~/Desktop/linkedin-sourcing)
-    --force-sync      Force a resync even if bundle hash hasn't changed
+    --force-sync      Mark the canonical bundle state as refreshed
     --json            Output structured JSON (default: human-readable + JSON)
     --quiet           Only output JSON, no human-readable summary
 
@@ -22,12 +22,11 @@ Output (JSON):
     {
         "success": true,
         "work_dir": "/path/to/work_dir",
-        "current_release": {
-            "hash": "abc123...",
-            "path": "/path/to/release",
-            "scripts_dir": "/path/to/release/scripts",
-            "templates_dir": "/path/to/release/templates",
-            "skill_md": "/path/to/release/SKILL.md"
+        "bundle_hash": "abc123...",
+        "canonical_paths": {
+            "scripts_dir": "/path/to/skill/scripts",
+            "templates_dir": "/path/to/skill/templates",
+            "skill_md": "/path/to/skill/SKILL.md"
         },
         "sync_happened": false,
         "permission_probe_created": false,
@@ -42,7 +41,7 @@ Examples:
     # Standard initialization
     python3 init_runtime.py
 
-    # Force resync
+    # Mark canonical state as refreshed
     python3 init_runtime.py --force-sync
 
     # JSON only (for programmatic use)
@@ -77,7 +76,7 @@ Environment:
 Notes:
     - This script is idempotent; running multiple times is safe
     - Permission probe is only created on first run
-    - Sync only happens when bundle hash changes or --force-sync is used
+    - Scripts are resolved directly from the canonical skill directory
     - Use --quiet for JSON-only output suitable for piping
         """,
     )
@@ -119,16 +118,16 @@ def format_human_summary(ctx: dict) -> str:
         f"Work Directory:     {ctx['work_dir']}",
         f"Runtime Directory:  {ctx['runtime_dir']}",
         "",
-        "Current Release:",
-        f"  Hash:      {ctx['current_release']['hash']}",
-        f"  Path:      {ctx['current_release']['path']}",
-        f"  Scripts:   {ctx['current_release']['scripts_dir']}",
-        f"  Templates: {ctx['current_release']['templates_dir']}",
+        "Canonical Paths:",
+        f"  Hash:      {ctx['bundle_hash']}",
+        f"  Scripts:   {ctx['canonical_paths']['scripts_dir']}",
+        f"  Templates: {ctx['canonical_paths']['templates_dir']}",
+        f"  SKILL.md:  {ctx['canonical_paths']['skill_md']}",
         "",
     ]
 
     if ctx.get("sync_happened"):
-        lines.append("Status: SYNC PERFORMED (bundle updated)")
+        lines.append("Status: CANONICAL STATE REFRESHED")
     else:
         lines.append("Status: UP TO DATE (no sync needed)")
 
@@ -194,8 +193,8 @@ def main() -> int:
             "success": True,
             "work_dir": ctx["work_dir"],
             "runtime_dir": ctx["runtime_dir"],
-            "current_release": ctx["current_release"],
-            "current_link": ctx["current_link"],
+            "bundle_hash": ctx["bundle_hash"],
+            "canonical_paths": ctx["canonical_paths"],
             "incidents_dir": ctx["incidents_dir"],
             "runtime_state_path": ctx["runtime_state_path"],
             "dependency_state_path": ctx["dependency_state_path"],

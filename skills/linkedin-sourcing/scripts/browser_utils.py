@@ -15,21 +15,305 @@ import json
 import subprocess
 import sys
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
+
+
+class FailureCode(str, Enum):
+    """Standardized failure codes for browser automation failures.
+
+    These codes provide stable identifiers for failure classification
+    that can be used by callers to determine appropriate responses.
+    """
+
+    BROWSER_UNAVAILABLE = "browser_unavailable"
+    AUTH_REQUIRED = "auth_required"
+    DIALOG_BLOCKED = "dialog_blocked"
+    BLOCKED_OR_CAPTCHA = "blocked_or_captcha"
+    WRONG_PAGE = "wrong_page"
+    ELEMENT_MISSING = "element_missing"
+    TIMEOUT = "timeout"
+    VERIFICATION_FAILED = "verification_failed"
+    AMBIGUOUS_STATE = "ambiguous_state"
+    PARSE_ERROR = "parse_error"
+
+
+class BrowserReadiness(str, Enum):
+    """Browser readiness classification for phase boundary decisions."""
+
+    READY = "ready"
+    BROWSER_UNAVAILABLE = "browser_unavailable"
+    AUTH_REQUIRED = "auth_required"
+    DIALOG_BLOCKED = "dialog_blocked"
+    BLOCKED_OR_CAPTCHA = "blocked_or_captcha"
+    UNKNOWN = "unknown"
+
+
+@dataclass
+class BrowserReadinessResult:
+    """Structured result from browser readiness classification.
+
+    Attributes:
+        readiness: The readiness classification
+        action_required: Structured manual fallback if not ready
+        context: Additional context (URL, error details, etc.)
+    """
+
+    readiness: str
+    action_required: ActionRequired | None = None
+    context: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "readiness": self.readiness,
+            "action_required": self.action_required.to_dict()
+            if self.action_required
+            else None,
+            "context": self.context,
+        }
+
+
+@dataclass
+class ActionRequired:
+    """Structured payload for manual intervention requirements.
+
+    This dataclass provides a standardized way to communicate when
+    automation cannot complete and manual steps are required.
+
+    Attributes:
+        code: Stable failure code from FailureCode enum
+        summary: Human-readable summary of the issue
+        steps: List of concrete manual steps to resolve
+        can_retry: Whether retrying the operation may succeed after intervention
+        context: Optional additional context (e.g., URL, element selector)
+    """
+
+    code: str
+    summary: str
+    steps: list[str] = field(default_factory=list)
+    can_retry: bool = True
+    context: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "code": self.code,
+            "summary": self.summary,
+            "steps": self.steps,
+            "can_retry": self.can_retry,
+            "context": self.context,
+        }
+
+    @classmethod
+    def browser_unavailable(cls, cdp_port: str | None = None) -> "ActionRequired":
+        """Create action_required for browser unavailable situation."""
+        context = {}
+        if cdp_port:
+            context["cdp_port"] = cdp_port
+        return cls(
+            code=FailureCode.BROWSER_UNAVAILABLE,
+            summary="Chrome browser is not available for automation",
+            steps=[
+                "Ensure Chrome is running with CDP enabled",
+                "Navigate to LinkedIn Recruiter in the Chrome window",
+                "Confirm the Recruiter interface is fully loaded",
+                "Retry the operation once Chrome is ready",
+            ],
+            can_retry=True,
+            context=context,
+        )
+
+    @classmethod
+    def auth_required(cls, current_url: str | None = None) -> "ActionRequired":
+        """Create action_required for authentication required situation."""
+        context = {}
+        if current_url:
+            context["current_url"] = current_url
+        return cls(
+            code=FailureCode.AUTH_REQUIRED,
+            summary="LinkedIn authentication required - not logged in to Recruiter",
+            steps=[
+                "Navigate to https://www.linkedin.com/talent/home in Chrome",
+                "Log in with LinkedIn credentials if prompted",
+                "Complete any CAPTCHA or security verification if presented",
+                "Ensure the LinkedIn Recruiter interface is visible (not a login page)",
+                "Retry the operation once authenticated",
+            ],
+            can_retry=True,
+            context=context,
+        )
+
+    @classmethod
+    def dialog_blocked(
+        cls, dialog_type: str | None = None, message: str | None = None
+    ) -> "ActionRequired":
+        """Create action_required for blocking dialog situation."""
+        context = {}
+        if dialog_type:
+            context["dialog_type"] = dialog_type
+        if message:
+            context["message"] = message
+        return cls(
+            code=FailureCode.DIALOG_BLOCKED,
+            summary="A browser dialog is blocking automation progress",
+            steps=[
+                "Look at the Chrome browser window for any open dialogs (alert, confirm, prompt)",
+                "Handle the dialog manually by clicking appropriate buttons",
+                "Common dialogs: 'Session expired', 'Confirm navigation', 'Save changes'",
+                "Once the dialog is dismissed, retry the operation",
+            ],
+            can_retry=True,
+            context=context,
+        )
+
+    @classmethod
+    def blocked_or_captcha(cls, current_url: str | None = None) -> "ActionRequired":
+        """Create action_required for CAPTCHA or security check situation."""
+        context = {}
+        if current_url:
+            context["current_url"] = current_url
+        return cls(
+            code=FailureCode.BLOCKED_OR_CAPTCHA,
+            summary="LinkedIn security check or CAPTCHA is blocking access",
+            steps=[
+                "Check the Chrome browser for any CAPTCHA challenges",
+                "Complete the security verification manually in the browser",
+                "Wait a few minutes before retrying if rate-limited",
+                "Consider reducing automation frequency to avoid future blocks",
+            ],
+            can_retry=True,
+            context=context,
+        )
+
+    @classmethod
+    def wrong_page(
+        cls, expected_url: str | None = None, actual_url: str | None = None
+    ) -> "ActionRequired":
+        """Create action_required for wrong page situation."""
+        context = {}
+        if expected_url:
+            context["expected_url"] = expected_url
+        if actual_url:
+            context["actual_url"] = actual_url
+        return cls(
+            code=FailureCode.WRONG_PAGE,
+            summary="Browser is on an unexpected page",
+            steps=[
+                "Check the Chrome browser to see what page is currently loaded",
+                "Navigate to the correct LinkedIn Recruiter page if needed",
+                "Ensure the page has fully loaded before retrying",
+            ],
+            can_retry=True,
+            context=context,
+        )
+
+    @classmethod
+    def element_missing(
+        cls, selector: str | None = None, page_url: str | None = None
+    ) -> "ActionRequired":
+        """Create action_required for missing element situation."""
+        context = {}
+        if selector:
+            context["selector"] = selector
+        if page_url:
+            context["page_url"] = page_url
+        return cls(
+            code=FailureCode.ELEMENT_MISSING,
+            summary="Required page element not found - page structure may have changed",
+            steps=[
+                "Check the Chrome browser to verify the page has loaded correctly",
+                "Look for the expected element (e.g., 'Message' button, composer field)",
+                "If the page layout has changed, manual intervention may be required",
+                "Refresh the page and retry the operation",
+            ],
+            can_retry=True,
+            context=context,
+        )
+
+    @classmethod
+    def timeout(cls, operation: str | None = None) -> "ActionRequired":
+        """Create action_required for timeout situation."""
+        context = {}
+        if operation:
+            context["operation"] = operation
+        return cls(
+            code=FailureCode.TIMEOUT,
+            summary="Operation timed out - page may be loading slowly or stuck",
+            steps=[
+                "Check the Chrome browser to see the current page state",
+                "Wait for any loading indicators to complete",
+                "If the page appears stuck, refresh it manually",
+                "Retry the operation once the page is responsive",
+            ],
+            can_retry=True,
+            context=context,
+        )
+
+    @classmethod
+    def verification_failed(
+        cls, verification_type: str | None = None, details: str | None = None
+    ) -> "ActionRequired":
+        """Create action_required for verification failure situation."""
+        context = {}
+        if verification_type:
+            context["verification_type"] = verification_type
+        if details:
+            context["details"] = details
+        return cls(
+            code=FailureCode.VERIFICATION_FAILED,
+            summary="Verification check failed - expected state not achieved",
+            steps=[
+                "Check the Chrome browser to verify the current state",
+                "Look for any error messages or notifications",
+                "Ensure all required fields are filled correctly",
+                "Retry the operation after addressing any visible issues",
+            ],
+            can_retry=True,
+            context=context,
+        )
+
+    @classmethod
+    def ambiguous_state(cls, details: str | None = None) -> "ActionRequired":
+        """Create action_required for ambiguous/unrecoverable state."""
+        context = {}
+        if details:
+            context["details"] = details
+        return cls(
+            code=FailureCode.AMBIGUOUS_STATE,
+            summary="Browser is in an ambiguous state that cannot be automatically resolved",
+            steps=[
+                "Check the Chrome browser for any open dialogs, composers, or error messages",
+                "Close any open message composers or dialogs manually",
+                "Navigate to a known good LinkedIn Recruiter page",
+                "Refresh the page if it appears stuck",
+                "Retry the operation once the browser is in a clean state",
+            ],
+            can_retry=True,
+            context=context,
+        )
+
 
 # Import auth_bootstrap for auto-bootstrap functionality
 sys.path.insert(0, str(Path(__file__).parent))
 import auth_bootstrap
 from runtime_manager import RuntimeManager
 
+CONNECT_BROWSER_SCRIPT = Path(__file__).resolve().with_name("connect_browser.sh")
 
+# Agent-oriented guidance with runnable bash command for automatic auth bootstrap
 CONNECT_BROWSER_GUIDANCE = (
-    'To connect, run: bash "$WORK_DIR/runtime/current/scripts/connect_browser.sh" '
-    '(or "$SKILL_DIR/scripts/connect_browser.sh" before runtime init). '
-    "This will automatically check for saved auth or start the authentication flow."
+    "Chrome browser connection required. "
+    'Run: bash "${WORK_DIR}/scripts/connect_browser.sh" to automatically establish CDP connection with auth bootstrap.'
+)
+
+# End-user facing guidance for manual fallback (agent helps user, not shell commands)
+MANUAL_BROWSER_GUIDANCE = (
+    "Please open Chrome and navigate to LinkedIn Recruiter. "
+    "Ensure you are logged in and can see the Recruiter interface."
 )
 
 # LinkedIn Recruiter URLs for auth probing
@@ -152,6 +436,178 @@ class BrowserMode:
             return args
         else:
             raise RuntimeError(f"Unknown browser mode: {self.mode}")
+
+
+def classify_browser_readiness(
+    mode: BrowserMode | str,
+    current_url: str | None = None,
+    error: str | None = None,
+    dialog_info: dict[str, Any] | None = None,
+) -> BrowserReadinessResult:
+    """Classify browser readiness at phase boundaries.
+
+    This helper provides a shared contract for deciding whether to proceed
+    with browser automation or request manual fallback. It reuses the
+    existing ActionRequired and FailureCode enums.
+
+    Args:
+        mode: Browser mode configuration or CDP port string
+        current_url: Current browser URL if available
+        error: Error message from previous operation if any
+        dialog_info: Dialog status info from check_dialog_status if available
+
+    Returns:
+        BrowserReadinessResult with classification and optional action_required
+    """
+    context: dict[str, Any] = {}
+    if current_url:
+        context["current_url"] = current_url
+    if error:
+        context["error"] = error
+
+    # Normalize mode to BrowserMode
+    if isinstance(mode, str):
+        mode = BrowserMode(mode="cdp", cdp_port=mode)
+
+    # Check for blocking dialog
+    if dialog_info and dialog_info.get("has_dialog"):
+        return BrowserReadinessResult(
+            readiness=BrowserReadiness.DIALOG_BLOCKED,
+            action_required=ActionRequired.dialog_blocked(
+                dialog_type=dialog_info.get("dialog_type"),
+                message=dialog_info.get("message"),
+            ),
+            context=context,
+        )
+
+    # Check browser availability after explicit dialog detection so timeout
+    # scenarios preserve the more actionable blocker classification.
+    if not check_browser_available(mode):
+        return BrowserReadinessResult(
+            readiness=BrowserReadiness.BROWSER_UNAVAILABLE,
+            action_required=ActionRequired.browser_unavailable(
+                cdp_port=mode.cdp_port if mode.is_cdp() else None
+            ),
+            context=context,
+        )
+
+    # Check for auth required from URL
+    if current_url:
+        parsed = urlparse(current_url)
+        host = parsed.netloc.lower()
+        path = parsed.path.lower()
+
+        # Check for non-talent LinkedIn pages
+        is_linkedin = host.endswith("linkedin.com")
+        is_talent = path.startswith("/talent")
+
+        # Check for CAPTCHA/security pages FIRST (before general auth indicators)
+        # This ensures checkpoint/challenge pages are classified as BLOCKED_OR_CAPTCHA
+        if (
+            "/cap" in path
+            or "captcha" in path.lower()
+            or "/checkpoint" in path
+            or "/challenge" in path
+        ):
+            return BrowserReadinessResult(
+                readiness=BrowserReadiness.BLOCKED_OR_CAPTCHA,
+                action_required=ActionRequired.blocked_or_captcha(
+                    current_url=current_url
+                ),
+                context=context,
+            )
+
+        # Check for login indicators in URL (excluding checkpoint/challenge already handled)
+        auth_indicators = [
+            "/login",
+            "/login-cap",
+            "/signin",
+            "/uas/login",
+            "/uas/checkpoint",
+            "/auth",
+        ]
+        has_auth_indicator = any(ind in path for ind in auth_indicators)
+
+        if is_linkedin and not is_talent and has_auth_indicator:
+            return BrowserReadinessResult(
+                readiness=BrowserReadiness.AUTH_REQUIRED,
+                action_required=ActionRequired.auth_required(current_url=current_url),
+                context=context,
+            )
+
+    # Check for errors that indicate auth issues
+    if error:
+        error_lower = error.lower()
+        if any(
+            x in error_lower
+            for x in [
+                "connection refused",
+                "econnrefused",
+                "err_connection_refused",
+                "failed to fetch browser websocket",
+            ]
+        ):
+            return BrowserReadinessResult(
+                readiness=BrowserReadiness.BROWSER_UNAVAILABLE,
+                action_required=ActionRequired.browser_unavailable(
+                    cdp_port=mode.cdp_port if mode.is_cdp() else None
+                ),
+                context=context,
+            )
+        if any(
+            x in error_lower
+            for x in ["not authenticated", "login required", "auth required"]
+        ):
+            return BrowserReadinessResult(
+                readiness=BrowserReadiness.AUTH_REQUIRED,
+                action_required=ActionRequired.auth_required(current_url=current_url),
+                context=context,
+            )
+        if any(x in error_lower for x in ["captcha", "blocked", "security check"]):
+            return BrowserReadinessResult(
+                readiness=BrowserReadiness.BLOCKED_OR_CAPTCHA,
+                action_required=ActionRequired.blocked_or_captcha(
+                    current_url=current_url
+                ),
+                context=context,
+            )
+
+    return BrowserReadinessResult(
+        readiness=BrowserReadiness.READY,
+        action_required=None,
+        context=context,
+    )
+
+
+def safe_get_parsed(
+    result: dict[str, Any],
+    default: Any = None,
+    require_dict: bool = True,
+) -> Any:
+    """Safely extract parsed result from run_browser_command output.
+
+    This helper prevents AttributeError when parsed is None or not a dict.
+    Use it in extraction/browser callers instead of direct .get() chaining.
+
+    Args:
+        result: The result dict from run_browser_command
+        default: Default value if parsed is missing or invalid
+        require_dict: If True, require parsed to be a dict (returns default otherwise)
+
+    Returns:
+        The parsed value if valid, otherwise default
+    """
+    if not isinstance(result, dict):
+        return default
+
+    parsed = result.get("parsed")
+    if parsed is None:
+        return default
+
+    if require_dict and not isinstance(parsed, dict):
+        return default
+
+    return parsed
 
 
 def check_cdp_available(cdp_port: str) -> bool:
@@ -332,6 +788,10 @@ def run_browser_command(
     This helper runs agent-browser commands and provides enriched error information
     when timeouts occur, including whether a browser dialog may be blocking progress.
 
+    Note: This function does NOT pre-check browser availability. Callers should
+    use classify_browser_readiness() at phase boundaries for readiness decisions.
+    Raw execution/parsing errors are reported as-is.
+
     Args:
         mode: Browser mode configuration or CDP port string for backward compatibility
         *args: Command arguments to pass to agent-browser (e.g., "eval", "js_code")
@@ -351,20 +811,6 @@ def run_browser_command(
     # Normalize string cdp_port to BrowserMode for backward compatibility
     if isinstance(mode, str):
         mode = BrowserMode(mode="cdp", cdp_port=mode)
-    # Fail closed if browser is not available
-    if not check_browser_available(mode):
-        return {
-            "stdout": "",
-            "stderr": "",
-            "returncode": -1,
-            "parsed": None,
-            "error": (
-                f"Browser not available in {mode.mode} mode. "
-                + CONNECT_BROWSER_GUIDANCE
-            ),
-            "dialog_info": None,
-            "timed_out": False,
-        }
 
     cmd = ["agent-browser"] + mode.build_agent_browser_args() + list(args)
 
@@ -480,26 +926,98 @@ def format_timeout_error(
     return base_msg
 
 
-def _check_auth_from_url(current_url: str | None) -> bool:
-    """Check if current URL indicates authenticated Recruiter access.
+def attempt_browser_action(
+    mode: BrowserMode | str,
+    operation_name: str,
+    *args: str,
+    timeout: float = 30.0,
+    check_dialog_on_timeout: bool = True,
+) -> dict[str, Any]:
+    """Attempt a browser action with structured result including action_required on failure.
+
+    This wrapper builds on run_browser_command and adds structured failure classification
+    with actionable manual steps when automation cannot complete. It checks browser
+    availability at the boundary before attempting the action.
 
     Args:
-        current_url: The current browser URL after navigation
+        mode: Browser mode configuration or CDP port string for backward compatibility
+        operation_name: Human-readable name of the operation (e.g., "click send button")
+        *args: Command arguments to pass to agent-browser
+        timeout: Maximum time to wait for command completion
+        check_dialog_on_timeout: Whether to check for blocking dialogs on timeout
 
     Returns:
-        True if authenticated to Recruiter, False otherwise
+        Dict with command results plus structured failure info:
+        - All fields from run_browser_command (stdout, stderr, returncode, parsed, etc.)
+        - success: bool - whether the operation succeeded
+        - action_required: ActionRequired | None - structured manual steps if failed
+        - failure_code: str | None - stable failure code if failed
     """
-    if not current_url:
-        return False
+    # Normalize mode to BrowserMode for availability check
+    if isinstance(mode, str):
+        mode = BrowserMode(mode="cdp", cdp_port=mode)
 
-    parsed = urlparse(current_url)
-    host = parsed.netloc.lower()
-    path = parsed.path.lower()
+    # Check browser availability at the boundary
+    if not check_browser_available(mode):
+        cdp_port = mode.cdp_port if mode.is_cdp() else None
+        action_required = ActionRequired.browser_unavailable(cdp_port=cdp_port)
+        return {
+            "stdout": "",
+            "stderr": "",
+            "returncode": -1,
+            "parsed": None,
+            "error": f"Browser not available in {mode.mode} mode",
+            "dialog_info": None,
+            "timed_out": False,
+            "success": False,
+            "action_required": action_required.to_dict(),
+            "failure_code": FailureCode.BROWSER_UNAVAILABLE,
+        }
 
-    if host.endswith("linkedin.com") and path.startswith("/talent"):
-        if not any(indicator in path for indicator in RECRUITER_LOGIN_INDICATORS):
-            return True
-    return False
+    result = run_browser_command(
+        mode,
+        *args,
+        timeout=timeout,
+        check_dialog_on_timeout=check_dialog_on_timeout,
+    )
+
+    # Determine success based on returncode
+    success = result.get("returncode") == 0 and result.get("error") is None
+
+    # Build structured failure info if needed
+    action_required = None
+    failure_code = None
+
+    if not success:
+        # Classify the failure
+        if result.get("timed_out"):
+            failure_code = FailureCode.TIMEOUT
+            dialog_info = result.get("dialog_info")
+            if dialog_info and dialog_info.get("has_dialog"):
+                failure_code = FailureCode.DIALOG_BLOCKED
+                action_required = ActionRequired.dialog_blocked(
+                    dialog_type=dialog_info.get("dialog_type"),
+                    message=dialog_info.get("message"),
+                )
+            else:
+                action_required = ActionRequired.timeout(operation=operation_name)
+        elif "browser not available" in (result.get("error") or "").lower():
+            failure_code = FailureCode.BROWSER_UNAVAILABLE
+            cdp_port = mode.cdp_port if isinstance(mode, BrowserMode) else str(mode)
+            action_required = ActionRequired.browser_unavailable(cdp_port=cdp_port)
+        else:
+            # Generic failure - provide ambiguous state guidance
+            failure_code = FailureCode.AMBIGUOUS_STATE
+            action_required = ActionRequired.ambiguous_state(
+                details=f"Operation '{operation_name}' failed: {result.get('error')}"
+            )
+
+    return {
+        **result,
+        "success": success,
+        "action_required": action_required.to_dict() if action_required else None,
+        "failure_code": failure_code,
+    }
 
 
 def _evaluate_auth_js(cdp_port: str | None, session_name: str | None) -> dict[str, Any]:
@@ -764,12 +1282,12 @@ def save_browser_mode(work_dir: Path, mode: BrowserMode) -> None:
     mode_file.write_text(json.dumps(mode.to_dict(), indent=2))
 
 
-def resolve_browser_mode(work_dir: Path, preferred_port: str = "9230") -> BrowserMode:
+def resolve_browser_mode(work_dir: Path, preferred_port: str = "9234") -> BrowserMode:
     """Resolve the browser mode to use, considering saved state.
 
     Args:
         work_dir: Working directory for runtime data
-        preferred_port: Preferred CDP port (default "9230")
+        preferred_port: Preferred CDP port (default "9234")
 
     Returns:
         BrowserMode to use for browser operations
@@ -797,7 +1315,7 @@ class BrowserContext:
     def __init__(
         self,
         work_dir: Path,
-        preferred_port: str = "9230",
+        preferred_port: str = "9234",
         auto_bootstrap: bool = False,
     ):
         """Initialize browser context.
@@ -1016,7 +1534,7 @@ class BrowserContext:
         if self.mode is None:
             raise RuntimeError("Browser context not initialized")
         if self.mode.is_cdp():
-            result = probe_recruiter_auth(self.mode.cdp_port or "9230")
+            result = probe_recruiter_auth(self.mode.cdp_port or "9234")
             return result["authenticated"]
         elif self.mode.is_agent_browser():
             # For agent-browser mode, check by navigating to Recruiter

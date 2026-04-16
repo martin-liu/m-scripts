@@ -39,6 +39,8 @@ COLUMNS = [
     "notes",
     "headline",
     "location",
+    "enrichment_notes",
+    "enriched_at",
 ]
 
 _openpyxl = None

@@ -6,6 +6,7 @@ Run with: python3 -m pytest skills/linkedin-sourcing/tests/test_inmail_sender.py
 
 from __future__ import annotations
 
+import subprocess
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, Mock, patch
@@ -23,7 +24,7 @@ class TestCheckBrowserAvailable:
     def test_cdp_available(self, mock_check_cdp):
         """Should return True when CDP is available."""
         mock_check_cdp.return_value = True
-        mode = BrowserMode(mode="cdp", cdp_port="9230")
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
 
         result = sender.check_browser_available(mode)
 
@@ -33,7 +34,7 @@ class TestCheckBrowserAvailable:
     def test_cdp_not_available(self, mock_check_cdp):
         """Should return False when CDP is unavailable."""
         mock_check_cdp.return_value = False
-        mode = BrowserMode(mode="cdp", cdp_port="9230")
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
 
         result = sender.check_browser_available(mode)
 
@@ -94,7 +95,7 @@ class TestResolveBrowserModeWithFallback:
         mode = sender.resolve_browser_mode_with_fallback(work_dir=Path("/tmp"))
 
         assert mode.mode == "cdp"
-        assert mode.cdp_port == "9230"
+        assert mode.cdp_port == "9234"
 
     @patch("inmail_sender.get_browser_mode")
     def test_saved_agent_browser_wins_over_provided_port(self, mock_get_mode):
@@ -111,7 +112,7 @@ class TestResolveBrowserModeWithFallback:
 
         # Even with provided_port, saved agent-browser mode should win
         mode = sender.resolve_browser_mode_with_fallback(
-            provided_port="9230", work_dir=Path("/tmp")
+            provided_port="9234", work_dir=Path("/tmp")
         )
 
         assert mode.mode == "agent-browser"
@@ -124,12 +125,12 @@ class TestResolveBrowserModeWithFallback:
         mock_get_mode.return_value = BrowserMode(mode="cdp", cdp_port="9222")
 
         mode = sender.resolve_browser_mode_with_fallback(
-            provided_port="9230", work_dir=Path("/tmp")
+            provided_port="9234", work_dir=Path("/tmp")
         )
 
         # When saved mode is CDP and port is provided, use provided port
         assert mode.mode == "cdp"
-        assert mode.cdp_port == "9230"
+        assert mode.cdp_port == "9234"
 
     @patch("inmail_sender.get_browser_mode")
     def test_saved_cdp_mode_used_when_no_port_provided(self, mock_get_mode):
@@ -150,12 +151,12 @@ class TestRunAgentBrowser:
     def test_fails_closed_when_browser_unavailable(self, mock_run, mock_check):
         """Should fail closed with guidance when browser is not available."""
         mock_check.return_value = False
-        mode = BrowserMode(mode="cdp", cdp_port="9230")
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
 
         code, out, err = sender.run_agent_browser(mode, "open", "http://test.com")
 
         assert code == -1
-        assert "connect_browser.sh" in err
+        assert "connect" in err.lower()
         mock_run.assert_not_called()
 
     @patch("inmail_sender.check_browser_available")
@@ -165,7 +166,7 @@ class TestRunAgentBrowser:
         mock_check.return_value = True
         mock_run.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
 
-        mode = BrowserMode(mode="cdp", cdp_port="9230")
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
         code, out, err = sender.run_agent_browser(mode, "open", "http://test.com")
 
         assert code == 0
@@ -174,7 +175,7 @@ class TestRunAgentBrowser:
         args = mock_run.call_args[0][0]
         assert args[0] == "agent-browser"
         assert "--cdp" in args
-        assert "9230" in args
+        assert "9234" in args
 
     @patch("inmail_sender.check_browser_available")
     @patch("inmail_sender.subprocess.run")
@@ -202,7 +203,7 @@ class TestRunAgentBrowser:
             cmd=["agent-browser"], timeout=5
         )
 
-        mode = BrowserMode(mode="cdp", cdp_port="9230")
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
         code, out, err = sender.run_agent_browser(mode, "open", "http://test.com")
 
         assert code == -1
@@ -215,7 +216,7 @@ class TestEvalJs:
     @patch("inmail_sender.run_agent_browser")
     def test_successful_json_parse(self, mock_run):
         mock_run.return_value = (0, '{"success": true}', "")
-        mode = BrowserMode(mode="cdp", cdp_port="9230")
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
 
         success, result = sender.eval_js(mode, "return 1")
 
@@ -225,7 +226,7 @@ class TestEvalJs:
     @patch("inmail_sender.run_agent_browser")
     def test_non_json_response(self, mock_run):
         mock_run.return_value = (0, "ok", "")
-        mode = BrowserMode(mode="cdp", cdp_port="9230")
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
 
         success, result = sender.eval_js(mode, "return 1")
 
@@ -235,7 +236,7 @@ class TestEvalJs:
     @patch("inmail_sender.run_agent_browser")
     def test_failed_command(self, mock_run):
         mock_run.return_value = (1, "", "error")
-        mode = BrowserMode(mode="cdp", cdp_port="9230")
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
 
         success, result = sender.eval_js(mode, "return 1")
 
@@ -250,7 +251,7 @@ class TestWaitForElement:
     @patch("inmail_sender.time.sleep")
     def test_element_found_immediately(self, mock_sleep, mock_eval):
         mock_eval.return_value = (True, True)
-        mode = BrowserMode(mode="cdp", cdp_port="9230")
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
 
         found, result = sender.wait_for_element(mode, "document.querySelector('x')")
 
@@ -270,7 +271,7 @@ class TestWaitForElement:
             (True, False),
             (True, True),
         ]
-        mode = BrowserMode(mode="cdp", cdp_port="9230")
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
 
         found, result = sender.wait_for_element(
             mode, "document.querySelector('x')", timeout_sec=2.0, poll_interval=0.5
@@ -305,7 +306,7 @@ class TestNavigationHelpers:
     @patch("inmail_sender.run_agent_browser")
     def test_get_current_url_success(self, mock_run):
         mock_run.return_value = (0, "https://example.com/page\n", "")
-        mode = BrowserMode(mode="cdp", cdp_port="9230")
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
 
         success, url = sender.get_current_url(mode)
 
@@ -321,7 +322,7 @@ class TestNavigationHelpers:
             (-1, "", "timeout"),
             (0, "https://www.linkedin.com/talent/profile/ABC\n", ""),
         ]
-        mode = BrowserMode(mode="cdp", cdp_port="9230")
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
 
         assert (
             sender.navigate_to_profile(
@@ -340,14 +341,14 @@ class TestDialogHelpers:
     @patch("inmail_sender.run_agent_browser")
     def test_has_pending_dialog_true(self, mock_run):
         mock_run.return_value = (0, "JavaScript confirm dialog is open", "")
-        mode = BrowserMode(mode="cdp", cdp_port="9230")
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
 
         assert sender.has_pending_dialog(mode) is True
 
     @patch("inmail_sender.run_agent_browser")
     def test_has_pending_dialog_false(self, mock_run):
         mock_run.return_value = (0, "No dialog is currently open", "")
-        mode = BrowserMode(mode="cdp", cdp_port="9230")
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
 
         assert sender.has_pending_dialog(mode) is False
 
@@ -357,7 +358,7 @@ class TestDialogHelpers:
             (0, "JavaScript confirm dialog is open", ""),
             (0, "accepted", ""),
         ]
-        mode = BrowserMode(mode="cdp", cdp_port="9230")
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
 
         assert sender.accept_pending_dialog(mode) is True
         assert mock_run.call_args_list[-1][0][1:] == ("dialog", "accept")
@@ -371,7 +372,7 @@ class TestGuardDialogs:
     def test_no_dialogs_returns_true(self, mock_time, mock_run):
         mock_time.side_effect = [0, 0.1]
         mock_run.return_value = (0, "No dialog is currently open", "")
-        mode = BrowserMode(mode="cdp", cdp_port="9230")
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
 
         assert sender.guard_dialogs(mode) is True
         assert mock_run.call_args[0][1:] == ("dialog", "status")
@@ -386,7 +387,7 @@ class TestGuardDialogs:
             (0, "accepted", ""),
             (0, "No dialog is currently open", ""),
         ]
-        mode = BrowserMode(mode="cdp", cdp_port="9230")
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
 
         assert sender.guard_dialogs(mode) is True
         # Should call status, accept, then status again
@@ -399,7 +400,7 @@ class TestClickMessageButton:
     @patch("inmail_sender.eval_js")
     def test_regex_strategy_success(self, mock_eval):
         mock_eval.return_value = (True, {"success": True, "strategy": "regex"})
-        mode = BrowserMode(mode="cdp", cdp_port="9230")
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
 
         result = sender.click_message_button(mode)
 
@@ -412,7 +413,7 @@ class TestClickMessageButton:
             (True, {"success": False, "error": "not found"}),
             (True, {"success": True, "strategy": "aria-label"}),
         ]
-        mode = BrowserMode(mode="cdp", cdp_port="9230")
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
 
         result = sender.click_message_button(mode)
 
@@ -421,7 +422,7 @@ class TestClickMessageButton:
     @patch("inmail_sender.eval_js")
     def test_all_strategies_fail(self, mock_eval):
         mock_eval.return_value = (True, {"success": False})
-        mode = BrowserMode(mode="cdp", cdp_port="9230")
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
 
         result = sender.click_message_button(mode)
 
@@ -434,14 +435,14 @@ class TestWaitForMessageButton:
     @patch("inmail_sender.wait_for_element")
     def test_message_button_appears(self, mock_wait):
         mock_wait.return_value = (True, True)
-        mode = BrowserMode(mode="cdp", cdp_port="9230")
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
 
         assert sender.wait_for_message_button(mode) is True
 
     @patch("inmail_sender.wait_for_element")
     def test_message_button_missing(self, mock_wait):
         mock_wait.return_value = (False, None)
-        mode = BrowserMode(mode="cdp", cdp_port="9230")
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
 
         assert sender.wait_for_message_button(mode) is False
 
@@ -452,7 +453,7 @@ class TestWaitForComposer:
     @patch("inmail_sender.wait_for_element")
     def test_composer_appears(self, mock_wait):
         mock_wait.return_value = (True, True)
-        mode = BrowserMode(mode="cdp", cdp_port="9230")
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
 
         result = sender.wait_for_composer(mode)
 
@@ -466,7 +467,7 @@ class TestClearAndFillSubject:
     @patch("inmail_sender.eval_js")
     def test_successful_clear_and_fill(self, mock_eval):
         mock_eval.return_value = (True, {"success": True})
-        mode = BrowserMode(mode="cdp", cdp_port="9230")
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
 
         result = sender.clear_and_fill_subject(mode, "Test Subject")
 
@@ -476,7 +477,7 @@ class TestClearAndFillSubject:
     @patch("inmail_sender.eval_js")
     def test_clear_fails(self, mock_eval):
         mock_eval.return_value = (False, "error")
-        mode = BrowserMode(mode="cdp", cdp_port="9230")
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
 
         result = sender.clear_and_fill_subject(mode, "Test Subject")
 
@@ -489,7 +490,7 @@ class TestClearAndFillBody:
     @patch("inmail_sender.eval_js")
     def test_successful_clear_and_fill(self, mock_eval):
         mock_eval.return_value = (True, {"success": True})
-        mode = BrowserMode(mode="cdp", cdp_port="9230")
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
 
         result = sender.clear_and_fill_body(mode, "Test body content")
 
@@ -505,7 +506,7 @@ class TestVerifyFieldsFilled:
             (True, "Test Subject"),
             (True, "Test body content here"),
         ]
-        mode = BrowserMode(mode="cdp", cdp_port="9230")
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
 
         result = sender.verify_fields_filled(mode, "Test Subject", "Test body content")
 
@@ -516,7 +517,7 @@ class TestVerifyFieldsFilled:
         mock_eval.side_effect = [
             (True, "Wrong Subject"),
         ]
-        mode = BrowserMode(mode="cdp", cdp_port="9230")
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
 
         result = sender.verify_fields_filled(mode, "Test Subject", "Test body")
 
@@ -529,7 +530,7 @@ class TestClickSendButton:
     @patch("inmail_sender.eval_js")
     def test_button_found_and_clicked(self, mock_eval):
         mock_eval.return_value = (True, {"success": True})
-        mode = BrowserMode(mode="cdp", cdp_port="9230")
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
 
         result = sender.click_send_button(mode)
 
@@ -538,7 +539,7 @@ class TestClickSendButton:
     @patch("inmail_sender.eval_js")
     def test_button_not_found(self, mock_eval):
         mock_eval.return_value = (True, {"success": False, "error": "not found"})
-        mode = BrowserMode(mode="cdp", cdp_port="9230")
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
 
         result = sender.click_send_button(mode)
 
@@ -558,7 +559,7 @@ class TestProbePageState:
             (True, []),  # success_signals check
             (True, False),  # has_discard_dialog check
         ]
-        mode = BrowserMode(mode="cdp", cdp_port="9230")
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
 
         state = sender.probe_page_state(mode)
 
@@ -575,7 +576,7 @@ class TestProbePageState:
             (True, ["toast_notification"]),  # success_signals check
             (True, False),  # has_discard_dialog check
         ]
-        mode = BrowserMode(mode="cdp", cdp_port="9230")
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
 
         state = sender.probe_page_state(mode)
 
@@ -617,7 +618,7 @@ class TestWaitForSendComplete:
             return success_state
 
         mock_probe.side_effect = side_effect
-        mode = BrowserMode(mode="cdp", cdp_port="9230")
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
 
         result = sender.wait_for_send_complete(mode, timeout_sec=5.0)
 
@@ -638,7 +639,7 @@ class TestWaitForSendComplete:
             "has_success_toast": False,
             "has_discard_dialog": False,
         }
-        mode = BrowserMode(mode="cdp", cdp_port="9230")
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
 
         result = sender.wait_for_send_complete(mode, timeout_sec=5.0)
 
@@ -661,7 +662,7 @@ class TestCheckRecentContact:
             True,
             {"hasSignals": False, "reason": "no_recent_contact_detected"},
         )
-        mode = BrowserMode(mode="cdp", cdp_port="9230")
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
 
         should_skip, reason = sender.check_recent_contact(mode)
 
@@ -678,7 +679,7 @@ class TestCheckRecentContact:
                 "reason": "recent_activity_inmail",
             },
         )
-        mode = BrowserMode(mode="cdp", cdp_port="9230")
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
 
         should_skip, reason = sender.check_recent_contact(mode)
 
@@ -688,7 +689,7 @@ class TestCheckRecentContact:
     @patch("inmail_sender.eval_js")
     def test_eval_js_fails(self, mock_eval):
         mock_eval.return_value = (False, "error")
-        mode = BrowserMode(mode="cdp", cdp_port="9230")
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
 
         should_skip, reason = sender.check_recent_contact(mode)
 
@@ -708,7 +709,7 @@ class TestCleanupOpenComposer:
             "dialog_open": False,
             "has_discard_dialog": False,
         }
-        mode = BrowserMode(mode="cdp", cdp_port="9230")
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
 
         assert sender.cleanup_open_composer(mode) is True
         assert mock_probe.call_count >= 2  # Initial check + verification
@@ -724,7 +725,7 @@ class TestCleanupOpenComposer:
             {"composer_open": False, "dialog_open": False, "has_discard_dialog": False},
         ]
         mock_guard.return_value = True
-        mode = BrowserMode(mode="cdp", cdp_port="9230")
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
 
         assert sender.cleanup_open_composer(mode) is True
         mock_guard.assert_called_once()
@@ -773,7 +774,7 @@ class TestSendInmail:
         mock_wait_send.return_value = True
         mock_guard.return_value = True
 
-        mode = BrowserMode(mode="cdp", cdp_port="9230")
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
         result = sender.send_inmail(
             mode, "http://linkedin.com/in/test", "Subject", "Body"
         )
@@ -814,7 +815,7 @@ class TestSendInmail:
         mock_verify.return_value = True
         mock_guard.return_value = True
 
-        mode = BrowserMode(mode="cdp", cdp_port="9230")
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
         result = sender.send_inmail(
             mode,
             "http://linkedin.com/in/test",
@@ -831,7 +832,7 @@ class TestSendInmail:
         mock_navigate.return_value = False
         mock_guard.return_value = True
 
-        mode = BrowserMode(mode="cdp", cdp_port="9230")
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
         with patch("inmail_sender.cleanup_open_composer", return_value=True):
             result = sender.send_inmail(mode, "http://test", "Subject", "Body")
 
@@ -888,6 +889,798 @@ class TestSendInmailWithSessionMode:
         )
 
         assert result == "SENT"
+
+
+class TestBuildFailureResult:
+    """Tests for _build_failure_result helper."""
+
+    def test_build_failure_result_structure(self):
+        """Should build result with all required fields."""
+        from browser_utils import ActionRequired, FailureCode
+
+        action = ActionRequired.element_missing(
+            selector="button.send",
+            page_url="https://linkedin.com/profile",
+        )
+        result = sender._build_failure_result(
+            reason="click_send_button_failed",
+            failure_code=FailureCode.ELEMENT_MISSING,
+            action_required=action,
+            clean_state=True,
+            verify_only=False,
+            profile_url="https://linkedin.com/profile",
+        )
+
+        assert result["status"] == "FAILED"
+        assert result["reason"] == "click_send_button_failed"
+        assert result["failure_code"] == "element_missing"
+        assert result["action_required"] is not None
+        assert result["action_required"]["code"] == "element_missing"
+        assert result["clean_state"] is True
+        assert result["verify_only"] is False
+        assert result["profile_url"] == "https://linkedin.com/profile"
+
+
+class TestSendInmailFailFast:
+    """Tests for fail-fast initial state check in send_inmail_with_result."""
+
+    @patch("inmail_sender.probe_page_state")
+    @patch("inmail_sender.navigate_to_profile")
+    def test_fails_fast_when_browser_unavailable(self, mock_navigate, mock_probe):
+        """Should return reconnect guidance when the browser is unavailable."""
+        mock_probe.return_value = {
+            "composer_open": False,
+            "dialog_open": False,
+            "has_discard_dialog": False,
+        }
+
+        def mark_browser_unavailable(*args, **kwargs):
+            sender.LAST_NAVIGATION_FAILURE_CODE = "browser_unavailable"
+            return False
+
+        mock_navigate.side_effect = mark_browser_unavailable
+
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
+        result = sender.send_inmail_with_result(
+            mode, "https://linkedin.com/in/test", "Subject", "Body"
+        )
+
+        assert result["status"] == "FAILED"
+        assert result["reason"] == "browser_unavailable"
+        assert result["failure_code"] == "browser_unavailable"
+        assert result["action_required"]["code"] == "browser_unavailable"
+        assert result["clean_state"] is False
+
+    @patch("inmail_sender.probe_page_state")
+    def test_fails_fast_when_composer_already_open(self, mock_probe):
+        """Should fail fast with action_required if composer is already open."""
+        mock_probe.return_value = {
+            "composer_open": True,
+            "dialog_open": False,
+            "has_discard_dialog": False,
+        }
+
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
+        result = sender.send_inmail_with_result(
+            mode, "https://linkedin.com/in/test", "Subject", "Body"
+        )
+
+        assert result["status"] == "FAILED"
+        assert result["reason"] == "browser_state_not_clean"
+        assert result["failure_code"] == "ambiguous_state"
+        assert result["action_required"] is not None
+        assert result["action_required"]["code"] == "ambiguous_state"
+        assert result["clean_state"] is False
+
+    @patch("inmail_sender.probe_page_state")
+    def test_fails_fast_when_dialog_already_open(self, mock_probe):
+        """Should fail fast with action_required if dialog is already open."""
+        mock_probe.return_value = {
+            "composer_open": False,
+            "dialog_open": True,
+            "has_discard_dialog": False,
+        }
+
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
+        result = sender.send_inmail_with_result(
+            mode, "https://linkedin.com/in/test", "Subject", "Body"
+        )
+
+        assert result["status"] == "FAILED"
+        assert result["reason"] == "browser_dialog_blocking_send"
+        assert result["failure_code"] == "dialog_blocked"
+        assert result["clean_state"] is False
+
+    @patch("inmail_sender.probe_page_state")
+    @patch("inmail_sender.navigate_to_profile")
+    def test_proceeds_when_state_is_clean(self, mock_navigate, mock_probe):
+        """Should proceed with send when initial state is clean."""
+        mock_probe.return_value = {
+            "composer_open": False,
+            "dialog_open": False,
+            "has_discard_dialog": False,
+        }
+        mock_navigate.return_value = True
+
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
+        # Will fail at later stage but should pass initial check
+        result = sender.send_inmail_with_result(
+            mode, "https://linkedin.com/in/test", "Subject", "Body"
+        )
+
+        # Should not fail due to initial state check
+        assert result["reason"] != "browser_state_not_clean"
+
+
+class TestSendInmailStatePreservation:
+    """Tests for state preservation on post-composer failures."""
+
+    @patch("inmail_sender.probe_page_state")
+    @patch("inmail_sender.navigate_to_profile")
+    @patch("inmail_sender.check_recent_contact")
+    @patch("inmail_sender.wait_for_message_button")
+    @patch("inmail_sender.click_message_button")
+    @patch("inmail_sender.wait_for_composer")
+    def test_wait_for_composer_failure_preserves_dirty_state(
+        self,
+        mock_wait_composer,
+        mock_click,
+        mock_wait_btn,
+        mock_check,
+        mock_navigate,
+        mock_probe,
+    ):
+        """wait_for_composer failure should mark state as dirty (composer may be partially open)."""
+        mock_probe.return_value = {"composer_open": False, "dialog_open": False}
+        mock_navigate.return_value = True
+        mock_check.return_value = (False, "no_recent_contact")
+        mock_wait_btn.return_value = True
+        mock_click.return_value = True
+        mock_wait_composer.return_value = False  # Composer never fully appears
+
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
+        result = sender.send_inmail_with_result(
+            mode, "https://linkedin.com/in/test", "Subject", "Body"
+        )
+
+        assert result["status"] == "FAILED"
+        assert result["reason"] == "wait_for_composer_failed"
+        assert result["clean_state"] is False  # State is dirty
+
+    @patch("inmail_sender.probe_page_state")
+    @patch("inmail_sender.navigate_to_profile")
+    @patch("inmail_sender.check_recent_contact")
+    @patch("inmail_sender.wait_for_message_button")
+    @patch("inmail_sender.click_message_button")
+    @patch("inmail_sender.wait_for_composer")
+    @patch("inmail_sender.dismiss_inline_banners")
+    @patch("inmail_sender.clear_and_fill_subject")
+    def test_fill_subject_failure_preserves_dirty_state(
+        self,
+        mock_fill_subject,
+        mock_dismiss,
+        mock_wait_composer,
+        mock_click,
+        mock_wait_btn,
+        mock_check,
+        mock_navigate,
+        mock_probe,
+    ):
+        """fill_subject failure should preserve dirty state (composer has drafted content)."""
+        mock_probe.return_value = {"composer_open": False, "dialog_open": False}
+        mock_navigate.return_value = True
+        mock_check.return_value = (False, "no_recent_contact")
+        mock_wait_btn.return_value = True
+        mock_click.return_value = True
+        mock_wait_composer.return_value = True
+        mock_dismiss.return_value = True
+        mock_fill_subject.return_value = False  # Fill fails
+
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
+        result = sender.send_inmail_with_result(
+            mode, "https://linkedin.com/in/test", "Subject", "Body"
+        )
+
+        assert result["status"] == "FAILED"
+        assert result["reason"] == "fill_subject_failed"
+        assert result["clean_state"] is False  # Composer has drafted content
+
+    @patch("inmail_sender.probe_page_state")
+    @patch("inmail_sender.navigate_to_profile")
+    @patch("inmail_sender.check_recent_contact")
+    @patch("inmail_sender.wait_for_message_button")
+    @patch("inmail_sender.click_message_button")
+    @patch("inmail_sender.wait_for_composer")
+    @patch("inmail_sender.dismiss_inline_banners")
+    @patch("inmail_sender.clear_and_fill_subject")
+    @patch("inmail_sender.clear_and_fill_body")
+    def test_fill_body_failure_preserves_dirty_state(
+        self,
+        mock_fill_body,
+        mock_fill_subject,
+        mock_dismiss,
+        mock_wait_composer,
+        mock_click,
+        mock_wait_btn,
+        mock_check,
+        mock_navigate,
+        mock_probe,
+    ):
+        """fill_body failure should preserve dirty state (composer has drafted content)."""
+        mock_probe.return_value = {"composer_open": False, "dialog_open": False}
+        mock_navigate.return_value = True
+        mock_check.return_value = (False, "no_recent_contact")
+        mock_wait_btn.return_value = True
+        mock_click.return_value = True
+        mock_wait_composer.return_value = True
+        mock_dismiss.return_value = True
+        mock_fill_subject.return_value = True
+        mock_fill_body.return_value = False  # Fill fails
+
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
+        result = sender.send_inmail_with_result(
+            mode, "https://linkedin.com/in/test", "Subject", "Body"
+        )
+
+        assert result["status"] == "FAILED"
+        assert result["reason"] == "fill_body_failed"
+        assert result["clean_state"] is False  # Composer has drafted content
+
+    @patch("inmail_sender.probe_page_state")
+    @patch("inmail_sender.navigate_to_profile")
+    @patch("inmail_sender.check_recent_contact")
+    @patch("inmail_sender.wait_for_message_button")
+    @patch("inmail_sender.click_message_button")
+    @patch("inmail_sender.wait_for_composer")
+    @patch("inmail_sender.dismiss_inline_banners")
+    @patch("inmail_sender.clear_and_fill_subject")
+    @patch("inmail_sender.clear_and_fill_body")
+    @patch("inmail_sender.verify_fields_filled")
+    def test_verify_fields_failure_preserves_dirty_state(
+        self,
+        mock_verify,
+        mock_fill_body,
+        mock_fill_subject,
+        mock_dismiss,
+        mock_wait_composer,
+        mock_click,
+        mock_wait_btn,
+        mock_check,
+        mock_navigate,
+        mock_probe,
+    ):
+        """verify_fields failure should preserve dirty state (composer has drafted content)."""
+        mock_probe.return_value = {"composer_open": False, "dialog_open": False}
+        mock_navigate.return_value = True
+        mock_check.return_value = (False, "no_recent_contact")
+        mock_wait_btn.return_value = True
+        mock_click.return_value = True
+        mock_wait_composer.return_value = True
+        mock_dismiss.return_value = True
+        mock_fill_subject.return_value = True
+        mock_fill_body.return_value = True
+        mock_verify.return_value = False  # Verification fails
+
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
+        result = sender.send_inmail_with_result(
+            mode, "https://linkedin.com/in/test", "Subject", "Body"
+        )
+
+        assert result["status"] == "FAILED"
+        assert result["reason"] == "verify_fields_failed"
+        assert result["clean_state"] is False  # Composer has drafted content
+
+    @patch("inmail_sender.probe_page_state")
+    @patch("inmail_sender.navigate_to_profile")
+    @patch("inmail_sender.check_recent_contact")
+    @patch("inmail_sender.wait_for_message_button")
+    @patch("inmail_sender.click_message_button")
+    @patch("inmail_sender.wait_for_composer")
+    @patch("inmail_sender.dismiss_inline_banners")
+    @patch("inmail_sender.clear_and_fill_subject")
+    @patch("inmail_sender.clear_and_fill_body")
+    @patch("inmail_sender.verify_fields_filled")
+    @patch("inmail_sender.click_send_button")
+    def test_click_send_failure_preserves_dirty_state(
+        self,
+        mock_click_send,
+        mock_verify,
+        mock_fill_body,
+        mock_fill_subject,
+        mock_dismiss,
+        mock_wait_composer,
+        mock_click,
+        mock_wait_btn,
+        mock_check,
+        mock_navigate,
+        mock_probe,
+    ):
+        """click_send_button failure should preserve dirty state (composer has drafted content)."""
+        mock_probe.return_value = {"composer_open": False, "dialog_open": False}
+        mock_navigate.return_value = True
+        mock_check.return_value = (False, "no_recent_contact")
+        mock_wait_btn.return_value = True
+        mock_click.return_value = True
+        mock_wait_composer.return_value = True
+        mock_dismiss.return_value = True
+        mock_fill_subject.return_value = True
+        mock_fill_body.return_value = True
+        mock_verify.return_value = True
+        mock_click_send.return_value = False  # Click fails
+
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
+        result = sender.send_inmail_with_result(
+            mode, "https://linkedin.com/in/test", "Subject", "Body"
+        )
+
+        assert result["status"] == "FAILED"
+        assert result["reason"] == "click_send_button_failed"
+        assert result["clean_state"] is False  # Composer has drafted content
+
+    @patch("inmail_sender.probe_page_state")
+    @patch("inmail_sender.navigate_to_profile")
+    @patch("inmail_sender.check_recent_contact")
+    @patch("inmail_sender.wait_for_message_button")
+    @patch("inmail_sender.click_message_button")
+    @patch("inmail_sender.wait_for_composer")
+    @patch("inmail_sender.dismiss_inline_banners")
+    @patch("inmail_sender.clear_and_fill_subject")
+    @patch("inmail_sender.clear_and_fill_body")
+    @patch("inmail_sender.verify_fields_filled")
+    @patch("inmail_sender.click_send_button")
+    @patch("inmail_sender.wait_for_send_complete")
+    def test_wait_for_send_complete_failure_preserves_dirty_state(
+        self,
+        mock_wait_send,
+        mock_click_send,
+        mock_verify,
+        mock_fill_body,
+        mock_fill_subject,
+        mock_dismiss,
+        mock_wait_composer,
+        mock_click,
+        mock_wait_btn,
+        mock_check,
+        mock_navigate,
+        mock_probe,
+    ):
+        """wait_for_send_complete failure should preserve dirty state."""
+        mock_probe.return_value = {"composer_open": False, "dialog_open": False}
+        mock_navigate.return_value = True
+        mock_check.return_value = (False, "no_recent_contact")
+        mock_wait_btn.return_value = True
+        mock_click.return_value = True
+        mock_wait_composer.return_value = True
+        mock_dismiss.return_value = True
+        mock_fill_subject.return_value = True
+        mock_fill_body.return_value = True
+        mock_verify.return_value = True
+        mock_click_send.return_value = True
+        mock_wait_send.return_value = False  # Send completion fails
+
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
+        result = sender.send_inmail_with_result(
+            mode, "https://linkedin.com/in/test", "Subject", "Body"
+        )
+
+        assert result["status"] == "FAILED"
+        assert result["reason"] == "wait_for_send_complete_failed"
+        assert result["clean_state"] is False  # State unknown after send failure
+
+
+class TestSendInmailWithResultActionRequired:
+    """Tests for action_required in send_inmail_with_result failures."""
+
+    @patch("inmail_sender.probe_page_state")
+    def test_initial_state_check_returns_action_required(self, mock_probe):
+        """Initial state check failure should return structured action_required."""
+        mock_probe.return_value = {
+            "composer_open": True,
+            "dialog_open": False,
+            "has_discard_dialog": False,
+        }
+
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
+        result = sender.send_inmail_with_result(
+            mode, "https://linkedin.com/in/test", "Subject", "Body"
+        )
+
+        assert result["status"] == "FAILED"
+        assert result["reason"] == "browser_state_not_clean"
+        assert result["failure_code"] == "ambiguous_state"
+        assert result["action_required"] is not None
+        assert result["action_required"]["code"] == "ambiguous_state"
+        assert "steps" in result["action_required"]
+
+    @patch("inmail_sender.guard_dialogs")
+    @patch("inmail_sender.cleanup_open_composer")
+    @patch("inmail_sender.navigate_to_profile")
+    def test_navigation_failure_returns_action_required(
+        self, mock_navigate, mock_cleanup, mock_guard
+    ):
+        """Navigation failure should return structured action_required."""
+        mock_guard.return_value = True
+        mock_cleanup.return_value = True
+        mock_navigate.return_value = False  # Navigation fails
+
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
+        result = sender.send_inmail_with_result(
+            mode, "https://linkedin.com/in/test", "Subject", "Body"
+        )
+
+        assert result["status"] == "FAILED"
+        assert result["reason"] == "navigation_failed"
+        assert result["failure_code"] == "wrong_page"
+        assert result["action_required"] is not None
+        assert result["action_required"]["code"] == "wrong_page"
+        assert (
+            result["action_required"]["context"]["expected_url"]
+            == "https://linkedin.com/in/test"
+        )
+
+    @patch("inmail_sender.guard_dialogs")
+    @patch("inmail_sender.cleanup_open_composer")
+    @patch("inmail_sender.navigate_to_profile")
+    @patch("inmail_sender.check_recent_contact")
+    def test_recent_contact_check_failure_returns_action_required(
+        self, mock_check, mock_navigate, mock_cleanup, mock_guard
+    ):
+        """Recent contact check failure should return structured action_required."""
+        mock_guard.return_value = True
+        mock_cleanup.return_value = True
+        mock_navigate.return_value = True
+        mock_check.return_value = (True, "check_failed")  # Check failed
+
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
+        result = sender.send_inmail_with_result(
+            mode, "https://linkedin.com/in/test", "Subject", "Body"
+        )
+
+        assert result["status"] == "FAILED"
+        assert result["reason"] == "recent_contact_check_failed"
+        assert result["failure_code"] == "verification_failed"
+        assert result["action_required"] is not None
+        assert result["action_required"]["code"] == "verification_failed"
+
+    @patch("inmail_sender.guard_dialogs")
+    @patch("inmail_sender.cleanup_open_composer")
+    @patch("inmail_sender.navigate_to_profile")
+    @patch("inmail_sender.check_recent_contact")
+    @patch("inmail_sender.wait_for_message_button")
+    def test_message_button_missing_returns_action_required(
+        self, mock_wait, mock_check, mock_navigate, mock_cleanup, mock_guard
+    ):
+        """Message button not appearing should return structured action_required."""
+        mock_guard.return_value = True
+        mock_cleanup.return_value = True
+        mock_navigate.return_value = True
+        mock_check.return_value = (False, "no_recent_contact")
+        mock_wait.return_value = False  # Button never appears
+
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
+        result = sender.send_inmail_with_result(
+            mode, "https://linkedin.com/in/test", "Subject", "Body"
+        )
+
+        assert result["status"] == "FAILED"
+        assert result["reason"] == "message_button_never_appeared"
+        assert result["failure_code"] == "element_missing"
+        assert result["action_required"] is not None
+        assert result["action_required"]["code"] == "element_missing"
+        assert "Message button" in result["action_required"]["context"]["selector"]
+
+    @patch("inmail_sender.guard_dialogs")
+    @patch("inmail_sender.cleanup_open_composer")
+    @patch("inmail_sender.navigate_to_profile")
+    @patch("inmail_sender.check_recent_contact")
+    @patch("inmail_sender.wait_for_message_button")
+    @patch("inmail_sender.click_message_button")
+    def test_click_message_button_failure_returns_action_required(
+        self, mock_click, mock_wait, mock_check, mock_navigate, mock_cleanup, mock_guard
+    ):
+        """Click message button failure should return structured action_required."""
+        mock_guard.return_value = True
+        mock_cleanup.return_value = True
+        mock_navigate.return_value = True
+        mock_check.return_value = (False, "no_recent_contact")
+        mock_wait.return_value = True
+        mock_click.return_value = False  # Click fails
+
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
+        result = sender.send_inmail_with_result(
+            mode, "https://linkedin.com/in/test", "Subject", "Body"
+        )
+
+        assert result["status"] == "FAILED"
+        assert result["reason"] == "click_message_button_failed"
+        assert result["failure_code"] == "element_missing"
+        assert result["action_required"] is not None
+
+    @patch("inmail_sender.guard_dialogs")
+    @patch("inmail_sender.cleanup_open_composer")
+    @patch("inmail_sender.navigate_to_profile")
+    @patch("inmail_sender.check_recent_contact")
+    @patch("inmail_sender.wait_for_message_button")
+    @patch("inmail_sender.click_message_button")
+    @patch("inmail_sender.wait_for_composer")
+    def test_wait_for_composer_failure_returns_action_required(
+        self,
+        mock_wait_composer,
+        mock_click,
+        mock_wait_btn,
+        mock_check,
+        mock_navigate,
+        mock_cleanup,
+        mock_guard,
+    ):
+        """Composer not appearing should return structured action_required."""
+        mock_guard.return_value = True
+        mock_cleanup.return_value = True
+        mock_navigate.return_value = True
+        mock_check.return_value = (False, "no_recent_contact")
+        mock_wait_btn.return_value = True
+        mock_click.return_value = True
+        mock_wait_composer.return_value = False  # Composer never appears
+
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
+        result = sender.send_inmail_with_result(
+            mode, "https://linkedin.com/in/test", "Subject", "Body"
+        )
+
+        assert result["status"] == "FAILED"
+        assert result["reason"] == "wait_for_composer_failed"
+        assert result["failure_code"] == "element_missing"
+        assert result["action_required"] is not None
+        assert "composer" in result["action_required"]["context"]["selector"].lower()
+
+    @patch("inmail_sender.guard_dialogs")
+    @patch("inmail_sender.cleanup_open_composer")
+    @patch("inmail_sender.navigate_to_profile")
+    @patch("inmail_sender.check_recent_contact")
+    @patch("inmail_sender.wait_for_message_button")
+    @patch("inmail_sender.click_message_button")
+    @patch("inmail_sender.wait_for_composer")
+    @patch("inmail_sender.dismiss_inline_banners")
+    @patch("inmail_sender.clear_and_fill_subject")
+    def test_fill_subject_failure_returns_action_required(
+        self,
+        mock_fill_subject,
+        mock_dismiss,
+        mock_wait_composer,
+        mock_click,
+        mock_wait_btn,
+        mock_check,
+        mock_navigate,
+        mock_cleanup,
+        mock_guard,
+    ):
+        """Fill subject failure should return structured action_required."""
+        mock_guard.return_value = True
+        mock_cleanup.return_value = True
+        mock_navigate.return_value = True
+        mock_check.return_value = (False, "no_recent_contact")
+        mock_wait_btn.return_value = True
+        mock_click.return_value = True
+        mock_wait_composer.return_value = True
+        mock_dismiss.return_value = True
+        mock_fill_subject.return_value = False  # Fill fails
+
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
+        result = sender.send_inmail_with_result(
+            mode, "https://linkedin.com/in/test", "Subject", "Body"
+        )
+
+        assert result["status"] == "FAILED"
+        assert result["reason"] == "fill_subject_failed"
+        assert result["failure_code"] == "element_missing"
+        assert result["action_required"] is not None
+        assert "Subject field" in result["action_required"]["context"]["selector"]
+
+    @patch("inmail_sender.guard_dialogs")
+    @patch("inmail_sender.cleanup_open_composer")
+    @patch("inmail_sender.navigate_to_profile")
+    @patch("inmail_sender.check_recent_contact")
+    @patch("inmail_sender.wait_for_message_button")
+    @patch("inmail_sender.click_message_button")
+    @patch("inmail_sender.wait_for_composer")
+    @patch("inmail_sender.dismiss_inline_banners")
+    @patch("inmail_sender.clear_and_fill_subject")
+    @patch("inmail_sender.clear_and_fill_body")
+    def test_fill_body_failure_returns_action_required(
+        self,
+        mock_fill_body,
+        mock_fill_subject,
+        mock_dismiss,
+        mock_wait_composer,
+        mock_click,
+        mock_wait_btn,
+        mock_check,
+        mock_navigate,
+        mock_cleanup,
+        mock_guard,
+    ):
+        """Fill body failure should return structured action_required."""
+        mock_guard.return_value = True
+        mock_cleanup.return_value = True
+        mock_navigate.return_value = True
+        mock_check.return_value = (False, "no_recent_contact")
+        mock_wait_btn.return_value = True
+        mock_click.return_value = True
+        mock_wait_composer.return_value = True
+        mock_dismiss.return_value = True
+        mock_fill_subject.return_value = True
+        mock_fill_body.return_value = False  # Fill fails
+
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
+        result = sender.send_inmail_with_result(
+            mode, "https://linkedin.com/in/test", "Subject", "Body"
+        )
+
+        assert result["status"] == "FAILED"
+        assert result["reason"] == "fill_body_failed"
+        assert result["failure_code"] == "element_missing"
+        assert result["action_required"] is not None
+        assert "Body field" in result["action_required"]["context"]["selector"]
+
+    @patch("inmail_sender.guard_dialogs")
+    @patch("inmail_sender.cleanup_open_composer")
+    @patch("inmail_sender.navigate_to_profile")
+    @patch("inmail_sender.check_recent_contact")
+    @patch("inmail_sender.wait_for_message_button")
+    @patch("inmail_sender.click_message_button")
+    @patch("inmail_sender.wait_for_composer")
+    @patch("inmail_sender.dismiss_inline_banners")
+    @patch("inmail_sender.clear_and_fill_subject")
+    @patch("inmail_sender.clear_and_fill_body")
+    @patch("inmail_sender.verify_fields_filled")
+    def test_verify_fields_failure_returns_action_required(
+        self,
+        mock_verify,
+        mock_fill_body,
+        mock_fill_subject,
+        mock_dismiss,
+        mock_wait_composer,
+        mock_click,
+        mock_wait_btn,
+        mock_check,
+        mock_navigate,
+        mock_cleanup,
+        mock_guard,
+    ):
+        """Verify fields failure should return structured action_required."""
+        mock_guard.return_value = True
+        mock_cleanup.return_value = True
+        mock_navigate.return_value = True
+        mock_check.return_value = (False, "no_recent_contact")
+        mock_wait_btn.return_value = True
+        mock_click.return_value = True
+        mock_wait_composer.return_value = True
+        mock_dismiss.return_value = True
+        mock_fill_subject.return_value = True
+        mock_fill_body.return_value = True
+        mock_verify.return_value = False  # Verification fails
+
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
+        result = sender.send_inmail_with_result(
+            mode, "https://linkedin.com/in/test", "Subject", "Body"
+        )
+
+        assert result["status"] == "FAILED"
+        assert result["reason"] == "verify_fields_failed"
+        assert result["failure_code"] == "verification_failed"
+        assert result["action_required"] is not None
+        assert result["action_required"]["code"] == "verification_failed"
+
+    @patch("inmail_sender.guard_dialogs")
+    @patch("inmail_sender.cleanup_open_composer")
+    @patch("inmail_sender.navigate_to_profile")
+    @patch("inmail_sender.check_recent_contact")
+    @patch("inmail_sender.wait_for_message_button")
+    @patch("inmail_sender.click_message_button")
+    @patch("inmail_sender.wait_for_composer")
+    @patch("inmail_sender.dismiss_inline_banners")
+    @patch("inmail_sender.clear_and_fill_subject")
+    @patch("inmail_sender.clear_and_fill_body")
+    @patch("inmail_sender.verify_fields_filled")
+    @patch("inmail_sender.click_send_button")
+    def test_click_send_button_failure_returns_action_required(
+        self,
+        mock_click_send,
+        mock_verify,
+        mock_fill_body,
+        mock_fill_subject,
+        mock_dismiss,
+        mock_wait_composer,
+        mock_click,
+        mock_wait_btn,
+        mock_check,
+        mock_navigate,
+        mock_cleanup,
+        mock_guard,
+    ):
+        """Click send button failure should return structured action_required."""
+        mock_guard.return_value = True
+        mock_cleanup.return_value = True
+        mock_navigate.return_value = True
+        mock_check.return_value = (False, "no_recent_contact")
+        mock_wait_btn.return_value = True
+        mock_click.return_value = True
+        mock_wait_composer.return_value = True
+        mock_dismiss.return_value = True
+        mock_fill_subject.return_value = True
+        mock_fill_body.return_value = True
+        mock_verify.return_value = True
+        mock_click_send.return_value = False  # Click fails
+
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
+        result = sender.send_inmail_with_result(
+            mode, "https://linkedin.com/in/test", "Subject", "Body"
+        )
+
+        assert result["status"] == "FAILED"
+        assert result["reason"] == "click_send_button_failed"
+        assert result["failure_code"] == "element_missing"
+        assert result["action_required"] is not None
+        assert "Send button" in result["action_required"]["context"]["selector"]
+
+    @patch("inmail_sender.guard_dialogs")
+    @patch("inmail_sender.cleanup_open_composer")
+    @patch("inmail_sender.navigate_to_profile")
+    @patch("inmail_sender.check_recent_contact")
+    @patch("inmail_sender.wait_for_message_button")
+    @patch("inmail_sender.click_message_button")
+    @patch("inmail_sender.wait_for_composer")
+    @patch("inmail_sender.dismiss_inline_banners")
+    @patch("inmail_sender.clear_and_fill_subject")
+    @patch("inmail_sender.clear_and_fill_body")
+    @patch("inmail_sender.verify_fields_filled")
+    @patch("inmail_sender.click_send_button")
+    @patch("inmail_sender.wait_for_send_complete")
+    def test_wait_for_send_complete_failure_returns_action_required(
+        self,
+        mock_wait_send,
+        mock_click_send,
+        mock_verify,
+        mock_fill_body,
+        mock_fill_subject,
+        mock_dismiss,
+        mock_wait_composer,
+        mock_click,
+        mock_wait_btn,
+        mock_check,
+        mock_navigate,
+        mock_cleanup,
+        mock_guard,
+    ):
+        """Send completion failure should return structured action_required."""
+        mock_guard.return_value = True
+        mock_cleanup.return_value = True
+        mock_navigate.return_value = True
+        mock_check.return_value = (False, "no_recent_contact")
+        mock_wait_btn.return_value = True
+        mock_click.return_value = True
+        mock_wait_composer.return_value = True
+        mock_dismiss.return_value = True
+        mock_fill_subject.return_value = True
+        mock_fill_body.return_value = True
+        mock_verify.return_value = True
+        mock_click_send.return_value = True
+        mock_wait_send.return_value = False  # Send completion fails
+
+        mode = BrowserMode(mode="cdp", cdp_port="9234")
+        result = sender.send_inmail_with_result(
+            mode, "https://linkedin.com/in/test", "Subject", "Body"
+        )
+
+        assert result["status"] == "FAILED"
+        assert result["reason"] == "wait_for_send_complete_failed"
+        assert result["failure_code"] == "verification_failed"
+        assert result["action_required"] is not None
+        assert result["action_required"]["code"] == "verification_failed"
+        assert (
+            "send_confirmation"
+            in result["action_required"]["context"]["verification_type"]
+        )
 
 
 if __name__ == "__main__":

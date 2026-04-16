@@ -25,12 +25,13 @@ class TestProfileResolution:
 
     def test_default_profile_values(self, tmp_path):
         """Should use default values when no profile exists."""
-        manager = RuntimeManager(skill_dir=tmp_path)
+        fake_profile = tmp_path / "nonexistent_profile.sh"
+        manager = RuntimeManager(profile_path=fake_profile, skill_dir=tmp_path)
         profile = manager._resolve_profile()
 
         assert "WORK_DIR" in profile
         assert "CDP_PORT" in profile
-        assert profile["CDP_PORT"] == "9230"
+        assert profile["CDP_PORT"] == "9234"
         assert "CHROME_PROFILE" in profile
 
     def test_profile_from_file(self, tmp_path):
@@ -208,30 +209,6 @@ class TestBundleHash:
         hash_clean = manager.compute_bundle_hash()
         assert hash_with_pycache == hash_clean
 
-    def test_copy_ignores_pycache(self, tmp_path):
-        """Should not copy __pycache__ or .pyc files to staging."""
-        scripts_dir = tmp_path / "scripts"
-        scripts_dir.mkdir()
-        (scripts_dir / "script.py").write_text("script")
-
-        # Create __pycache__ directory
-        pycache_dir = scripts_dir / "__pycache__"
-        pycache_dir.mkdir()
-        (pycache_dir / "script.cpython-311.pyc").write_bytes(b"pyc content")
-        (scripts_dir / "script.pyc").write_bytes(b"orphaned pyc")
-
-        manager = RuntimeManager(skill_dir=tmp_path)
-        staging = tmp_path / "staging"
-        staging.mkdir()
-
-        manager._copy_bundle_to_staging(staging)
-
-        # Should copy the .py file
-        assert (staging / "scripts" / "script.py").exists()
-        # Should NOT copy __pycache__ or .pyc files
-        assert not (staging / "scripts" / "__pycache__").exists()
-        assert not (staging / "scripts" / "script.pyc").exists()
-
 
 class TestRuntimeDirectories:
     """Tests for runtime directory structure."""
@@ -241,9 +218,9 @@ class TestRuntimeDirectories:
         manager = RuntimeManager(work_dir=tmp_path, skill_dir=tmp_path)
         manager.ensure_runtime_dirs()
 
-        assert (tmp_path / "runtime" / "releases").exists()
-        assert (tmp_path / "runtime" / "current").exists()
+        # Should create incidents/ and auth/ (no more releases/ or current/)
         assert (tmp_path / "runtime" / "incidents").exists()
+        assert (tmp_path / "runtime" / "auth").exists()
 
     def test_idempotent_dir_creation(self, tmp_path):
         """Should be idempotent for directory creation."""
@@ -251,126 +228,12 @@ class TestRuntimeDirectories:
 
         manager.ensure_runtime_dirs()
         # Add a file to verify it doesn't get deleted
-        test_file = tmp_path / "runtime" / "releases" / "test.txt"
+        test_file = tmp_path / "runtime" / "incidents" / "test.txt"
         test_file.write_text("test")
 
         manager.ensure_runtime_dirs()
 
         assert test_file.exists()
-
-
-class TestBundleCopyAndLayout:
-    """Tests for bundle copy and layout."""
-
-    def test_copy_bundle_to_staging(self, tmp_path):
-        """Should copy bundle sources to staging directory."""
-        # Setup skill dir structure
-        scripts_dir = tmp_path / "scripts"
-        scripts_dir.mkdir()
-        (scripts_dir / "test_script.py").write_text("# test script")
-
-        templates_dir = tmp_path / "templates"
-        templates_dir.mkdir()
-        (templates_dir / "test_template.txt").write_text("test template")
-
-        (tmp_path / "SKILL.md").write_text("# Skill")
-
-        manager = RuntimeManager(skill_dir=tmp_path)
-        staging = tmp_path / "staging"
-        staging.mkdir()
-
-        manager._copy_bundle_to_staging(staging)
-
-        assert (staging / "scripts" / "test_script.py").exists()
-        assert (staging / "templates" / "test_template.txt").exists()
-        assert (staging / "SKILL.md").exists()
-
-    def test_atomic_install_release(self, tmp_path):
-        """Should atomically install release bundle."""
-        manager = RuntimeManager(work_dir=tmp_path, skill_dir=tmp_path)
-        manager.ensure_runtime_dirs()
-
-        # Create staging dir
-        staging = tmp_path / "staging"
-        staging.mkdir()
-        (staging / "test.txt").write_text("test content")
-
-        release_dir = manager._atomic_install_release("abc123", staging)
-
-        assert release_dir.exists()
-        assert (release_dir / "test.txt").read_text() == "test content"
-        assert release_dir.name == "abc123"
-
-    def test_atomic_install_skips_existing(self, tmp_path):
-        """Should skip installation if release already exists."""
-        manager = RuntimeManager(work_dir=tmp_path, skill_dir=tmp_path)
-        manager.ensure_runtime_dirs()
-
-        # Pre-create release
-        existing = manager.releases_dir / "abc123"
-        existing.mkdir()
-        (existing / "existing.txt").write_text("existing")
-
-        # Try to install over it
-        staging = tmp_path / "staging"
-        staging.mkdir()
-        (staging / "new.txt").write_text("new")
-
-        release_dir = manager._atomic_install_release("abc123", staging)
-
-        # Should return existing, not install new
-        assert release_dir == existing
-        assert (existing / "existing.txt").exists()
-        assert not (existing / "new.txt").exists()
-
-
-class TestSymlinkManagement:
-    """Tests for current symlink management."""
-
-    def test_create_symlink(self, tmp_path):
-        """Should create current symlink to release."""
-        manager = RuntimeManager(work_dir=tmp_path, skill_dir=tmp_path)
-        manager.ensure_runtime_dirs()
-
-        release = manager.releases_dir / "test_release"
-        release.mkdir()
-
-        updated = manager._update_current_symlink(release)
-
-        assert updated is True
-        assert manager.current_link.is_symlink()
-        assert manager.current_link.resolve() == release.resolve()
-
-    def test_symlink_idempotent(self, tmp_path):
-        """Should not update if already pointing to correct release."""
-        manager = RuntimeManager(work_dir=tmp_path, skill_dir=tmp_path)
-        manager.ensure_runtime_dirs()
-
-        release = manager.releases_dir / "test_release"
-        release.mkdir()
-
-        # First update
-        manager._update_current_symlink(release)
-        # Second update should return False
-        updated = manager._update_current_symlink(release)
-
-        assert updated is False
-
-    def test_symlink_switch_release(self, tmp_path):
-        """Should switch symlink when release changes."""
-        manager = RuntimeManager(work_dir=tmp_path, skill_dir=tmp_path)
-        manager.ensure_runtime_dirs()
-
-        release1 = manager.releases_dir / "release1"
-        release1.mkdir()
-        release2 = manager.releases_dir / "release2"
-        release2.mkdir()
-
-        manager._update_current_symlink(release1)
-        updated = manager._update_current_symlink(release2)
-
-        assert updated is True
-        assert manager.current_link.resolve() == release2.resolve()
 
 
 class TestDependencyChecking:
@@ -431,18 +294,15 @@ class TestStateFileWriting:
         """Should write runtime_state.json correctly."""
         manager = RuntimeManager(work_dir=tmp_path, skill_dir=tmp_path)
 
-        release_dir = tmp_path / "release"
-        release_dir.mkdir()
-
-        manager._write_runtime_state("abc123", release_dir, sync_happened=True)
+        manager._write_runtime_state("abc123")
 
         assert manager.runtime_state_path.exists()
         state = json.loads(manager.runtime_state_path.read_text())
 
-        assert state["version"] == "1.0.0"
-        assert state["current_release"]["hash"] == "abc123"
-        assert state["sync_happened"] is True
+        assert state["version"] == "2.0.0"
+        assert state["bundle_hash"] == "abc123"
         assert "updated_at" in state
+        assert "canonical_paths" in state
 
     def test_write_dependency_state(self, tmp_path):
         """Should write dependency_state.json correctly."""
@@ -461,7 +321,7 @@ class TestInitialization:
     """Tests for the main initialize() method."""
 
     def test_full_initialization(self, tmp_path):
-        """Should perform full initialization."""
+        """Should perform full initialization without copying bundles."""
         # Setup skill dir
         scripts_dir = tmp_path / "skill" / "scripts"
         scripts_dir.mkdir(parents=True)
@@ -482,32 +342,32 @@ class TestInitialization:
 
         # Check context structure
         assert "work_dir" in ctx
-        assert "current_release" in ctx
+        assert "canonical_paths" in ctx
         assert "dependencies" in ctx
-        assert "sync_happened" in ctx
 
         # Check files created
         assert manager.permission_probe_path.exists()
         assert manager.runtime_state_path.exists()
         assert manager.dependency_state_path.exists()
 
-        # Check release installed
-        assert ctx["sync_happened"] is True
-        release_path = Path(ctx["current_release"]["path"])
-        assert release_path.exists()
+        # Check canonical paths point to skill dir (not copied)
+        assert ctx["canonical_paths"]["scripts_dir"] == str(
+            tmp_path / "skill" / "scripts"
+        )
+        assert ctx["canonical_paths"]["templates_dir"] == str(
+            tmp_path / "skill" / "templates"
+        )
+
+        # Verify no bundle copying occurred (no releases/ or current/ dirs)
+        assert not (manager.runtime_dir / "releases").exists()
+        assert not (manager.runtime_dir / "current").exists()
 
     def test_idempotent_reinitialization(self, tmp_path):
-        """Should not resync when hash hasn't changed."""
+        """Should be idempotent - no bundle copying means no sync needed."""
         # Setup skill dir
         scripts_dir = tmp_path / "skill" / "scripts"
         scripts_dir.mkdir(parents=True)
         (scripts_dir / "test.py").write_text("# test")
-
-        templates_dir = tmp_path / "skill" / "templates"
-        templates_dir.mkdir()
-        (templates_dir / "test.txt").write_text("template")
-
-        (tmp_path / "skill" / "SKILL.md").write_text("# Skill")
 
         manager = RuntimeManager(
             work_dir=tmp_path / "work",
@@ -516,40 +376,17 @@ class TestInitialization:
 
         # First initialization
         ctx1 = manager.initialize()
-        assert ctx1["sync_happened"] is True
+        hash1 = ctx1["bundle_hash"]
 
-        # Second initialization (same hash)
+        # Second initialization - should produce same hash
         ctx2 = manager.initialize()
-        assert ctx2["sync_happened"] is False
+        hash2 = ctx2["bundle_hash"]
 
-    def test_force_sync(self, tmp_path):
-        """Should force resync when requested."""
-        # Setup skill dir
-        scripts_dir = tmp_path / "skill" / "scripts"
-        scripts_dir.mkdir(parents=True)
-        (scripts_dir / "test.py").write_text("# test")
-
-        templates_dir = tmp_path / "skill" / "templates"
-        templates_dir.mkdir()
-        (templates_dir / "test.txt").write_text("template")
-
-        (tmp_path / "skill" / "SKILL.md").write_text("# Skill")
-
-        manager = RuntimeManager(
-            work_dir=tmp_path / "work",
-            skill_dir=tmp_path / "skill",
-        )
-
-        # First initialization
-        manager.initialize()
-
-        # Force sync
-        ctx = manager.initialize(force_sync=True)
-        assert ctx["sync_happened"] is True
+        assert hash1 == hash2
 
 
 class TestScriptResolution:
-    """Tests for script and template resolution."""
+    """Tests for script and template resolution (simplified model)."""
 
     def test_resolve_from_override(self, tmp_path):
         """Should resolve from WORK_DIR/scripts override first."""
@@ -569,26 +406,8 @@ class TestScriptResolution:
         assert resolved == work_scripts / "test.py"
         assert resolved.read_text() == "override"
 
-    def test_resolve_from_current_release(self, tmp_path):
-        """Should resolve from current release if no override."""
-        work_dir = tmp_path / "work"
-        runtime_scripts = work_dir / "runtime" / "current" / "scripts"
-        runtime_scripts.mkdir(parents=True)
-        (runtime_scripts / "test.py").write_text("release")
-
-        skill_dir = tmp_path / "skill"
-        skill_scripts = skill_dir / "scripts"
-        skill_scripts.mkdir(parents=True)
-        (skill_scripts / "test.py").write_text("canonical")
-
-        manager = RuntimeManager(work_dir=work_dir, skill_dir=skill_dir)
-        resolved = manager.resolve_script("test.py")
-
-        assert resolved == runtime_scripts / "test.py"
-        assert resolved.read_text() == "release"
-
     def test_resolve_from_canonical(self, tmp_path):
-        """Should fall back to canonical if no override or release."""
+        """Should fall back to canonical if no override."""
         work_dir = tmp_path / "work"
 
         skill_dir = tmp_path / "skill"
@@ -622,6 +441,20 @@ class TestScriptResolution:
 
         assert resolved == work_templates / "test.txt"
 
+    def test_resolve_template_from_canonical(self, tmp_path):
+        """Should resolve template from canonical if no override."""
+        work_dir = tmp_path / "work"
+
+        skill_dir = tmp_path / "skill"
+        skill_templates = skill_dir / "templates"
+        skill_templates.mkdir(parents=True)
+        (skill_templates / "test.txt").write_text("canonical")
+
+        manager = RuntimeManager(work_dir=work_dir, skill_dir=skill_dir)
+        resolved = manager.resolve_template("test.txt")
+
+        assert resolved == skill_templates / "test.txt"
+
 
 class TestGetRuntimeContext:
     """Tests for get_runtime_context() method."""
@@ -640,9 +473,9 @@ class TestGetRuntimeContext:
         # Create a runtime state
         state = {
             "work_dir": str(tmp_path),
-            "current_release": {
-                "hash": "abc123",
-                "path": str(tmp_path / "release"),
+            "bundle_hash": "abc123",
+            "canonical_paths": {
+                "scripts_dir": str(tmp_path / "scripts"),
             },
             "profile": {"WORK_DIR": str(tmp_path)},
         }
@@ -651,7 +484,7 @@ class TestGetRuntimeContext:
         ctx = manager.get_runtime_context()
 
         assert ctx is not None
-        assert ctx["current_release"]["hash"] == "abc123"
+        assert ctx["bundle_hash"] == "abc123"
 
 
 class TestBrowserMode:
@@ -671,7 +504,7 @@ class TestBrowserMode:
 
         manager.save_browser_mode(
             mode="cdp",
-            cdp_port="9230",
+            cdp_port="9234",
             auth_file=None,
             headed=True,
         )
@@ -680,7 +513,7 @@ class TestBrowserMode:
 
         assert result is not None
         assert result["mode"] == "cdp"
-        assert result["cdp_port"] == "9230"
+        assert result["cdp_port"] == "9234"
         assert result["headed"] is True
         assert "updated_at" in result
 
@@ -690,7 +523,7 @@ class TestBrowserMode:
 
         manager.save_browser_mode(
             mode="agent-browser",
-            cdp_port="9230",
+            cdp_port="9234",
             auth_file=str(tmp_path / "auth.json"),
         )
 
@@ -700,7 +533,7 @@ class TestBrowserMode:
         """Should clear browser mode."""
         manager = RuntimeManager(work_dir=tmp_path, skill_dir=tmp_path)
 
-        manager.save_browser_mode(mode="cdp", cdp_port="9230")
+        manager.save_browser_mode(mode="cdp", cdp_port="9234")
         assert manager.get_browser_mode() is not None
 
         manager.clear_browser_mode()
@@ -720,6 +553,47 @@ class TestBrowserMode:
 
         assert manager.browser_mode_path == tmp_path / "runtime" / "browser_mode.json"
         assert manager.auth_dir == tmp_path / "runtime" / "auth"
+
+
+class TestNoCopyBehavior:
+    """Tests for the no-copy canonical resolution behavior."""
+
+    def test_no_releases_directory_created(self, tmp_path):
+        """Should not create releases/ directory during initialization."""
+        scripts_dir = tmp_path / "skill" / "scripts"
+        scripts_dir.mkdir(parents=True)
+        (scripts_dir / "test.py").write_text("# test")
+
+        manager = RuntimeManager(
+            work_dir=tmp_path / "work",
+            skill_dir=tmp_path / "skill",
+        )
+
+        manager.initialize()
+
+        # Should NOT create releases/ or current/
+        assert not (manager.runtime_dir / "releases").exists()
+        assert not (manager.runtime_dir / "current").exists()
+
+    def test_canonical_paths_in_context(self, tmp_path):
+        """Context should contain canonical paths, not runtime paths."""
+        scripts_dir = tmp_path / "skill" / "scripts"
+        scripts_dir.mkdir(parents=True)
+        (scripts_dir / "test.py").write_text("# test")
+
+        manager = RuntimeManager(
+            work_dir=tmp_path / "work",
+            skill_dir=tmp_path / "skill",
+        )
+
+        ctx = manager.initialize()
+
+        # Should have canonical_paths, not current_release
+        assert "canonical_paths" in ctx
+        assert "scripts_dir" in ctx["canonical_paths"]
+        assert ctx["canonical_paths"]["scripts_dir"] == str(
+            tmp_path / "skill" / "scripts"
+        )
 
 
 if __name__ == "__main__":

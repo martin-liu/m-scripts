@@ -13,7 +13,12 @@ if [[ -f ~/.config/linkedin-sourcing/profile.sh ]]; then
     source ~/.config/linkedin-sourcing/profile.sh
 fi
 
-CDP_PORT="${CDP_PORT:-9230}"
+if [[ -n "${WORK_DIR:-}" ]]; then
+    export WORK_DIR
+fi
+
+CDP_PORT="${CDP_PORT:-9234}"
+export CDP_PORT
 
 # Parse arguments
 VERIFY_ONLY=""

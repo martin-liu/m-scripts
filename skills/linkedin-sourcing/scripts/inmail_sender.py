@@ -20,17 +20,16 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-
-CONNECT_BROWSER_GUIDANCE = (
-    'Run the canonical connect script: bash "$WORK_DIR/runtime/current/scripts/connect_browser.sh" '
-    '(or "$SKILL_DIR/scripts/connect_browser.sh" before runtime init)'
-)
+CONNECT_BROWSER_SCRIPT = Path(__file__).resolve().with_name("connect_browser.sh")
+CONNECT_BROWSER_GUIDANCE = f'Run: bash "{CONNECT_BROWSER_SCRIPT}" to connect Chrome'
 
 
 # Import browser_utils for mode-aware operations
 sys.path.insert(0, str(Path(__file__).parent))
 from browser_utils import (
+    ActionRequired,
     BrowserMode,
+    FailureCode,
     check_cdp_available,
     get_browser_mode,
     resolve_browser_mode,
@@ -106,7 +105,7 @@ def resolve_browser_mode_with_fallback(
         return BrowserMode(mode="cdp", cdp_port=env_port)
 
     # Priority 5: Default CDP mode
-    return BrowserMode(mode="cdp", cdp_port="9230")
+    return BrowserMode(mode="cdp", cdp_port="9234")
 
 
 SUBJECT_SELECTOR = (
@@ -134,6 +133,18 @@ SEND_SUCCESS_SIGNALS = {
     "toast_notification",  # LinkedIn shows "Message sent" toast
     "sent_confirmation",  # Explicit sent confirmation text
 }
+
+LAST_NAVIGATION_FAILURE_CODE: str | None = None
+
+
+def _is_browser_unavailable_message(error_text: str | None) -> bool:
+    """Return whether an error string indicates the browser is unavailable."""
+    if not error_text:
+        return False
+
+    lowered = error_text.lower()
+    return "browser not available" in lowered or "agent-browser not found" in lowered
+
 
 RECENT_CONTACT_CHECK_JS = r"""
 (function() {
@@ -427,11 +438,17 @@ def navigate_to_profile(
     agent-browser open can occasionally time out even when Chrome has already landed
     on the requested profile. Treat that as success only when the final URL matches.
     """
+    global LAST_NAVIGATION_FAILURE_CODE
+    LAST_NAVIGATION_FAILURE_CODE = None
+
     returncode, _, stderr = run_agent_browser(
         mode, "open", profile_url, timeout_sec=timeout_sec
     )
     if returncode == 0:
         return True
+    if _is_browser_unavailable_message(stderr):
+        LAST_NAVIGATION_FAILURE_CODE = FailureCode.BROWSER_UNAVAILABLE
+        return False
     if returncode == -1 and stderr.strip() == "timeout":
         deadline = time.time() + recovery_wait_sec
         while time.time() < deadline:
@@ -1015,6 +1032,32 @@ def check_recent_contact(mode: BrowserMode) -> tuple[bool, str]:
     return False, result.get("reason", "no_recent_contact")
 
 
+def _build_failure_result(
+    reason: str,
+    failure_code: str,
+    action_required: ActionRequired,
+    clean_state: bool = False,
+    verify_only: bool = False,
+    profile_url: str = "",
+    browser_state: dict | None = None,
+) -> dict:
+    """Build a standardized failure result with action_required payload.
+
+    This helper ensures consistent failure result structure across all
+    failure points in send_inmail_with_result.
+    """
+    return {
+        "status": "FAILED",
+        "reason": reason,
+        "failure_code": failure_code,
+        "action_required": action_required.to_dict(),
+        "clean_state": clean_state,
+        "verify_only": verify_only,
+        "profile_url": profile_url,
+        "browser_state": browser_state,
+    }
+
+
 def send_inmail_with_result(
     mode: BrowserMode,
     profile_url: str,
@@ -1035,6 +1078,8 @@ def send_inmail_with_result(
         Dict with keys:
         - status: "SENT", "VERIFIED", "ALREADY_CONTACTED", or "FAILED"
         - reason: Description of result or failure cause
+        - failure_code: Stable failure code (for FAILED status)
+        - action_required: Structured manual steps (for FAILED status)
         - clean_state: True if browser is in clean state after operation
         - verify_only: True if this was a verify-only run
         - profile_url: The profile URL that was processed
@@ -1043,28 +1088,67 @@ def send_inmail_with_result(
     result = {
         "status": "FAILED",
         "reason": "unknown",
+        "failure_code": None,
+        "action_required": None,
         "clean_state": False,
         "verify_only": verify_only,
         "profile_url": profile_url,
         "browser_state": None,
     }
 
-    # Fast dialog guard before cleanup to prevent hangs
-    guard_dialogs(mode, timeout_sec=2.0)
+    # Fail-fast: Check initial browser state before any operations.
+    # Do not auto-clean here because dismissing a dirty composer can trigger discard flows.
+    initial_state = probe_page_state(mode, timeout_sec=DEFAULT_DIALOG_TIMEOUT)
+    if initial_state["dialog_open"]:
+        return _build_failure_result(
+            reason="browser_dialog_blocking_send",
+            failure_code=FailureCode.DIALOG_BLOCKED,
+            action_required=ActionRequired.dialog_blocked(),
+            clean_state=False,
+            verify_only=verify_only,
+            profile_url=profile_url,
+            browser_state=initial_state,
+        )
 
-    if not cleanup_open_composer(mode):
-        result["reason"] = "cleanup_before_navigation_failed"
-        result["clean_state"] = False
-        return result
+    if initial_state["composer_open"] or initial_state.get("has_discard_dialog"):
+        return _build_failure_result(
+            reason="browser_state_not_clean",
+            failure_code=FailureCode.AMBIGUOUS_STATE,
+            action_required=ActionRequired.ambiguous_state(
+                details="Browser has an open composer or discard confirmation. "
+                "Please close any open message composers or dialogs manually before retrying."
+            ),
+            clean_state=False,
+            verify_only=verify_only,
+            profile_url=profile_url,
+            browser_state=initial_state,
+        )
 
-    # Guard before navigation
-    guard_dialogs(mode, timeout_sec=1.0)
-
+    global LAST_NAVIGATION_FAILURE_CODE
+    LAST_NAVIGATION_FAILURE_CODE = None
     if not navigate_to_profile(mode, profile_url, timeout_sec=10):
-        # Best-effort cleanup after navigation failure
-        result["reason"] = "navigation_failed"
-        result["clean_state"] = cleanup_open_composer(mode)
-        return result
+        if LAST_NAVIGATION_FAILURE_CODE == FailureCode.BROWSER_UNAVAILABLE:
+            return _build_failure_result(
+                reason="browser_unavailable",
+                failure_code=FailureCode.BROWSER_UNAVAILABLE,
+                action_required=ActionRequired.browser_unavailable(
+                    cdp_port=mode.cdp_port if mode.is_cdp() else None
+                ),
+                clean_state=False,
+                verify_only=verify_only,
+                profile_url=profile_url,
+            )
+        return _build_failure_result(
+            reason="navigation_failed",
+            failure_code=FailureCode.WRONG_PAGE,
+            action_required=ActionRequired.wrong_page(
+                expected_url=profile_url,
+                actual_url=None,
+            ),
+            clean_state=True,
+            verify_only=verify_only,
+            profile_url=profile_url,
+        )
 
     # Guard after navigation
     guard_dialogs(mode, timeout_sec=1.0)
@@ -1074,32 +1158,67 @@ def send_inmail_with_result(
     if has_recent_contact:
         # Check failed - fail safe by not sending
         if contact_reason == "check_failed":
-            result["status"] = "FAILED"
-            result["reason"] = "recent_contact_check_failed"
-            result["clean_state"] = cleanup_open_composer(mode)
-            return result
-        # Recent contact detected - skip sending
+            # No composer opened yet, state is still clean
+            return _build_failure_result(
+                reason="recent_contact_check_failed",
+                failure_code=FailureCode.VERIFICATION_FAILED,
+                action_required=ActionRequired.verification_failed(
+                    verification_type="recent_contact_check",
+                    details="Could not verify if candidate has been recently contacted",
+                ),
+                clean_state=True,  # No composer opened yet
+                verify_only=verify_only,
+                profile_url=profile_url,
+            )
+        # Recent contact detected - skip sending (not a failure)
         result["status"] = "ALREADY_CONTACTED"
         result["reason"] = contact_reason
-        result["clean_state"] = cleanup_open_composer(mode)
+        result["clean_state"] = True  # No composer opened
         return result
 
     if not wait_for_message_button(mode, timeout_sec=10):
-        result["reason"] = "message_button_never_appeared"
-        result["clean_state"] = cleanup_open_composer(mode)
-        return result
+        # No composer opened yet, state is clean
+        return _build_failure_result(
+            reason="message_button_never_appeared",
+            failure_code=FailureCode.ELEMENT_MISSING,
+            action_required=ActionRequired.element_missing(
+                selector="Message button (button with text matching /^Message\\s/)",
+                page_url=profile_url,
+            ),
+            clean_state=True,
+            verify_only=verify_only,
+            profile_url=profile_url,
+        )
 
     # Click Message button
     if not click_message_button(mode):
-        result["reason"] = "click_message_button_failed"
-        result["clean_state"] = cleanup_open_composer(mode)
-        return result
+        # No composer opened yet, state is clean
+        return _build_failure_result(
+            reason="click_message_button_failed",
+            failure_code=FailureCode.ELEMENT_MISSING,
+            action_required=ActionRequired.element_missing(
+                selector="Message button (button with text matching /^Message\\s/)",
+                page_url=profile_url,
+            ),
+            clean_state=True,
+            verify_only=verify_only,
+            profile_url=profile_url,
+        )
 
     # Wait for composer to appear
     if not wait_for_composer(mode, timeout_sec=10):
-        result["reason"] = "wait_for_composer_failed"
-        result["clean_state"] = cleanup_open_composer(mode)
-        return result
+        # Composer may have partially opened - state is dirty
+        return _build_failure_result(
+            reason="wait_for_composer_failed",
+            failure_code=FailureCode.ELEMENT_MISSING,
+            action_required=ActionRequired.element_missing(
+                selector="Message composer (subject input or body editor)",
+                page_url=profile_url,
+            ),
+            clean_state=False,  # Composer may be partially open
+            verify_only=verify_only,
+            profile_url=profile_url,
+        )
 
     dismiss_inline_banners(mode)
 
@@ -1108,49 +1227,97 @@ def send_inmail_with_result(
 
     # Clear and fill subject
     if not clear_and_fill_subject(mode, subject):
-        result["reason"] = "fill_subject_failed"
-        result["clean_state"] = cleanup_open_composer(mode)
-        return result
+        # Composer is open with drafted content - preserve state
+        return _build_failure_result(
+            reason="fill_subject_failed",
+            failure_code=FailureCode.ELEMENT_MISSING,
+            action_required=ActionRequired.element_missing(
+                selector=f"Subject field (matching: {SUBJECT_SELECTOR})",
+                page_url=profile_url,
+            ),
+            clean_state=False,  # Composer has drafted content
+            verify_only=verify_only,
+            profile_url=profile_url,
+        )
 
     # Clear and fill body
     if not clear_and_fill_body(mode, body):
-        result["reason"] = "fill_body_failed"
-        result["clean_state"] = cleanup_open_composer(mode)
-        return result
+        # Composer is open with drafted content - preserve state
+        return _build_failure_result(
+            reason="fill_body_failed",
+            failure_code=FailureCode.ELEMENT_MISSING,
+            action_required=ActionRequired.element_missing(
+                selector=f"Body field (matching: {BODY_SELECTOR})",
+                page_url=profile_url,
+            ),
+            clean_state=False,  # Composer has drafted content
+            verify_only=verify_only,
+            profile_url=profile_url,
+        )
 
     # Verify fields are filled correctly
     if not verify_fields_filled(mode, subject, body):
-        result["reason"] = "verify_fields_failed"
-        result["clean_state"] = cleanup_open_composer(mode)
-        return result
+        # Composer is open with drafted content - preserve state
+        return _build_failure_result(
+            reason="verify_fields_failed",
+            failure_code=FailureCode.VERIFICATION_FAILED,
+            action_required=ActionRequired.verification_failed(
+                verification_type="field_content",
+                details="Subject or body field content does not match expected values",
+            ),
+            clean_state=False,  # Composer has drafted content
+            verify_only=verify_only,
+            profile_url=profile_url,
+        )
 
     if verify_only:
-        # Guard before cleanup in verify mode
+        # Verify-only mode: intentionally open and dismiss composer
         guard_dialogs(mode, timeout_sec=2.0)
-        # Dismiss composer without sending
         clean = cleanup_open_composer(mode)
-        # Guard after cleanup
         guard_dialogs(mode, timeout_sec=1.0)
         result["status"] = "VERIFIED" if clean else "FAILED"
         result["reason"] = (
             "verify_only_completed" if clean else "cleanup_after_verify_failed"
         )
         result["clean_state"] = clean
+        if not clean:
+            result["failure_code"] = FailureCode.AMBIGUOUS_STATE
+            result["action_required"] = ActionRequired.ambiguous_state(
+                details="Could not clean up composer after verify-only run"
+            ).to_dict()
         return result
 
     # Click Send
     if not click_send_button(mode):
-        result["reason"] = "click_send_button_failed"
-        result["clean_state"] = cleanup_open_composer(mode)
-        return result
+        # Composer is open with drafted content - preserve state
+        return _build_failure_result(
+            reason="click_send_button_failed",
+            failure_code=FailureCode.ELEMENT_MISSING,
+            action_required=ActionRequired.element_missing(
+                selector="Send button (button with text matching /Send this message/i)",
+                page_url=profile_url,
+            ),
+            clean_state=False,  # Composer has drafted content
+            verify_only=verify_only,
+            profile_url=profile_url,
+        )
 
     # Wait for send to complete
     if not wait_for_send_complete(mode, timeout_sec=10):
-        result["reason"] = "wait_for_send_complete_failed"
-        result["clean_state"] = cleanup_open_composer(mode)
-        return result
+        # Send may have failed - composer state unknown
+        return _build_failure_result(
+            reason="wait_for_send_complete_failed",
+            failure_code=FailureCode.VERIFICATION_FAILED,
+            action_required=ActionRequired.verification_failed(
+                verification_type="send_confirmation",
+                details="Send completed but no success confirmation detected (toast notification or sent indicator)",
+            ),
+            clean_state=False,  # State unknown after send failure
+            verify_only=verify_only,
+            profile_url=profile_url,
+        )
 
-    # Success - capture final browser state
+    # Success - clean up composer
     result["status"] = "SENT"
     result["reason"] = "message_sent_successfully"
     result["clean_state"] = cleanup_open_composer(mode)
@@ -1204,7 +1371,7 @@ def main():
     parser.add_argument(
         "--cdp-port",
         default=None,
-        help="Chrome DevTools Protocol port (default: from browser mode or 9230)",
+        help="Chrome DevTools Protocol port (default: from browser mode or 9234)",
     )
     parser.add_argument(
         "--work-dir",

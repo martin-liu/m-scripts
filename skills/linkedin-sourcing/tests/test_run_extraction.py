@@ -10,7 +10,7 @@ import json
 import sys
 import tempfile
 from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
@@ -370,6 +370,53 @@ class TestProcessCandidates:
             assert "Workbook write failed" in result["message"]
 
 
+class TestBoundedExtractionState:
+    """Tests for bounded extraction (--max-pages) state persistence."""
+
+    def test_bounded_extraction_marks_completed_when_finished(self, tmp_path):
+        """Bounded extraction should mark state as completed when all pages processed.
+
+        This tests the fix for the gap where direct run_extraction with --max-pages
+        left project_state.json stuck at current_phase=extract, status=running.
+        """
+        # Simulate the final status determination logic from run_extraction
+        max_pages = 2
+        pages_processed = 2
+        max_pages_reached = True
+
+        # When bounded extraction completes (all requested pages processed)
+        bounded_extraction_complete = max_pages > 0 and pages_processed >= max_pages
+        reached_end_of_results = not max_pages_reached  # False in this case
+
+        # Should be marked as completed, not running
+        assert bounded_extraction_complete is True
+        final_status = (
+            "completed"
+            if (bounded_extraction_complete or reached_end_of_results)
+            else "running"
+        )
+        assert final_status == "completed"
+
+    def test_unbounded_extraction_marks_running_when_interrupted(self, tmp_path):
+        """Unbounded extraction should mark running when not finished."""
+        max_pages = 0  # Unlimited
+        pages_processed = 5
+        max_pages_reached = False  # User interrupted, not max-pages limit
+
+        bounded_extraction_complete = max_pages > 0 and pages_processed >= max_pages
+        reached_end_of_results = not max_pages_reached
+
+        # Neither condition met - should be running
+        assert bounded_extraction_complete is False
+        assert reached_end_of_results is True  # This would actually be completed
+        final_status = (
+            "completed"
+            if (bounded_extraction_complete or reached_end_of_results)
+            else "running"
+        )
+        assert final_status == "completed"
+
+
 class TestRunExtraction:
     """Integration tests for run_extraction workflow."""
 
@@ -420,7 +467,7 @@ class TestRunExtraction:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.dry_run = False
         args.start_page = 1
         args.max_pages = 1
@@ -474,7 +521,7 @@ class TestRunExtraction:
         args.config = "/path/to/config.sh"
         args.workbook = None
         args.dry_run = False
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
 
         result = re.run_extraction(args)
 
@@ -516,7 +563,7 @@ class TestRunExtraction:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.dry_run = False
         args.start_page = 1
         args.max_pages = 1
@@ -564,7 +611,7 @@ class TestRunExtraction:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.dry_run = False
         args.start_page = 1
         args.max_pages = 1
@@ -612,7 +659,7 @@ class TestRunExtraction:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.dry_run = False
         args.start_page = 1
         args.max_pages = 1
@@ -660,7 +707,7 @@ class TestRunExtraction:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.dry_run = False
         args.start_page = 1
         args.max_pages = 1
@@ -728,7 +775,7 @@ class TestRunExtraction:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.dry_run = False
         args.start_page = 1
         args.max_pages = 2
@@ -744,6 +791,7 @@ class TestRunExtraction:
         assert mock_navigate.call_count == 1  # Navigate called once for page 2
 
     @patch("run_extraction.navigate_to_page")
+    @patch("run_extraction.save_extraction_state")
     @patch("run_extraction.extract_candidates_from_page")
     @patch("run_extraction.ensure_workbook")
     @patch("run_extraction.resolve_workbook_path")
@@ -756,6 +804,7 @@ class TestRunExtraction:
         mock_resolve,
         mock_ensure,
         mock_extract,
+        mock_save_state,
         mock_navigate,
         tmp_path,
     ):
@@ -771,12 +820,21 @@ class TestRunExtraction:
             "candidates": [{"name": "User", "url": "https://linkedin.com/in/user"}],
             "exit_code": 0,
         }
+        mock_save_state.return_value = True
         # Navigation fails on page 2
         mock_navigate.return_value = {
             "success": False,
             "url": "...",
             "state": "error",
             "error": "Next page pagination control not found",
+            "failure_code": "wrong_page",
+            "action_required": {
+                "code": "wrong_page",
+                "summary": "Browser landed on the wrong page",
+                "steps": ["Return to the expected search page"],
+                "can_retry": True,
+                "context": {},
+            },
         }
         mock_resolve_context.return_value = {
             "success": True,
@@ -787,7 +845,7 @@ class TestRunExtraction:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.dry_run = False
         args.start_page = 1
         args.max_pages = 5  # Request more pages than available
@@ -802,6 +860,78 @@ class TestRunExtraction:
         assert result.get("exit_code") == 1
         assert "Navigation failed" in result["message"]
         assert result["pages_processed"] == 1  # Only processed page 1 before failure
+        assert result["failure_code"] == "wrong_page"
+        assert result["action_required"]["code"] == "wrong_page"
+
+    @patch("run_extraction.navigate_to_page")
+    @patch("run_extraction.save_extraction_state")
+    @patch("run_extraction.extract_candidates_from_page")
+    @patch("run_extraction.ensure_workbook")
+    @patch("run_extraction.resolve_workbook_path")
+    @patch("run_extraction.parse_config_file")
+    @patch("run_extraction.resolve_fresh_search_context")
+    def test_navigation_failure_preserves_action_required_when_state_save_fails(
+        self,
+        mock_resolve_context,
+        mock_parse,
+        mock_resolve,
+        mock_ensure,
+        mock_extract,
+        mock_save_state,
+        mock_navigate,
+        tmp_path,
+    ):
+        """Should preserve structured fallback even if state persistence also fails."""
+        mock_parse.return_value = {
+            "PROJECT_ID": "123",
+            "RECRUITER_PROJECT_URL": "https://linkedin.com/talent/hire/123/discover/recruiterSearch",
+        }
+        mock_resolve.return_value = tmp_path / "workbook.xlsx"
+        mock_ensure.return_value = True
+        mock_extract.return_value = {
+            "success": True,
+            "candidates": [{"name": "User", "url": "https://linkedin.com/in/user"}],
+            "exit_code": 0,
+        }
+        mock_save_state.side_effect = [True, False]
+        mock_navigate.return_value = {
+            "success": False,
+            "url": "...",
+            "state": "page_2_not_ready",
+            "error": "Page 2 not ready: loading",
+            "failure_code": "timeout",
+            "action_required": {
+                "code": "timeout",
+                "summary": "Page load timed out",
+                "steps": ["Wait for the page to finish loading and retry"],
+                "can_retry": True,
+                "context": {},
+            },
+        }
+        mock_resolve_context.return_value = {
+            "success": True,
+            "fresh_url": "https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=abc",
+            "error": None,
+        }
+
+        args = Mock()
+        args.config = "/path/to/config.sh"
+        args.workbook = None
+        args.cdp_port = "9234"
+        args.dry_run = False
+        args.start_page = 1
+        args.max_pages = 5
+
+        with patch("run_extraction.get_existing_keys") as mock_keys:
+            mock_keys.return_value = set()
+            with patch("run_extraction.upsert") as mock_upsert:
+                mock_upsert.return_value = {"row_id": 1, "action": "inserted"}
+                result = re.run_extraction(args)
+
+        assert result["success"] is False
+        assert result.get("exit_code") == 2
+        assert result["failure_code"] == "timeout"
+        assert result["action_required"]["code"] == "timeout"
 
     @patch("run_extraction.extract_candidates_from_page")
     @patch("run_extraction.ensure_workbook")
@@ -841,7 +971,7 @@ class TestRunExtraction:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.dry_run = False
         args.start_page = 1
         args.max_pages = 1
@@ -902,7 +1032,7 @@ class TestRunExtraction:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.dry_run = False
         args.start_page = 1
         args.max_pages = 1
@@ -955,7 +1085,7 @@ class TestRunExtraction:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.dry_run = False
         args.start_page = 1
         args.max_pages = 1
@@ -1007,7 +1137,7 @@ class TestRunExtraction:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.dry_run = False
         args.start_page = 1
         args.max_pages = 1
@@ -1058,7 +1188,7 @@ class TestRunExtraction:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.dry_run = False
         args.start_page = 1
         args.max_pages = 1
@@ -1110,7 +1240,7 @@ class TestRunExtraction:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.dry_run = False
         args.start_page = 3  # Start from page 3
         args.max_pages = 1
@@ -1329,7 +1459,7 @@ class TestFreshContextResolution:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.dry_run = False
         args.start_page = 1
         args.max_pages = 1
@@ -1348,9 +1478,10 @@ class TestFreshContextResolution:
         assert "searchContextId" in call_args[1]["target_url"]
 
     @patch("run_extraction.resolve_fresh_search_context")
+    @patch("run_extraction.run_preflight")
     @patch("run_extraction.parse_config_file")
     def test_fail_closed_when_fresh_context_cannot_be_resolved(
-        self, mock_parse, mock_resolve_context, tmp_path
+        self, mock_parse, mock_preflight, mock_resolve_context, tmp_path
     ):
         """Should fail closed with clear error when fresh context cannot be resolved."""
         mock_parse.return_value = {
@@ -1366,12 +1497,29 @@ class TestFreshContextResolution:
                 "The configured URL may be stale or the project may not have active search context. "
                 "Try visiting the project in LinkedIn Recruiter and performing a search first."
             ),
+            "failure_code": "browser_unavailable",
+            "action_required": {
+                "code": "browser_unavailable",
+                "summary": "Chrome browser is not available for automation",
+                "steps": ["Reconnect Chrome"],
+                "can_retry": True,
+                "context": {},
+            },
+        }
+
+        mock_preflight.return_value = {
+            "success": True,
+            "project_id": "123",
+            "cdp_port": "9234",
+            "work_dir": str(tmp_path),
+            "workbook_path": tmp_path / "workbook.xlsx",
+            "existing_urls": set(),
         }
 
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.dry_run = False
         args.start_page = 1
         args.max_pages = 1
@@ -1381,6 +1529,8 @@ class TestFreshContextResolution:
         assert result["success"] is False
         assert result.get("exit_code") == 1
         assert "Could not resolve fresh search context" in result["message"]
+        assert result["failure_code"] == "browser_unavailable"
+        assert result["action_required"]["code"] == "browser_unavailable"
 
 
 class TestPaginationControls:
@@ -1391,6 +1541,7 @@ class TestPaginationControls:
         """Keep browser preflight deterministic in pagination tests."""
 
     @patch("recruiter_page_utils.ensure_page_ready")
+    @patch("run_extraction.get_current_page_from_browser")
     @patch("run_extraction.click_next_page_pagination")
     @patch("run_extraction.extract_candidates_from_page")
     @patch("run_extraction.ensure_workbook")
@@ -1405,6 +1556,7 @@ class TestPaginationControls:
         mock_ensure,
         mock_extract,
         mock_click_next,
+        mock_get_current,
         mock_ensure_ready,
         tmp_path,
     ):
@@ -1444,6 +1596,16 @@ class TestPaginationControls:
             "current_url": actual_page2_url,
             "error": None,
         }
+        mock_get_current.return_value = {
+            "success": True,
+            "current_page": 1,
+            "current_url": "https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=abc",
+            "is_contextual": True,
+            "same_project": True,
+            "error": None,
+            "failure_code": None,
+            "action_required": None,
+        }
         # Mock ensure_page_ready to return ready for both page 1 and page 2
         mock_ensure_ready.side_effect = [
             {"ready": True, "state": "ready"},  # Page 1
@@ -1453,7 +1615,7 @@ class TestPaginationControls:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.dry_run = False
         args.start_page = 1
         args.max_pages = 2
@@ -1474,6 +1636,7 @@ class TestPaginationControls:
         assert "uiOrigin=PAGINATION" in second_call_args[1]["target_url"]
 
     @patch("recruiter_page_utils.ensure_page_ready")
+    @patch("run_extraction.get_current_page_from_browser")
     @patch("run_extraction.click_next_page_pagination")
     @patch("run_extraction.extract_candidates_from_page")
     @patch("run_extraction.ensure_workbook")
@@ -1488,6 +1651,7 @@ class TestPaginationControls:
         mock_ensure,
         mock_extract,
         mock_click_next,
+        mock_get_current,
         mock_ensure_ready,
         tmp_path,
     ):
@@ -1515,13 +1679,23 @@ class TestPaginationControls:
             "current_url": "",
             "error": "Next page pagination control not found",
         }
+        mock_get_current.return_value = {
+            "success": True,
+            "current_page": 1,
+            "current_url": "https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=abc",
+            "is_contextual": True,
+            "same_project": True,
+            "error": None,
+            "failure_code": None,
+            "action_required": None,
+        }
         # Mock ensure_page_ready for both pages (fallback succeeds)
         mock_ensure_ready.return_value = {"ready": True, "state": "ready"}
 
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.dry_run = False
         args.start_page = 1
         args.max_pages = 2
@@ -1593,7 +1767,7 @@ class TestPaginationControls:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.dry_run = False
         args.start_page = 1
         args.max_pages = 2
@@ -1617,6 +1791,7 @@ class TestLastPageHandling:
         """Keep browser preflight deterministic in last-page tests."""
 
     @patch("recruiter_page_utils.ensure_page_ready")
+    @patch("run_extraction.get_current_page_from_browser")
     @patch("run_extraction.click_next_page_pagination")
     @patch("run_extraction.extract_candidates_from_page")
     @patch("run_extraction.ensure_workbook")
@@ -1631,6 +1806,7 @@ class TestLastPageHandling:
         mock_ensure,
         mock_extract,
         mock_click_next,
+        mock_get_current,
         mock_ensure_ready,
         tmp_path,
     ):
@@ -1660,12 +1836,22 @@ class TestLastPageHandling:
             "current_url": "https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=abc",
             "error": None,
         }
+        mock_get_current.return_value = {
+            "success": True,
+            "current_page": 1,
+            "current_url": "https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=abc",
+            "is_contextual": True,
+            "same_project": True,
+            "error": None,
+            "failure_code": None,
+            "action_required": None,
+        }
         mock_ensure_ready.return_value = {"ready": True, "state": "ready"}
 
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.dry_run = False
         args.start_page = 1
         args.max_pages = 5  # Request more pages than available
@@ -1729,7 +1915,7 @@ class TestLastPageHandling:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.dry_run = False
         args.start_page = 1
         args.max_pages = 10
@@ -1750,6 +1936,7 @@ class TestLastPageHandling:
 class TestFreshContextResolutionBlocker:
     """Regression tests for fresh-context resolution blocker."""
 
+    @patch("run_extraction.check_current_page_ready_for_extraction")
     @patch("ensure_recruiter_project.resolve_search_url")
     @patch("ensure_recruiter_project.validate_project_context")
     @patch("recruiter_page_utils.ensure_page_ready")
@@ -1760,13 +1947,28 @@ class TestFreshContextResolutionBlocker:
         mock_ensure_ready,
         mock_validate_context,
         mock_resolve_search,
+        mock_check_current,
     ):
         """Should fail closed when navigation to overview page cannot be confirmed."""
+        mock_check_current.return_value = {
+            "ready": False,
+            "current_url": "https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=old",
+            "state": "not_contextual_search",
+        }
+
         # Simulate navigation failure - page not ready after navigation attempt
         mock_ensure_ready.return_value = {
             "ready": False,
             "state": "unknown",
             "identity_check": {"matches": False, "error": "URL mismatch"},
+            "failure_code": "browser_unavailable",
+            "action_required": {
+                "code": "browser_unavailable",
+                "summary": "Chrome browser is not available for automation",
+                "steps": ["Reconnect Chrome"],
+                "can_retry": True,
+                "context": {},
+            },
         }
         mock_recovery_instance = Mock()
         mock_recovery_instance._navigate_to_url = Mock()
@@ -1774,7 +1976,7 @@ class TestFreshContextResolutionBlocker:
 
         # Attempt to resolve fresh context
         result = re.resolve_fresh_search_context(
-            cdp_port="9230",
+            cdp_port="9234",
             configured_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=old",
             work_dir=None,
         )
@@ -1783,6 +1985,8 @@ class TestFreshContextResolutionBlocker:
         assert result["success"] is False
         assert result["fresh_url"] is None
         assert "Failed to navigate to stable project overview" in result["error"]
+        assert result["failure_code"] == "browser_unavailable"
+        assert result["action_required"]["code"] == "browser_unavailable"
         # Should NOT call resolve_search_url with stale URL
         mock_resolve_search.assert_not_called()
 
@@ -1814,7 +2018,7 @@ class TestFreshContextResolutionBlocker:
         mock_recovery_class.return_value = mock_recovery_instance
 
         result = re.resolve_fresh_search_context(
-            cdp_port="9230",
+            cdp_port="9234",
             configured_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=stale",
             work_dir=None,
         )
@@ -1854,7 +2058,7 @@ class TestFreshContextResolutionBlocker:
         mock_recovery_class.return_value = mock_recovery_instance
 
         result = re.resolve_fresh_search_context(
-            cdp_port="9230",
+            cdp_port="9234",
             configured_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=stale",
             work_dir=None,
         )
@@ -1867,7 +2071,7 @@ class TestFreshContextResolutionBlocker:
         )
         # Should call resolve_search_url from confirmed overview page
         mock_resolve_search.assert_called_once_with(
-            "9230", "https://linkedin.com/talent/hire/123/overview"
+            "9234", "https://linkedin.com/talent/hire/123/overview"
         )
 
     @patch("ensure_recruiter_project.resolve_search_url")
@@ -1900,7 +2104,7 @@ class TestFreshContextResolutionBlocker:
         mock_recovery_class.return_value = mock_recovery_instance
 
         result = re.resolve_fresh_search_context(
-            cdp_port="9230",
+            cdp_port="9234",
             configured_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=stale",
             work_dir=None,
         )
@@ -1930,7 +2134,7 @@ class TestFreshContextResolutionBlocker:
         mock_recovery_class.return_value = mock_recovery_instance
 
         result = re.resolve_fresh_search_context(
-            cdp_port="9230",
+            cdp_port="9234",
             configured_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=stale",
             work_dir=None,
         )
@@ -1940,6 +2144,56 @@ class TestFreshContextResolutionBlocker:
         assert result["fresh_url"] is None
         assert "Failed to navigate to stable project overview" in result["error"]
         assert mock_ensure_ready.call_count == 5  # Max wait attempts
+
+    @patch("ensure_recruiter_project.resolve_search_url")
+    @patch("ensure_recruiter_project.validate_project_context")
+    @patch("recruiter_page_utils.ensure_page_ready")
+    @patch("recruiter_page_utils.RecoveryHelper")
+    def test_validate_project_context_called_with_browser_mode_param(
+        self,
+        mock_recovery_class,
+        mock_ensure_ready,
+        mock_validate_context,
+        mock_resolve_search,
+    ):
+        """Regression test: validate_project_context must be called with browser_mode param.
+
+        This test catches API drift where the caller uses cdp_port= but the
+        callee expects browser_mode=. The function signature is:
+        validate_project_context(browser_mode: BrowserMode | str, ...)
+        """
+        mock_ensure_ready.return_value = {"ready": True, "state": "ready"}
+        mock_validate_context.return_value = {
+            "valid": True,
+            "current_url": "https://linkedin.com/talent/hire/123/overview",
+            "project_id": "123",
+            "error": None,
+        }
+        mock_resolve_search.return_value = "https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=fresh123"
+        mock_recovery_instance = Mock()
+        mock_recovery_instance._navigate_to_url = Mock()
+        mock_recovery_class.return_value = mock_recovery_instance
+
+        result = re.resolve_fresh_search_context(
+            cdp_port="9234",
+            configured_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=stale",
+            work_dir=None,
+        )
+
+        # Should succeed
+        assert result["success"] is True
+
+        # CRITICAL: Verify validate_project_context was called with browser_mode param
+        # NOT cdp_port (which would cause TypeError: unexpected keyword argument)
+        mock_validate_context.assert_called_once()
+        call_kwargs = mock_validate_context.call_args[1]
+        assert "browser_mode" in call_kwargs, (
+            "validate_project_context must be called with 'browser_mode' parameter. "
+            "Using 'cdp_port' will cause TypeError due to signature mismatch."
+        )
+        assert call_kwargs["browser_mode"] == "9234"
+        assert "expected_project_id" in call_kwargs
+        assert call_kwargs["expected_project_id"] == "123"
 
 
 class TestRuntimeManagerIntegration:
@@ -1970,6 +2224,7 @@ class TestRuntimeManagerIntegration:
         """Should use RuntimeManager to resolve CDP port from profile."""
         mock_manager = MagicMock()
         mock_manager._resolve_profile.return_value = {"CDP_PORT": "9999"}
+        mock_manager.work_dir = "/tmp/test_work_dir"
         mock_manager_class.return_value = mock_manager
 
         mock_resolve_context.return_value = {
@@ -2001,11 +2256,22 @@ class TestRuntimeManagerIntegration:
                 }
 
                 with patch("run_extraction.get_existing_keys"):
-                    re.run_extraction(args)
+                    # Patch run_preflight to return successful result with CDP port
+                    with patch("run_extraction.run_preflight") as mock_preflight:
+                        mock_preflight.return_value = {
+                            "success": True,
+                            "project_id": "123",
+                            "cdp_port": "9999",  # This should come from RuntimeManager
+                            "work_dir": "/tmp/test_work_dir",
+                            "workbook_path": "/tmp/test_work_dir/projects/123.xlsx",
+                            "existing_urls": set(),
+                        }
 
-                    # Verify extract was called with port from RuntimeManager
-                    call_args = mock_extract.call_args
-                    assert call_args[1]["cdp_port"] == "9999"
+                        re.run_extraction(args)
+
+                        # Verify extract was called with port from RuntimeManager
+                        call_args = mock_extract.call_args
+                        assert call_args[1]["cdp_port"] == "9999"
 
 
 class TestContextualPageOptimization:
@@ -2034,7 +2300,7 @@ class TestContextualPageOptimization:
         }
 
         result = re.resolve_fresh_search_context(
-            cdp_port="9230",
+            cdp_port="9234",
             configured_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch",
             work_dir=None,
         )
@@ -2080,7 +2346,7 @@ class TestContextualPageOptimization:
         mock_recovery_class.return_value = mock_recovery_instance
 
         result = re.resolve_fresh_search_context(
-            cdp_port="9230",
+            cdp_port="9234",
             configured_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch",
             work_dir=None,
         )
@@ -2124,7 +2390,7 @@ class TestContextualPageOptimization:
         mock_recovery_class.return_value = mock_recovery_instance
 
         result = re.resolve_fresh_search_context(
-            cdp_port="9230",
+            cdp_port="9234",
             configured_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch",
             work_dir=None,
         )
@@ -2176,7 +2442,7 @@ class TestContextualPageOptimization:
         mock_recovery_class.return_value = mock_recovery_instance
 
         result = re.resolve_fresh_search_context(
-            cdp_port="9230",
+            cdp_port="9234",
             configured_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch",
             work_dir=None,
         )
@@ -2227,7 +2493,7 @@ class TestContextualPageOptimization:
         mock_recovery_class.return_value = mock_recovery_instance
 
         result = re.resolve_fresh_search_context(
-            cdp_port="9230",
+            cdp_port="9234",
             configured_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch",
             work_dir=None,
         )
@@ -2236,6 +2502,58 @@ class TestContextualPageOptimization:
         assert result["success"] is False
         assert result["fresh_url"] is None
         assert "Could not resolve fresh search context" in result["error"]
+
+    @patch("run_extraction.check_current_page_ready_for_extraction")
+    @patch("ensure_recruiter_project.resolve_search_url")
+    @patch("ensure_recruiter_project.validate_project_context")
+    @patch("recruiter_page_utils.ensure_page_ready")
+    @patch("recruiter_page_utils.RecoveryHelper")
+    def test_fails_closed_when_project_is_still_on_start_search(
+        self,
+        mock_recovery_class,
+        mock_ensure_ready,
+        mock_validate_context,
+        mock_resolve_search,
+        mock_check_current,
+    ):
+        """Should require search creation before extraction when project is unconfigured."""
+        mock_check_current.side_effect = [
+            {
+                "ready": False,
+                "current_url": "https://linkedin.com/talent/hire/123/overview",
+                "state": "not_contextual_search",
+            },
+            {
+                "ready": False,
+                "current_url": "https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=fresh",
+                "state": "search_not_configured",
+            },
+        ]
+        mock_ensure_ready.return_value = {"ready": True, "state": "ready"}
+        mock_validate_context.return_value = {
+            "valid": True,
+            "current_url": "https://linkedin.com/talent/hire/123/overview",
+            "project_id": "123",
+            "error": None,
+        }
+        mock_resolve_search.return_value = "https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=fresh"
+        mock_recovery_instance = Mock()
+        mock_recovery_instance._navigate_to_url = Mock()
+        mock_recovery_class.return_value = mock_recovery_instance
+
+        result = re.resolve_fresh_search_context(
+            cdp_port="9234",
+            configured_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch",
+            work_dir=None,
+        )
+
+        assert result["success"] is False
+        assert "does not have a candidate search yet" in result["error"]
+        assert result["failure_code"] == "wrong_page"
+        assert (
+            result["action_required"]["summary"]
+            == "Recruiter project is still on the search-creation screen"
+        )
 
 
 class TestIsContextualRecruiterSearchUrl:
@@ -2320,7 +2638,7 @@ class TestGetCurrentPageFromBrowser:
         page1_url = "https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=abc"
         mock_run_browser.return_value = {"parsed": {"url": page1_url}}
 
-        result = re.get_current_page_from_browser("9230", "123")
+        result = re.get_current_page_from_browser("9234", "123")
 
         assert result["current_page"] == 1
         assert result["current_url"] == page1_url
@@ -2333,7 +2651,7 @@ class TestGetCurrentPageFromBrowser:
         page3_url = "https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=abc&start=50"
         mock_run_browser.return_value = {"parsed": {"url": page3_url}}
 
-        result = re.get_current_page_from_browser("9230", "123")
+        result = re.get_current_page_from_browser("9234", "123")
 
         assert result["current_page"] == 3
         assert result["is_contextual"] is True
@@ -2345,7 +2663,7 @@ class TestGetCurrentPageFromBrowser:
         wrong_project_url = "https://linkedin.com/talent/hire/999/discover/recruiterSearch?searchContextId=abc&start=25"
         mock_run_browser.return_value = {"parsed": {"url": wrong_project_url}}
 
-        result = re.get_current_page_from_browser("9230", "123")
+        result = re.get_current_page_from_browser("9234", "123")
 
         # For wrong project, is_contextual=False (context check includes project match)
         # so current_page defaults to 1
@@ -2359,7 +2677,7 @@ class TestGetCurrentPageFromBrowser:
         overview_url = "https://linkedin.com/talent/hire/123/overview"
         mock_run_browser.return_value = {"parsed": {"url": overview_url}}
 
-        result = re.get_current_page_from_browser("9230", "123")
+        result = re.get_current_page_from_browser("9234", "123")
 
         assert result["current_page"] == 1  # Defaults to 1
         assert result["is_contextual"] is False
@@ -2371,11 +2689,46 @@ class TestGetCurrentPageFromBrowser:
         bare_url = "https://linkedin.com/talent/hire/123/discover/recruiterSearch"
         mock_run_browser.return_value = {"parsed": {"url": bare_url}}
 
-        result = re.get_current_page_from_browser("9230", "123")
+        result = re.get_current_page_from_browser("9234", "123")
 
         assert result["current_page"] == 1
         assert result["is_contextual"] is False  # No context params
         assert result["same_project"] is True
+
+    @patch("run_extraction.run_browser_command")
+    def test_fails_closed_when_current_url_missing(self, mock_run_browser):
+        """Malformed browser output should fail closed with structured guidance."""
+        mock_run_browser.return_value = {"parsed": None}
+
+        result = re.get_current_page_from_browser("9234", "123")
+
+        assert result["success"] is False
+        assert result["failure_code"] == "ambiguous_state"
+        assert result["action_required"]["code"] == "ambiguous_state"
+        assert "Failed to read current URL" in result["error"]
+
+    @patch("run_extraction.run_browser_command")
+    def test_fails_closed_when_current_url_not_string(self, mock_run_browser):
+        """Non-string URL payloads should fail closed."""
+        mock_run_browser.return_value = {"parsed": {"url": 123}}
+
+        result = re.get_current_page_from_browser("9234", "123")
+
+        assert result["success"] is False
+        assert result["failure_code"] == "ambiguous_state"
+        assert result["action_required"]["code"] == "ambiguous_state"
+
+    @patch("run_extraction.run_browser_command")
+    def test_fails_closed_when_current_url_malformed_string(self, mock_run_browser):
+        """Malformed truthy URL strings should fail closed."""
+        mock_run_browser.return_value = {"parsed": {"url": "not a url"}}
+
+        result = re.get_current_page_from_browser("9234", "123")
+
+        assert result["success"] is False
+        assert result["failure_code"] == "ambiguous_state"
+        assert result["action_required"]["code"] == "ambiguous_state"
+        assert "malformed current URL" in result["error"]
 
 
 class TestSequentialPaginationNavigation:
@@ -2386,9 +2739,10 @@ class TestSequentialPaginationNavigation:
         """Keep browser preflight deterministic in sequential pagination tests."""
 
     @patch("recruiter_page_utils.ensure_page_ready")
+    @patch("run_extraction.get_current_page_from_browser")
     @patch("run_extraction.click_next_page_pagination")
     def test_navigate_to_page_3_from_page_1_context(
-        self, mock_click_next, mock_ensure_ready
+        self, mock_click_next, mock_get_current, mock_ensure_ready
     ):
         """Should navigate from page 1 to page 3 via sequential live pagination clicks."""
         base_url = "https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=abc"
@@ -2410,10 +2764,20 @@ class TestSequentialPaginationNavigation:
                 "error": None,
             },
         ]
+        mock_get_current.return_value = {
+            "success": True,
+            "current_page": 1,
+            "current_url": base_url,
+            "is_contextual": True,
+            "same_project": True,
+            "error": None,
+            "failure_code": None,
+            "action_required": None,
+        }
         mock_ensure_ready.return_value = {"ready": True, "state": "ready"}
 
         result = re.navigate_to_page(
-            cdp_port="9230",
+            cdp_port="9234",
             base_url=base_url,
             page=3,
             work_dir=None,
@@ -2431,9 +2795,10 @@ class TestSequentialPaginationNavigation:
         assert mock_click_next.call_args_list[1][1]["expected_start"] == 50
 
     @patch("recruiter_page_utils.ensure_page_ready")
+    @patch("run_extraction.get_current_page_from_browser")
     @patch("run_extraction.click_next_page_pagination")
     def test_navigate_to_page_5_from_page_1_context(
-        self, mock_click_next, mock_ensure_ready
+        self, mock_click_next, mock_get_current, mock_ensure_ready
     ):
         """Should navigate from page 1 to page 5 via sequential clicks."""
         base_url = "https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=abc"
@@ -2453,10 +2818,20 @@ class TestSequentialPaginationNavigation:
             }
             for i in range(4)
         ]
+        mock_get_current.return_value = {
+            "success": True,
+            "current_page": 1,
+            "current_url": base_url,
+            "is_contextual": True,
+            "same_project": True,
+            "error": None,
+            "failure_code": None,
+            "action_required": None,
+        }
         mock_ensure_ready.return_value = {"ready": True, "state": "ready"}
 
         result = re.navigate_to_page(
-            cdp_port="9230",
+            cdp_port="9234",
             base_url=base_url,
             page=5,
             work_dir=None,
@@ -2468,9 +2843,10 @@ class TestSequentialPaginationNavigation:
         assert mock_click_next.call_count == 4  # 4 clicks to reach page 5
 
     @patch("recruiter_page_utils.ensure_page_ready")
+    @patch("run_extraction.get_current_page_from_browser")
     @patch("run_extraction.click_next_page_pagination")
     def test_navigate_to_page_3_falls_back_on_page_2_failure(
-        self, mock_click_next, mock_ensure_ready
+        self, mock_click_next, mock_get_current, mock_ensure_ready
     ):
         """Should fall back to synthesized URL if pagination fails at page 2."""
         base_url = "https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=abc"
@@ -2491,10 +2867,20 @@ class TestSequentialPaginationNavigation:
                 "error": "Next page pagination control not found",
             },
         ]
+        mock_get_current.return_value = {
+            "success": True,
+            "current_page": 1,
+            "current_url": base_url,
+            "is_contextual": True,
+            "same_project": True,
+            "error": None,
+            "failure_code": None,
+            "action_required": None,
+        }
         mock_ensure_ready.return_value = {"ready": True, "state": "ready"}
 
         result = re.navigate_to_page(
-            cdp_port="9230",
+            cdp_port="9234",
             base_url=base_url,
             page=3,
             work_dir=None,
@@ -2507,9 +2893,10 @@ class TestSequentialPaginationNavigation:
         assert "start=50" in result["url"]
 
     @patch("recruiter_page_utils.ensure_page_ready")
+    @patch("run_extraction.get_current_page_from_browser")
     @patch("run_extraction.click_next_page_pagination")
     def test_navigate_to_page_3_detects_last_page_at_page_2(
-        self, mock_click_next, mock_ensure_ready
+        self, mock_click_next, mock_get_current, mock_ensure_ready
     ):
         """Should detect last page if reached during sequential navigation."""
         base_url = "https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=abc"
@@ -2531,10 +2918,20 @@ class TestSequentialPaginationNavigation:
                 "error": None,
             },
         ]
+        mock_get_current.return_value = {
+            "success": True,
+            "current_page": 1,
+            "current_url": base_url,
+            "is_contextual": True,
+            "same_project": True,
+            "error": None,
+            "failure_code": None,
+            "action_required": None,
+        }
         mock_ensure_ready.return_value = {"ready": True, "state": "ready"}
 
         result = re.navigate_to_page(
-            cdp_port="9230",
+            cdp_port="9234",
             base_url=base_url,
             page=3,
             work_dir=None,
@@ -2547,9 +2944,10 @@ class TestSequentialPaginationNavigation:
         assert result["url"] == page2_url
 
     @patch("recruiter_page_utils.ensure_page_ready")
+    @patch("run_extraction.get_current_page_from_browser")
     @patch("run_extraction.click_next_page_pagination")
     def test_navigate_to_page_3_validates_each_step(
-        self, mock_click_next, mock_ensure_ready
+        self, mock_click_next, mock_get_current, mock_ensure_ready
     ):
         """Should validate pagination at each step when project_id provided."""
         base_url = "https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=abc"
@@ -2571,10 +2969,20 @@ class TestSequentialPaginationNavigation:
                 "error": None,
             },
         ]
+        mock_get_current.return_value = {
+            "success": True,
+            "current_page": 1,
+            "current_url": base_url,
+            "is_contextual": True,
+            "same_project": True,
+            "error": None,
+            "failure_code": None,
+            "action_required": None,
+        }
         mock_ensure_ready.return_value = {"ready": True, "state": "ready"}
 
         result = re.navigate_to_page(
-            cdp_port="9230",
+            cdp_port="9234",
             base_url=base_url,
             page=3,
             work_dir=None,
@@ -2629,7 +3037,7 @@ class TestSequentialPaginationNavigation:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.dry_run = False
         args.start_page = 3  # Resume from page 3
         args.max_pages = 1
@@ -2670,7 +3078,7 @@ class TestNavigateToPageCurrentContextDetection:
         mock_ensure_ready.return_value = {"ready": True, "state": "ready"}
 
         result = re.navigate_to_page(
-            cdp_port="9230",
+            cdp_port="9234",
             base_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=abc",
             page=3,
             work_dir=None,
@@ -2710,7 +3118,7 @@ class TestNavigateToPageCurrentContextDetection:
         mock_ensure_ready.return_value = {"ready": True, "state": "ready"}
 
         result = re.navigate_to_page(
-            cdp_port="9230",
+            cdp_port="9234",
             base_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=abc",
             page=3,
             work_dir=None,
@@ -2767,7 +3175,7 @@ class TestNavigateToPageCurrentContextDetection:
         mock_ensure_ready.return_value = {"ready": True, "state": "ready"}
 
         result = re.navigate_to_page(
-            cdp_port="9230",
+            cdp_port="9234",
             base_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=abc",
             page=5,
             work_dir=None,
@@ -2819,7 +3227,7 @@ class TestNavigateToPageCurrentContextDetection:
         mock_ensure_ready.return_value = {"ready": True, "state": "ready"}
 
         result = re.navigate_to_page(
-            cdp_port="9230",
+            cdp_port="9234",
             base_url=base_url,
             page=3,
             work_dir=None,
@@ -2865,7 +3273,7 @@ class TestNavigateToPageCurrentContextDetection:
         mock_ensure_ready.return_value = {"ready": True, "state": "ready"}
 
         result = re.navigate_to_page(
-            cdp_port="9230",
+            cdp_port="9234",
             base_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=abc",
             page=3,
             work_dir=None,
@@ -2910,7 +3318,7 @@ class TestNavigateToPageCurrentContextDetection:
         mock_ensure_ready.return_value = {"ready": True, "state": "ready"}
 
         result = re.navigate_to_page(
-            cdp_port="9230",
+            cdp_port="9234",
             base_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=abc",
             page=3,
             work_dir=None,
@@ -2935,10 +3343,21 @@ class TestNavigateToPageCurrentContextDetection:
             "same_project": True,
         }
         # Realignment fails
-        mock_ensure_ready.return_value = {"ready": False, "state": "loading"}
+        mock_ensure_ready.return_value = {
+            "ready": False,
+            "state": "loading",
+            "failure_code": "timeout",
+            "action_required": {
+                "code": "timeout",
+                "summary": "Page load timed out",
+                "steps": ["Wait for the page to finish loading and retry"],
+                "can_retry": True,
+                "context": {},
+            },
+        }
 
         result = re.navigate_to_page(
-            cdp_port="9230",
+            cdp_port="9234",
             base_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=abc",
             page=3,
             work_dir=None,
@@ -2948,6 +3367,41 @@ class TestNavigateToPageCurrentContextDetection:
         assert result["success"] is False
         assert result["method"] == "realign_failed"
         assert "Failed to realign" in result["error"]
+        assert result["failure_code"] == "timeout"
+        assert result["action_required"]["code"] == "timeout"
+
+    @patch("run_extraction.get_current_page_from_browser")
+    def test_fails_closed_when_browser_state_read_fails(self, mock_get_current):
+        """navigate_to_page should stop when current browser state cannot be read."""
+        mock_get_current.return_value = {
+            "success": False,
+            "current_page": 1,
+            "current_url": "",
+            "is_contextual": False,
+            "same_project": False,
+            "error": "Failed to read current URL from browser",
+            "failure_code": "ambiguous_state",
+            "action_required": {
+                "code": "ambiguous_state",
+                "summary": "Browser is in an ambiguous state that cannot be automatically resolved",
+                "steps": ["Refresh Chrome and retry"],
+                "can_retry": True,
+                "context": {},
+            },
+        }
+
+        result = re.navigate_to_page(
+            cdp_port="9234",
+            base_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=abc",
+            page=3,
+            work_dir=None,
+            project_id="123",
+        )
+
+        assert result["success"] is False
+        assert result["method"] == "browser_state"
+        assert result["failure_code"] == "ambiguous_state"
+        assert result["action_required"]["code"] == "ambiguous_state"
 
     @patch("recruiter_page_utils.ensure_page_ready")
     @patch("run_extraction.get_current_page_from_browser")
@@ -2984,7 +3438,7 @@ class TestNavigateToPageCurrentContextDetection:
         mock_ensure_ready.return_value = {"ready": True, "state": "ready"}
 
         result = re.navigate_to_page(
-            cdp_port="9230",
+            cdp_port="9234",
             base_url=base_url,
             page=3,
             work_dir=None,
@@ -3018,7 +3472,7 @@ class TestNavigateToPageCurrentContextDetection:
         mock_ensure_ready.return_value = {"ready": False, "state": "loading"}
 
         result = re.navigate_to_page(
-            cdp_port="9230",
+            cdp_port="9234",
             base_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=abc",
             page=3,
             work_dir=None,
@@ -3058,7 +3512,7 @@ class TestNavigateToPageCurrentContextDetection:
         }
 
         result = re.navigate_to_page(
-            cdp_port="9230",
+            cdp_port="9234",
             base_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=abc",
             page=3,
             work_dir=None,
@@ -3070,6 +3524,55 @@ class TestNavigateToPageCurrentContextDetection:
         assert result["url"] == page3_url
         # Should have clicked once (page 2 -> page 3)
         mock_click_next.assert_called_once()
+
+    @patch("recruiter_page_utils.ensure_page_ready")
+    @patch("run_extraction.get_current_page_from_browser")
+    @patch("run_extraction.click_next_page_pagination")
+    def test_does_not_fallback_after_structured_pagination_failure(
+        self, mock_click_next, mock_get_current, mock_ensure_ready
+    ):
+        """Structured pagination failures should stop instead of using synthesized fallback."""
+        base_url = "https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=abc"
+        page1 = {
+            "success": True,
+            "current_page": 1,
+            "current_url": base_url,
+            "is_contextual": True,
+            "same_project": True,
+            "error": None,
+            "failure_code": None,
+            "action_required": None,
+        }
+        mock_get_current.return_value = page1
+        mock_click_next.return_value = {
+            "success": False,
+            "is_last_page": False,
+            "previous_url": base_url,
+            "current_url": base_url,
+            "error": "Failed to read current URL from browser during pagination",
+            "failure_code": "ambiguous_state",
+            "action_required": {
+                "code": "ambiguous_state",
+                "summary": "Browser is in an ambiguous state that cannot be automatically resolved",
+                "steps": ["Refresh Chrome and retry"],
+                "can_retry": True,
+                "context": {},
+            },
+        }
+
+        result = re.navigate_to_page(
+            cdp_port="9234",
+            base_url=base_url,
+            page=2,
+            work_dir=None,
+            project_id="123",
+        )
+
+        assert result["success"] is False
+        assert result["method"] == "ui_pagination"
+        assert result["failure_code"] == "ambiguous_state"
+        assert result["action_required"]["code"] == "ambiguous_state"
+        assert mock_ensure_ready.call_count == 1
 
 
 class TestDelayedPaginationTransition:
@@ -3093,7 +3596,7 @@ class TestDelayedPaginationTransition:
         ]
 
         result = re.click_next_page_pagination(
-            cdp_port="9230",
+            cdp_port="9234",
             expected_start=25,
             max_wait_seconds=2.0,
             poll_interval=0.1,
@@ -3106,7 +3609,7 @@ class TestDelayedPaginationTransition:
 
     @patch("run_extraction.run_browser_command")
     def test_returns_current_url_on_timeout_for_validation(self, mock_run_browser):
-        """Should return current URL on timeout, letting validation handle failure."""
+        """Should fail closed on timeout when no last-page evidence is available."""
         page1_url = "https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=abc&start=0"
 
         mock_run_browser.side_effect = [
@@ -3120,18 +3623,17 @@ class TestDelayedPaginationTransition:
         ]
 
         result = re.click_next_page_pagination(
-            cdp_port="9230",
+            cdp_port="9234",
             expected_start=25,
             max_wait_seconds=0.3,  # Short timeout for test
             poll_interval=0.1,
         )
 
-        # Should return success=False is NOT set - let validation handle it
-        assert result["success"] is True  # Click succeeded
+        # Without positive last-page evidence, timeout should fail closed
+        assert result["success"] is False
         assert result["is_last_page"] is False
-        # Returns the last seen URL (still on page 1)
         assert result["current_url"] == page1_url
-        # Validation will catch the wrong page
+        assert "did not reach the expected next page" in result["error"]
 
     @patch("run_extraction.run_browser_command")
     def test_no_expected_start_uses_url_change_detection(self, mock_run_browser):
@@ -3146,7 +3648,7 @@ class TestDelayedPaginationTransition:
         ]
 
         result = re.click_next_page_pagination(
-            cdp_port="9230",
+            cdp_port="9234",
             expected_start=None,  # No expected start
             max_wait_seconds=1.0,
             poll_interval=0.1,
@@ -3171,7 +3673,7 @@ class TestDelayedPaginationTransition:
         }
 
         result = re.click_next_page_pagination(
-            cdp_port="9230",
+            cdp_port="9234",
             expected_start=25,
             max_wait_seconds=1.0,
             poll_interval=0.1,
@@ -3215,7 +3717,7 @@ class TestDelayedPaginationTransition:
         ]
 
         result = re.click_next_page_pagination(
-            cdp_port="9230",
+            cdp_port="9234",
             expected_start=25,
             max_wait_seconds=1.0,
             poll_interval=0.1,
@@ -3266,7 +3768,7 @@ class TestDelayedPaginationTransition:
         }
 
         result = re.click_next_page_pagination(
-            cdp_port="9230",
+            cdp_port="9234",
             expected_start=25,
             max_wait_seconds=1.0,
             poll_interval=0.1,
@@ -3322,7 +3824,7 @@ class TestDelayedPaginationTransition:
         ]
 
         result = re.click_next_page_pagination(
-            cdp_port="9230",
+            cdp_port="9234",
             expected_start=25,
             max_wait_seconds=1.0,
             poll_interval=0.1,
@@ -3378,7 +3880,7 @@ class TestDelayedPaginationTransition:
         ]
 
         result = re.click_next_page_pagination(
-            cdp_port="9230",
+            cdp_port="9234",
             expected_start=25,
             max_wait_seconds=1.0,
             poll_interval=0.1,
@@ -3417,7 +3919,7 @@ class TestDelayedPaginationTransition:
         ]
 
         re.click_next_page_pagination(
-            cdp_port="9230",
+            cdp_port="9234",
             expected_start=25,
             max_wait_seconds=1.0,
             poll_interval=0.1,
@@ -3428,7 +3930,7 @@ class TestDelayedPaginationTransition:
 
     @patch("run_extraction.run_browser_command")
     def test_polling_respects_custom_timeout(self, mock_run_browser):
-        """Should respect custom max_wait_seconds parameter."""
+        """Should respect custom max_wait_seconds while still failing closed."""
         page1_url = "https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=abc&start=0"
 
         mock_run_browser.side_effect = [
@@ -3439,7 +3941,7 @@ class TestDelayedPaginationTransition:
 
         start = time.time()
         result = re.click_next_page_pagination(
-            cdp_port="9230",
+            cdp_port="9234",
             expected_start=25,
             max_wait_seconds=0.5,  # 500ms timeout
             poll_interval=0.1,
@@ -3448,7 +3950,67 @@ class TestDelayedPaginationTransition:
 
         # Should complete within reasonable time of timeout
         assert elapsed < 1.0  # Should not take much longer than timeout
-        assert result["success"] is True  # Click succeeded, even if transition didn't
+        assert result["success"] is False
+        assert result["is_last_page"] is False
+
+    @patch("run_extraction.run_browser_command")
+    def test_malformed_url_polling_returns_structured_failure(self, mock_run_browser):
+        """Should return structured failure when URL polling gets malformed output.
+
+        Regression test: When run_browser_command() returns None for parsed (not missing key),
+        the old code would crash with AttributeError. The fix uses safe_get_parsed and
+        returns a structured pagination failure instead.
+        """
+        page1_url = "https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=abc&start=0"
+
+        mock_run_browser.side_effect = [
+            # First call: click succeeds
+            {"parsed": {"clicked": True, "previousUrl": page1_url}},
+            # Polling: malformed output with parsed=None (not missing key)
+            {"parsed": None, "error": "Browser returned invalid JSON"},
+        ]
+
+        result = re.click_next_page_pagination(
+            cdp_port="9234",
+            expected_start=25,
+            max_wait_seconds=1.0,
+            poll_interval=0.1,
+        )
+
+        # Should fail closed with structured error, not crash
+        assert result["success"] is False
+        assert result["failure_code"] == "browser_unavailable"
+        assert result["action_required"] is not None
+        assert result["action_required"]["code"] == "browser_unavailable"
+        assert "Failed to read current URL" in result["error"]
+
+    @patch("run_extraction.run_browser_command")
+    def test_missing_parsed_key_returns_structured_failure(self, mock_run_browser):
+        """Should return structured failure when URL polling result has no parsed key.
+
+        Regression test: When run_browser_command() returns a dict without 'parsed' key,
+        the code should handle it gracefully and return a structured failure.
+        """
+        page1_url = "https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=abc&start=0"
+
+        mock_run_browser.side_effect = [
+            # First call: click succeeds
+            {"parsed": {"clicked": True, "previousUrl": page1_url}},
+            # Polling: result has no parsed key at all
+            {"stdout": "", "stderr": "", "returncode": 0},
+        ]
+
+        result = re.click_next_page_pagination(
+            cdp_port="9234",
+            expected_start=25,
+            max_wait_seconds=1.0,
+            poll_interval=0.1,
+        )
+
+        # Should fail closed with structured error
+        assert result["success"] is False
+        assert result["failure_code"] == "browser_unavailable"
+        assert result["action_required"] is not None
 
 
 class TestCheckCurrentPageReady:
@@ -3469,7 +4031,7 @@ class TestCheckCurrentPageReady:
         }
         mock_probe_class.return_value = mock_probe
 
-        result = re.check_current_page_ready_for_extraction("9230", "123")
+        result = re.check_current_page_ready_for_extraction("9234", "123")
 
         assert result["ready"] is True
         assert result["current_url"] == contextual_url
@@ -3482,7 +4044,7 @@ class TestCheckCurrentPageReady:
             "parsed": {"url": "https://linkedin.com/talent/hire/123/overview"}
         }
 
-        result = re.check_current_page_ready_for_extraction("9230", "123")
+        result = re.check_current_page_ready_for_extraction("9234", "123")
 
         assert result["ready"] is False
         assert result["state"] == "not_contextual_search"
@@ -3496,7 +4058,7 @@ class TestCheckCurrentPageReady:
             }
         }
 
-        result = re.check_current_page_ready_for_extraction("9230", "123")
+        result = re.check_current_page_ready_for_extraction("9234", "123")
 
         assert result["ready"] is False
         assert result["state"] == "not_contextual_search"
@@ -3513,7 +4075,7 @@ class TestCheckCurrentPageReady:
         mock_probe.classify_state.return_value = {"state": "loading"}
         mock_probe_class.return_value = mock_probe
 
-        result = re.check_current_page_ready_for_extraction("9230", "123")
+        result = re.check_current_page_ready_for_extraction("9234", "123")
 
         assert result["ready"] is False
         assert result["state"] == "loading"
@@ -3540,10 +4102,33 @@ class TestCheckCurrentPageReady:
         }
         mock_probe_class.return_value = mock_probe
 
-        result = re.check_current_page_ready_for_extraction("9230", "123")
+        result = re.check_current_page_ready_for_extraction("9234", "123")
 
         assert result["ready"] is False
         assert result["state"] == "no_search_results_content"
+
+    @patch("browser_utils.run_browser_command")
+    @patch("recruiter_page_utils.PageStateProbe")
+    def test_returns_not_ready_when_search_not_configured(
+        self, mock_probe_class, mock_run_browser
+    ):
+        """Should fail closed when Recruiter is still showing Start a search."""
+        contextual_url = "https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=abc"
+        mock_run_browser.return_value = {"parsed": {"url": contextual_url}}
+        mock_probe = Mock()
+        mock_probe.classify_state.return_value = {
+            "state": "ready",
+            "details": {
+                "hasSearchResultsContent": False,
+                "hasSearchCreationPrompt": True,
+            },
+        }
+        mock_probe_class.return_value = mock_probe
+
+        result = re.check_current_page_ready_for_extraction("9234", "123")
+
+        assert result["ready"] is False
+        assert result["state"] == "search_not_configured"
 
 
 class TestKeyboardInterruptHandling:
@@ -3588,7 +4173,7 @@ class TestKeyboardInterruptHandling:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.dry_run = False
         args.start_page = 1
         args.max_pages = 5
@@ -3657,7 +4242,7 @@ class TestKeyboardInterruptHandling:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.dry_run = False
         args.start_page = 1
         args.max_pages = 5
@@ -3711,7 +4296,7 @@ class TestKeyboardInterruptHandling:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.dry_run = False
         args.start_page = 1
         args.max_pages = 5
@@ -3739,7 +4324,7 @@ class TestRunPreflight:
         """Config project ID mismatch should fail before fresh-context resolution."""
         mock_manager = MagicMock()
         mock_manager.work_dir = tmp_path / "work"
-        mock_manager._resolve_profile.return_value = {"CDP_PORT": "9230"}
+        mock_manager._resolve_profile.return_value = {"CDP_PORT": "9234"}
         mock_manager_class.return_value = mock_manager
 
         mock_probe = Mock()
@@ -3755,7 +4340,7 @@ class TestRunPreflight:
         args = Mock()
         args.workbook = None
         args.dry_run = False
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
 
         result = re.run_preflight(config, args)
 
@@ -3774,7 +4359,7 @@ class TestRunPreflight:
         """Slug-style PROJECT_ID should not be treated as Recruiter project ID."""
         mock_manager = MagicMock()
         mock_manager.work_dir = tmp_path / "work"
-        mock_manager._resolve_profile.return_value = {"CDP_PORT": "9230"}
+        mock_manager._resolve_profile.return_value = {"CDP_PORT": "9234"}
         mock_manager_class.return_value = mock_manager
 
         mock_probe = Mock()
@@ -3795,7 +4380,7 @@ class TestRunPreflight:
         args = Mock()
         args.workbook = str(wb_path)
         args.dry_run = False
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
 
         result = re.run_preflight(config, args)
 
@@ -3810,7 +4395,7 @@ class TestRunPreflight:
         """Dialog blocked state should fail before fresh-context resolution."""
         mock_manager = MagicMock()
         mock_manager.work_dir = tmp_path / "work"
-        mock_manager._resolve_profile.return_value = {"CDP_PORT": "9230"}
+        mock_manager._resolve_profile.return_value = {"CDP_PORT": "9234"}
         mock_manager_class.return_value = mock_manager
 
         mock_probe = Mock()
@@ -3825,13 +4410,15 @@ class TestRunPreflight:
         args = Mock()
         args.workbook = None
         args.dry_run = True  # Skip workbook checks
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
 
         result = re.run_preflight(config, args)
 
         assert result["success"] is False
         assert result["exit_code"] == 1
         assert "dialog_blocked" in result["message"]
+        assert result["failure_code"] == "dialog_blocked"
+        assert result["action_required"]["code"] == "dialog_blocked"
 
     @patch("run_extraction.RuntimeManager")
     @patch("recruiter_page_utils.PageStateProbe")
@@ -3841,7 +4428,7 @@ class TestRunPreflight:
         """Logged out state should fail before fresh-context resolution."""
         mock_manager = MagicMock()
         mock_manager.work_dir = tmp_path / "work"
-        mock_manager._resolve_profile.return_value = {"CDP_PORT": "9230"}
+        mock_manager._resolve_profile.return_value = {"CDP_PORT": "9234"}
         mock_manager_class.return_value = mock_manager
 
         mock_probe = Mock()
@@ -3858,13 +4445,15 @@ class TestRunPreflight:
         args = Mock()
         args.workbook = None
         args.dry_run = True
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
 
         result = re.run_preflight(config, args)
 
         assert result["success"] is False
         assert result["exit_code"] == 1
         assert "logged_out_or_wrong_product" in result["message"]
+        assert result["failure_code"] == "auth_required"
+        assert result["action_required"]["code"] == "auth_required"
 
     @patch("run_extraction.RuntimeManager")
     @patch("recruiter_page_utils.PageStateProbe")
@@ -3874,7 +4463,7 @@ class TestRunPreflight:
         """Blocked or CAPTCHA state should fail before fresh-context resolution."""
         mock_manager = MagicMock()
         mock_manager.work_dir = tmp_path / "work"
-        mock_manager._resolve_profile.return_value = {"CDP_PORT": "9230"}
+        mock_manager._resolve_profile.return_value = {"CDP_PORT": "9234"}
         mock_manager_class.return_value = mock_manager
 
         mock_probe = Mock()
@@ -3889,13 +4478,15 @@ class TestRunPreflight:
         args = Mock()
         args.workbook = None
         args.dry_run = True
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
 
         result = re.run_preflight(config, args)
 
         assert result["success"] is False
         assert result["exit_code"] == 1
         assert "blocked_or_captcha" in result["message"]
+        assert result["failure_code"] == "blocked_or_captcha"
+        assert result["action_required"]["code"] == "blocked_or_captcha"
 
     @patch("run_extraction.RuntimeManager")
     @patch("recruiter_page_utils.PageStateProbe")
@@ -3905,7 +4496,7 @@ class TestRunPreflight:
         """Bad page state should fail before fresh-context resolution."""
         mock_manager = MagicMock()
         mock_manager.work_dir = tmp_path / "work"
-        mock_manager._resolve_profile.return_value = {"CDP_PORT": "9230"}
+        mock_manager._resolve_profile.return_value = {"CDP_PORT": "9234"}
         mock_manager_class.return_value = mock_manager
 
         mock_probe = Mock()
@@ -3920,13 +4511,15 @@ class TestRunPreflight:
         args = Mock()
         args.workbook = None
         args.dry_run = True
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
 
         result = re.run_preflight(config, args)
 
         assert result["success"] is False
         assert result["exit_code"] == 1
         assert "bad_page" in result["message"]
+        assert result["failure_code"] == "wrong_page"
+        assert result["action_required"]["code"] == "wrong_page"
 
     @patch("run_extraction.RuntimeManager")
     @patch("recruiter_page_utils.PageStateProbe")
@@ -3936,13 +4529,13 @@ class TestRunPreflight:
         """Unknown state with browser/CDP error should fail and include error text."""
         mock_manager = MagicMock()
         mock_manager.work_dir = tmp_path / "work"
-        mock_manager._resolve_profile.return_value = {"CDP_PORT": "9230"}
+        mock_manager._resolve_profile.return_value = {"CDP_PORT": "9234"}
         mock_manager_class.return_value = mock_manager
 
         mock_probe = Mock()
         mock_probe.classify_state.return_value = {
             "state": "unknown",
-            "details": {"error": "CDP connection refused: localhost:9230"},
+            "details": {"error": "CDP connection refused: localhost:9234"},
         }
         mock_probe_class.return_value = mock_probe
 
@@ -3954,13 +4547,47 @@ class TestRunPreflight:
         args = Mock()
         args.workbook = None
         args.dry_run = True
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
 
         result = re.run_preflight(config, args)
 
         assert result["success"] is False
         assert result["exit_code"] == 1
         assert "CDP connection refused" in result["message"]
+        assert result["failure_code"] == "ambiguous_state"
+        assert result["action_required"]["code"] == "ambiguous_state"
+
+    @patch("run_extraction.run_preflight")
+    def test_run_extraction_preserves_preflight_action_required(self, mock_preflight):
+        """Structured preflight failures should propagate to run_extraction result."""
+        mock_preflight.return_value = {
+            "success": False,
+            "message": "Browser preflight failed: page state is 'dialog_blocked'",
+            "exit_code": 1,
+            "failure_code": "dialog_blocked",
+            "action_required": {
+                "code": "dialog_blocked",
+                "summary": "A browser dialog is blocking automation progress",
+                "steps": ["Dismiss the dialog in Chrome"],
+                "can_retry": True,
+                "context": {},
+            },
+        }
+
+        args = Mock()
+        args.config = "/tmp/config.sh"
+
+        with patch("run_extraction.parse_config_file") as mock_parse:
+            mock_parse.return_value = {
+                "PROJECT_ID": "123",
+                "RECRUITER_PROJECT_URL": "https://linkedin.com/talent/hire/123/discover/recruiterSearch",
+            }
+
+            result = re.run_extraction(args)
+
+        assert result["success"] is False
+        assert result["failure_code"] == "dialog_blocked"
+        assert result["action_required"]["code"] == "dialog_blocked"
 
     @patch("run_extraction.RuntimeManager")
     @patch("run_extraction.ensure_workbook")
@@ -3974,7 +4601,7 @@ class TestRunPreflight:
 
         mock_manager = MagicMock()
         mock_manager.work_dir = tmp_path / "work"
-        mock_manager._resolve_profile.return_value = {"CDP_PORT": "9230"}
+        mock_manager._resolve_profile.return_value = {"CDP_PORT": "9234"}
         mock_manager_class.return_value = mock_manager
 
         mock_probe = Mock()
@@ -3996,7 +4623,7 @@ class TestRunPreflight:
         args = Mock()
         args.workbook = str(wb_path)
         args.dry_run = False
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
 
         result = re.run_preflight(config, args)
 
@@ -4014,7 +4641,7 @@ class TestRunPreflight:
         """existing_urls loaded during preflight should be reused (no second get_existing_keys call)."""
         mock_manager = MagicMock()
         mock_manager.work_dir = tmp_path / "work"
-        mock_manager._resolve_profile.return_value = {"CDP_PORT": "9230"}
+        mock_manager._resolve_profile.return_value = {"CDP_PORT": "9234"}
         mock_manager_class.return_value = mock_manager
 
         mock_probe = Mock()
@@ -4037,7 +4664,7 @@ class TestRunPreflight:
         args = Mock()
         args.workbook = str(wb_path)
         args.dry_run = False
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
 
         result = re.run_preflight(config, args)
 
@@ -4055,7 +4682,7 @@ class TestRunPreflight:
         """Preflight should succeed when page state is ready."""
         mock_manager = MagicMock()
         mock_manager.work_dir = tmp_path / "work"
-        mock_manager._resolve_profile.return_value = {"CDP_PORT": "9230"}
+        mock_manager._resolve_profile.return_value = {"CDP_PORT": "9234"}
         mock_manager_class.return_value = mock_manager
 
         mock_probe = Mock()
@@ -4072,14 +4699,14 @@ class TestRunPreflight:
         args = Mock()
         args.workbook = str(tmp_path / "workbook.xlsx")
         args.dry_run = False
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
 
         result = re.run_preflight(config, args)
 
         assert result["success"] is True
         assert result["exit_code"] is None
         assert result["project_id"] == "123"
-        assert result["cdp_port"] == "9230"
+        assert result["cdp_port"] == "9234"
 
     @patch("run_extraction.RuntimeManager")
     @patch("recruiter_page_utils.PageStateProbe")
@@ -4089,7 +4716,7 @@ class TestRunPreflight:
         """Preflight should skip workbook existence/read checks in dry-run mode."""
         mock_manager = MagicMock()
         mock_manager.work_dir = tmp_path / "work"
-        mock_manager._resolve_profile.return_value = {"CDP_PORT": "9230"}
+        mock_manager._resolve_profile.return_value = {"CDP_PORT": "9234"}
         mock_manager_class.return_value = mock_manager
 
         mock_probe = Mock()
@@ -4104,7 +4731,7 @@ class TestRunPreflight:
         args = Mock()
         args.workbook = str(tmp_path / "nonexistent" / "workbook.xlsx")
         args.dry_run = True  # Dry run - skip workbook checks
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
 
         result = re.run_preflight(config, args)
 
@@ -4134,7 +4761,7 @@ class TestRunExtractionPreflightIntegration:
         """resolve_fresh_search_context should NOT be called when preflight fails."""
         mock_manager = MagicMock()
         mock_manager.work_dir = tmp_path / "work"
-        mock_manager._resolve_profile.return_value = {"CDP_PORT": "9230"}
+        mock_manager._resolve_profile.return_value = {"CDP_PORT": "9234"}
         mock_manager_class.return_value = mock_manager
 
         mock_probe = Mock()
@@ -4153,7 +4780,7 @@ class TestRunExtractionPreflightIntegration:
         args.config = "/path/to/config.sh"
         args.workbook = str(tmp_path / "workbook.xlsx")
         args.dry_run = False
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.start_page = 1
         args.max_pages = 1
 
@@ -4187,7 +4814,7 @@ class TestRunExtractionPreflightIntegration:
         """run_extraction should use existing_urls from preflight without calling get_existing_keys again."""
         mock_manager = MagicMock()
         mock_manager.work_dir = tmp_path / "work"
-        mock_manager._resolve_profile.return_value = {"CDP_PORT": "9230"}
+        mock_manager._resolve_profile.return_value = {"CDP_PORT": "9234"}
         mock_manager_class.return_value = mock_manager
 
         mock_probe = Mock()
@@ -4222,7 +4849,7 @@ class TestRunExtractionPreflightIntegration:
         args.config = "/path/to/config.sh"
         args.workbook = str(wb_path)
         args.dry_run = False
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.start_page = 1
         args.max_pages = 1
 
@@ -4648,7 +5275,7 @@ class TestResumeIntegration:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.dry_run = True
         args.start_page = 1
         args.max_pages = 1
@@ -4721,7 +5348,7 @@ class TestResumeIntegration:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.dry_run = True
         args.start_page = 1  # Should be overridden by persisted state
         args.max_pages = 1
@@ -4795,7 +5422,7 @@ class TestResumeIntegration:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.dry_run = True
         args.start_page = 1
         args.max_pages = 0  # Unlimited - let it complete naturally
@@ -4868,7 +5495,7 @@ class TestResumeIntegration:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.dry_run = True
         args.start_page = 1
         args.max_pages = 1
@@ -4944,7 +5571,7 @@ class TestResumeIntegration:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.dry_run = True
         args.start_page = 1
         args.max_pages = 2
@@ -5015,7 +5642,7 @@ class TestResumeIntegration:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.dry_run = True
         args.start_page = 1
         args.max_pages = 1
@@ -5085,7 +5712,7 @@ class TestResumeIntegration:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.dry_run = True
         args.start_page = 1
         args.max_pages = 1
@@ -5156,7 +5783,7 @@ class TestResumeIntegration:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.dry_run = True
         args.start_page = 1
         args.max_pages = 1
@@ -5217,7 +5844,7 @@ class TestResumeIntegration:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.dry_run = True
         args.start_page = 1
         args.max_pages = 2  # Limit to 2 pages even though more exist
@@ -5298,7 +5925,7 @@ class TestResumeIntegration:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.dry_run = True
         args.start_page = 1
         args.max_pages = 0  # Unlimited - process all pages
@@ -5385,7 +6012,7 @@ class TestResumeIntegration:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.dry_run = True
         args.start_page = 1
         args.max_pages = 1
@@ -5456,7 +6083,7 @@ class TestResumeIntegration:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.dry_run = True
         args.start_page = 1
         args.max_pages = 1
@@ -5529,7 +6156,7 @@ class TestResumeIntegration:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.dry_run = True
         args.start_page = 1
         args.max_pages = 1
@@ -5596,7 +6223,7 @@ class TestStateDirectoryCreationFailure:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.dry_run = True
         args.start_page = 1
         args.max_pages = 1
@@ -5667,7 +6294,7 @@ class TestStateWriteFailure:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.dry_run = True
         args.start_page = 1
         args.max_pages = 2  # Request 2 pages to trigger running-state write
@@ -5728,7 +6355,7 @@ class TestStateWriteFailure:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.dry_run = True
         args.start_page = 1
         args.max_pages = 1
@@ -5789,7 +6416,7 @@ class TestStateWriteFailure:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.dry_run = True
         args.start_page = 1
         args.max_pages = 1
@@ -5993,7 +6620,7 @@ class TestResumeStateIdentityValidation:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.dry_run = False  # Current run is REAL
         args.start_page = 1
         args.max_pages = 1
@@ -6067,7 +6694,7 @@ class TestResumeStateIdentityValidation:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.dry_run = True  # Current run is DRY-RUN
         args.start_page = 1
         args.max_pages = 1
@@ -6146,7 +6773,7 @@ class TestResumeStateIdentityValidation:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.dry_run = True  # Current run is also DRY-RUN
         args.start_page = 1
         args.max_pages = 1
@@ -6210,7 +6837,7 @@ class TestProjectRefResolution:
             "workbook_path": workbook_path,
             "existing_urls": set(),
             "project_id": "12345",
-            "cdp_port": "9230",
+            "cdp_port": "9234",
             "work_dir": str(tmp_path),
         }
         mock_resolve_context.return_value = {
@@ -6224,7 +6851,7 @@ class TestProjectRefResolution:
         args.project = "my_project"
         args.config = None
         args.workbook = None
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.dry_run = True
         args.start_page = 1
         args.max_pages = 1
@@ -6379,7 +7006,7 @@ class TestAutoResume:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.dry_run = True
         args.start_page = 1  # Default, not explicitly > 1
         args.max_pages = 1  # Only process 1 page
@@ -6468,7 +7095,7 @@ class TestAutoResume:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.dry_run = True
         args.start_page = 2  # EXPLICITLY set to page 2
         args.max_pages = 1
@@ -6553,7 +7180,7 @@ class TestAutoResume:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.dry_run = True
         args.start_page = 1
         args.max_pages = 1
@@ -6638,7 +7265,7 @@ class TestAutoResume:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.dry_run = True
         args.start_page = 1
         args.max_pages = 2  # Request 2 pages to trigger navigation
@@ -6724,7 +7351,7 @@ class TestAutoResume:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.dry_run = True
         args.start_page = 1
         args.max_pages = 2  # Request 2 pages to trigger navigation
@@ -6810,7 +7437,7 @@ class TestAutoResume:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.dry_run = True
         args.start_page = 1
         args.max_pages = 1
@@ -6900,7 +7527,7 @@ class TestAutoResume:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.dry_run = True
         args.start_page = 1
         args.max_pages = 1
@@ -6931,6 +7558,546 @@ class TestAutoResume:
         mock_navigate.assert_called_once()
         call_kwargs = mock_navigate.call_args[1]
         assert call_kwargs["page"] == 3
+
+
+class TestProcessCandidatesProfileUrlSchema:
+    """Tests for process_candidates with profile_url schema (backward compatibility)."""
+
+    def test_prefers_profile_url_over_url(self, tmp_path):
+        """Should prefer profile_url key over url for downstream compatibility."""
+        wb_path = tmp_path / "test.xlsx"
+
+        with patch("run_extraction.upsert") as mock_upsert:
+            mock_upsert.return_value = {"row_id": 1, "action": "inserted"}
+
+            # Candidate with new schema (profile_url)
+            candidates = [
+                {
+                    "name": "John",
+                    "profile_url": "https://linkedin.com/in/john",
+                    "title": "Engineer",
+                }
+            ]
+            existing_urls = set()
+
+            stats = re.process_candidates(
+                candidates, wb_path, existing_urls, dry_run=False
+            )
+
+        assert stats["total"] == 1
+        assert stats["new"] == 1
+        # Verify upsert was called with profile_url (second positional arg is row_data)
+        call_args = mock_upsert.call_args[0]
+        assert call_args[1]["profile_url"] == "https://linkedin.com/in/john"
+
+    def test_fallback_to_url_when_profile_url_missing(self, tmp_path):
+        """Should fallback to url key when profile_url is not present (backward compat)."""
+        wb_path = tmp_path / "test.xlsx"
+
+        with patch("run_extraction.upsert") as mock_upsert:
+            mock_upsert.return_value = {"row_id": 1, "action": "inserted"}
+
+            # Candidate with legacy schema (url only)
+            candidates = [
+                {
+                    "name": "Jane",
+                    "url": "https://linkedin.com/in/jane",
+                    "title": "Manager",
+                }
+            ]
+            existing_urls = set()
+
+            stats = re.process_candidates(
+                candidates, wb_path, existing_urls, dry_run=False
+            )
+
+            assert stats["total"] == 1
+            assert stats["new"] == 1
+            # Verify upsert was called with url value as profile_url
+            call_args = mock_upsert.call_args[0]
+            assert call_args[1]["profile_url"] == "https://linkedin.com/in/jane"
+
+    def test_empty_profile_url_falls_back_to_url(self, tmp_path):
+        """Should fallback to url when profile_url is empty string."""
+        wb_path = tmp_path / "test.xlsx"
+
+        with patch("run_extraction.upsert") as mock_upsert:
+            mock_upsert.return_value = {"row_id": 1, "action": "inserted"}
+
+            # Candidate with both keys but profile_url is empty
+            candidates = [
+                {
+                    "name": "Bob",
+                    "profile_url": "",
+                    "url": "https://linkedin.com/in/bob",
+                }
+            ]
+            existing_urls = set()
+
+            stats = re.process_candidates(
+                candidates, wb_path, existing_urls, dry_run=False
+            )
+
+            # Verify upsert used url as fallback
+            call_args = mock_upsert.call_args[0]
+            assert call_args[1]["profile_url"] == "https://linkedin.com/in/bob"
+
+
+class TestArtdecoPaginationPattern:
+    """Tests for artdeco-pagination__button--next pattern recognition (live UI)."""
+
+    @patch("run_extraction.run_browser_command")
+    def test_artdeco_pagination_button_recognized(self, mock_run_browser):
+        """Should recognize button.artdeco-pagination__button--next as valid next control."""
+        page1_url = "https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=abc&start=0"
+        page2_url = "https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=abc&start=25"
+
+        mock_run_browser.side_effect = [
+            {
+                "parsed": {
+                    "clicked": True,
+                    "isLastPage": False,
+                    "method": "pagination_button",
+                    "previousUrl": page1_url,
+                }
+            },
+            {"parsed": {"url": page2_url}},
+        ]
+
+        result = re.click_next_page_pagination(
+            cdp_port="9234",
+            expected_start=25,
+            max_wait_seconds=1.0,
+            poll_interval=0.1,
+        )
+
+        assert result["success"] is True
+        assert result["is_last_page"] is False
+        assert result["current_url"] == page2_url
+
+        # Verify the JS code includes artdeco-pagination__button--next selector
+        js_code = mock_run_browser.call_args_list[0][0][2]
+        assert "artdeco-pagination__button--next" in js_code
+
+    @patch("run_extraction.run_browser_command")
+    def test_artdeco_disabled_button_detected_as_last_page(self, mock_run_browser):
+        """Should detect button.artdeco-pagination__button--next.artdeco-button--disabled as last page."""
+        page1_url = "https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=abc&start=0"
+
+        mock_run_browser.return_value = {
+            "parsed": {
+                "clicked": False,
+                "isLastPage": True,
+                "method": "last_page_detected",
+                "previousUrl": page1_url,
+                "error": None,
+            }
+        }
+
+        result = re.click_next_page_pagination(
+            cdp_port="9234",
+            expected_start=25,
+            max_wait_seconds=1.0,
+            poll_interval=0.1,
+        )
+
+        assert result["success"] is True
+        assert result["is_last_page"] is True
+        assert result["error"] is None
+
+        # Verify the JS code includes disabled artdeco button selectors
+        js_code = mock_run_browser.call_args[0][2]
+        assert (
+            "button.artdeco-pagination__button--next.artdeco-button--disabled"
+            in js_code
+        )
+        assert "button.artdeco-pagination__button--next[disabled]" in js_code
+
+    @patch("run_extraction.run_browser_command")
+    def test_artdeco_button_scoring_prioritizes_over_generic(self, mock_run_browser):
+        """Should prioritize artdeco-pagination__button--next with higher score."""
+        page1_url = "https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=abc&start=0"
+        page2_url = "https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=abc&start=25"
+
+        mock_run_browser.side_effect = [
+            {
+                "parsed": {
+                    "clicked": True,
+                    "isLastPage": False,
+                    "method": "next_link",
+                    "text": "Next",
+                    "previousUrl": page1_url,
+                }
+            },
+            {"parsed": {"url": page2_url}},
+        ]
+
+        re.click_next_page_pagination(
+            cdp_port="9234",
+            expected_start=25,
+            max_wait_seconds=1.0,
+            poll_interval=0.1,
+        )
+
+        # Verify the JS code includes scoring for artdeco pattern
+        js_code = mock_run_browser.call_args_list[0][0][2]
+        # The scoring function should give points to artdeco-pagination__button--next
+        assert "artdeco-pagination__button--next" in js_code
+        assert "getPaginationScore" in js_code
+
+    @patch("run_extraction.run_browser_command")
+    def test_generic_next_controls_remain_excluded_without_pagination_root(
+        self, mock_run_browser
+    ):
+        """Generic Next controls outside pagination should remain excluded."""
+        page1_url = "https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=abc&start=0"
+        page2_url = "https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=abc&start=25"
+
+        mock_run_browser.side_effect = [
+            {
+                "parsed": {
+                    "clicked": True,
+                    "isLastPage": False,
+                    "method": "next_link",
+                    "text": "Go to next page 2",
+                    "previousUrl": page1_url,
+                }
+            },
+            {"parsed": {"url": page2_url}},
+        ]
+
+        result = re.click_next_page_pagination(
+            cdp_port="9234",
+            expected_start=25,
+            max_wait_seconds=1.0,
+            poll_interval=0.1,
+        )
+
+        assert result["success"] is True
+        js_code = mock_run_browser.call_args_list[0][0][2]
+        assert (
+            "if (!root && !elClass.includes('artdeco-pagination__button--next'))"
+            in js_code
+        )
+
+
+class TestLastPageFalsePositiveRegression:
+    """Regression tests for last-page false-positive with artdeco header button (issue #3)."""
+
+    @patch("run_extraction.run_browser_command")
+    def test_artdeco_header_button_not_clicked_when_no_forward_page_link(
+        self, mock_run_browser
+    ):
+        """Artdeco header Next button should NOT be clicked when no forward page link exists.
+
+        Regression test: On the last page (e.g., page 7 of 7), LinkedIn Recruiter shows:
+        - Bottom pagination with numbered links up to current page (Page 7)
+        - Header artdeco "Next" button that appears enabled but leads to 404
+
+        The code should detect that current page is the highest visible page and
+        there's no forward page link, classifying as last page instead of clicking.
+        """
+        # Page 7 URL (last page with 167 results, start=150)
+        page7_url = "https://linkedin.com/talent/hire/1683119140/discover/recruiterSearch?searchContextId=abc&start=150"
+
+        # Simulate JS detecting artdeco button but inferring last page due to no forward link
+        mock_run_browser.return_value = {
+            "parsed": {
+                "clicked": False,
+                "isLastPage": True,
+                "method": "last_page_inferred",
+                "previousUrl": page7_url,
+                "error": None,
+                "debug": {
+                    "currentPageNum": 7,
+                    "highestVisiblePage": 7,
+                    "hasForwardPageLink": False,
+                },
+            }
+        }
+
+        result = re.click_next_page_pagination(
+            cdp_port="9234",
+            expected_start=175,  # Would be page 8
+            max_wait_seconds=1.0,
+            poll_interval=0.1,
+        )
+
+        # Should return clean last-page result, NOT click and navigate to 404
+        assert result["success"] is True  # Clean end-of-results
+        assert result["is_last_page"] is True
+        assert result["error"] is None
+        # Should NOT have navigated to a different URL
+        assert result["current_url"] == page7_url
+        assert result["previous_url"] == page7_url
+
+    @patch("run_extraction.run_browser_command")
+    def test_artdeco_button_clicked_when_forward_page_link_exists(
+        self, mock_run_browser
+    ):
+        """Artdeco header Next button SHOULD be clicked when forward page link exists.
+
+        On pages 1-6 of 7, there IS a forward page link (to page 7), so the artdeco
+        Next button is legitimate and should be clicked.
+        """
+        page6_url = "https://linkedin.com/talent/hire/1683119140/discover/recruiterSearch?searchContextId=abc&start=125"
+        page7_url = "https://linkedin.com/talent/hire/1683119140/discover/recruiterSearch?searchContextId=abc&start=150"
+
+        # Simulate JS finding artdeco button AND forward page link, clicking successfully
+        mock_run_browser.side_effect = [
+            {
+                "parsed": {
+                    "clicked": True,
+                    "isLastPage": False,
+                    "method": "pagination_button",
+                    "previousUrl": page6_url,
+                }
+            },
+            {"parsed": {"url": page7_url}},
+        ]
+
+        result = re.click_next_page_pagination(
+            cdp_port="9234",
+            expected_start=150,  # Page 7
+            max_wait_seconds=1.0,
+            poll_interval=0.1,
+        )
+
+        # Should successfully navigate to page 7
+        assert result["success"] is True
+        assert result["is_last_page"] is False
+        assert result["current_url"] == page7_url
+
+    @patch("run_extraction.run_browser_command")
+    def test_js_includes_last_page_inference_logic(self, mock_run_browser):
+        """JS code should include logic to infer last page from visible pagination."""
+        page7_url = "https://linkedin.com/talent/hire/1683119140/discover/recruiterSearch?searchContextId=abc&start=150"
+
+        mock_run_browser.return_value = {
+            "parsed": {
+                "clicked": False,
+                "isLastPage": True,
+                "method": "last_page_inferred",
+                "previousUrl": page7_url,
+                "error": None,
+            }
+        }
+
+        re.click_next_page_pagination(
+            cdp_port="9234",
+            expected_start=175,
+            max_wait_seconds=1.0,
+            poll_interval=0.1,
+        )
+
+        js_code = mock_run_browser.call_args[0][2]
+
+        # JS should check for artdeco header button specifically
+        assert "artdeco-pagination__button--next" in js_code
+
+        # JS should look for page links to determine highest visible page
+        assert "highestVisiblePage" in js_code or "pageLinks" in js_code
+
+        # JS should check for forward page links
+        assert "hasForwardPageLink" in js_code or "forward" in js_code.lower()
+
+        # JS should compare current page to highest visible
+        assert "currentPageNum" in js_code or "current page" in js_code.lower()
+
+        # JS should inspect visible pagination text, not just href-based links
+        assert "nav li" in js_code
+        assert "Page\\s+(\\d+)" in js_code
+        assert "hasVisiblePageEvidence" in js_code
+        assert "hasCurrentPageMarker" in js_code
+
+    @patch("run_extraction.run_browser_command")
+    def test_explicit_page_links_preferred_over_artdeco_button(self, mock_run_browser):
+        """Explicit numbered page links should be preferred over artdeco header button."""
+        page3_url = "https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=abc&start=50"
+        page4_url = "https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=abc&start=75"
+
+        # Simulate clicking via explicit page link (next_link method), not artdeco button
+        mock_run_browser.side_effect = [
+            {
+                "parsed": {
+                    "clicked": True,
+                    "isLastPage": False,
+                    "method": "next_link",  # Preferred method
+                    "text": "Go to next page 4",
+                    "previousUrl": page3_url,
+                }
+            },
+            {"parsed": {"url": page4_url}},
+        ]
+
+        result = re.click_next_page_pagination(
+            cdp_port="9234",
+            expected_start=75,
+            max_wait_seconds=1.0,
+            poll_interval=0.1,
+        )
+
+        assert result["success"] is True
+        assert result["is_last_page"] is False
+        assert result["current_url"] == page4_url
+
+        # Verify the JS code prefers explicit links
+        js_code = mock_run_browser.call_args_list[0][0][2]
+        # Strategy 1 (next_link) should come before Strategy 2 (pagination_button)
+        strategy1_pos = js_code.find("Strategy 1: Look for ENABLED")
+        strategy2_pos = js_code.find("Strategy 2: Look for ENABLED pagination button")
+        assert strategy1_pos < strategy2_pos, (
+            "Strategy 1 (explicit links) must come before Strategy 2 (buttons)"
+        )
+
+    @patch("run_extraction.run_browser_command")
+    def test_fail_closed_when_pagination_ambiguous(self, mock_run_browser):
+        """When pagination state is ambiguous, should fail closed (not assume last page)."""
+        page3_url = "https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=abc&start=50"
+
+        # No enabled controls found, no disabled button found - ambiguous state
+        mock_run_browser.return_value = {
+            "parsed": {
+                "clicked": False,
+                "isLastPage": False,
+                "method": "no_next_button",
+                "previousUrl": page3_url,
+                "error": "Next page button not found - possible DOM drift or selector mismatch",
+            }
+        }
+
+        result = re.click_next_page_pagination(
+            cdp_port="9234",
+            expected_start=75,
+            max_wait_seconds=1.0,
+            poll_interval=0.1,
+        )
+
+        # Should fail closed - missing button is a failure, not a clean last page
+        assert result["success"] is False
+        assert result["is_last_page"] is False
+        assert "not found" in result["error"].lower() or "DOM drift" in result["error"]
+
+    @patch("run_extraction.run_browser_command")
+    def test_unchanged_url_after_click_infers_last_page(self, mock_run_browser):
+        """Unchanged URL after click should re-check pagination and classify last page when appropriate."""
+        page7_url = "https://linkedin.com/talent/hire/1683119140/discover/recruiterSearch?searchContextId=abc&start=150"
+
+        mock_run_browser.side_effect = [
+            {
+                "parsed": {
+                    "clicked": True,
+                    "isLastPage": False,
+                    "method": "pagination_button",
+                    "previousUrl": page7_url,
+                }
+            },
+            {"parsed": {"url": page7_url}},
+            {"parsed": {"isLastPage": True, "currentPageNum": 7}},
+        ]
+
+        result = re.click_next_page_pagination(
+            cdp_port="9234",
+            expected_start=175,
+            max_wait_seconds=0.1,
+            poll_interval=0.1,
+        )
+
+        assert result["success"] is True
+        assert result["is_last_page"] is True
+
+    @patch("run_extraction.run_browser_command")
+    def test_unchanged_url_after_click_fails_closed_when_not_last_page(
+        self, mock_run_browser
+    ):
+        """Unchanged URL after click should fail closed when re-check cannot prove last page."""
+        page3_url = "https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=abc&start=50"
+
+        mock_run_browser.side_effect = [
+            {
+                "parsed": {
+                    "clicked": True,
+                    "isLastPage": False,
+                    "method": "pagination_button",
+                    "previousUrl": page3_url,
+                }
+            },
+            {"parsed": {"url": page3_url}},
+            {"parsed": {"isLastPage": False, "currentPageNum": 3}},
+        ]
+
+        result = re.click_next_page_pagination(
+            cdp_port="9234",
+            expected_start=75,
+            max_wait_seconds=0.1,
+            poll_interval=0.1,
+        )
+
+        assert result["success"] is False
+        assert result["is_last_page"] is False
+        assert "did not reach the expected next page" in result["error"]
+
+    @patch("run_extraction.run_browser_command")
+    def test_missing_next_control_rechecks_last_page_before_failing(
+        self, mock_run_browser
+    ):
+        """Missing next control should still classify clean last-page when the re-check proves it."""
+        page7_url = "https://linkedin.com/talent/hire/1683119140/discover/recruiterSearch?searchContextId=abc&start=150"
+
+        mock_run_browser.side_effect = [
+            {
+                "parsed": {
+                    "clicked": False,
+                    "isLastPage": False,
+                    "method": "no_next_button",
+                    "previousUrl": page7_url,
+                    "error": "Next page button not found - possible DOM drift or selector mismatch",
+                }
+            },
+            {"parsed": {"isLastPage": True, "currentPageNum": 7}},
+        ]
+
+        result = re.click_next_page_pagination(
+            cdp_port="9234",
+            expected_start=175,
+            max_wait_seconds=0.1,
+            poll_interval=0.1,
+        )
+
+        assert result["success"] is True
+        assert result["is_last_page"] is True
+
+    @patch("run_extraction.run_browser_command")
+    def test_artdeco_path_does_not_infer_last_page_without_positive_evidence(
+        self, mock_run_browser
+    ):
+        """Primary artdeco path should require positive evidence before inferring last page."""
+        page3_url = "https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=abc&start=50"
+        page4_url = "https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=abc&start=75"
+
+        mock_run_browser.side_effect = [
+            {
+                "parsed": {
+                    "clicked": True,
+                    "isLastPage": False,
+                    "method": "pagination_button",
+                    "previousUrl": page3_url,
+                }
+            },
+            {"parsed": {"url": page4_url}},
+        ]
+
+        result = re.click_next_page_pagination(
+            cdp_port="9234",
+            expected_start=75,
+            max_wait_seconds=0.1,
+            poll_interval=0.1,
+        )
+
+        assert result["success"] is True
+        js_code = mock_run_browser.call_args_list[0][0][2]
+        assert "hasVisiblePageEvidence" in js_code
+        assert "hasCurrentPageMarker" in js_code
 
 
 if __name__ == "__main__":

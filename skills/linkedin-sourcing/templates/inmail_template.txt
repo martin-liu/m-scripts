@@ -1,0 +1,9 @@
+Subject: {FirstName}, {POSITION_TITLE} Opportunity at {TEAM_NAME}
+
+Hi {FirstName},
+
+Your experience as a {current_title} at {Company} caught my attention. {1 personalized sentence on why their background impressed you}.
+
+I'm reaching out regarding a {POSITION_TITLE} opening on the {TEAM_NAME} team in {LOCATION}. Our team is focused on {CORE_FUNCTION}, and we aim to {BUSINESS_IMPACT}. Your background appears to align well with what we're looking for.
+
+I'd love to share more details about this opportunity and learn about your career interests. Would you be open to a brief conversation this week?

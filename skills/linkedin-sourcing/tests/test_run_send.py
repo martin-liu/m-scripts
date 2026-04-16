@@ -56,62 +56,42 @@ class TestLoadRuntimeContext:
 
 
 class TestResolveSendScript:
-    """Tests for resolve_send_script function."""
+    """Tests for resolve_send_script function using canonical RuntimeManager resolution."""
 
-    def test_prefers_runtime_bundle_over_local_override(self, tmp_path):
-        ctx = {"work_dir": str(tmp_path), "current_link": str(tmp_path / "current")}
+    @patch("runtime_manager.RuntimeManager")
+    def test_uses_runtime_manager_resolution(self, mock_manager_class, tmp_path):
+        """Should use RuntimeManager.resolve_script for consistent resolution."""
+        mock_manager = MagicMock()
+        mock_manager.resolve_script.return_value = tmp_path / "send_inmail.sh"
+        mock_manager_class.return_value = mock_manager
 
-        override_dir = tmp_path / "scripts"
-        override_dir.mkdir()
-        (override_dir / "send_inmail.sh").write_text("override")
-
-        runtime_dir = tmp_path / "current" / "scripts"
-        runtime_dir.mkdir(parents=True)
-        runtime_script = runtime_dir / "send_inmail.sh"
-        runtime_script.write_text("runtime")
-
+        ctx = {"work_dir": str(tmp_path)}
         result = run_send.resolve_send_script(ctx)
 
-        assert result == runtime_script
+        mock_manager.resolve_script.assert_called_once_with("send_inmail.sh")
+        assert result == tmp_path / "send_inmail.sh"
 
-    def test_resolves_from_runtime_bundle(self, tmp_path):
-        ctx = {"work_dir": str(tmp_path), "current_link": str(tmp_path / "current")}
+    @patch("runtime_manager.RuntimeManager")
+    def test_prefers_override_via_runtime_manager(self, mock_manager_class, tmp_path):
+        """Should delegate override preference to RuntimeManager."""
+        mock_manager = MagicMock()
+        override_path = tmp_path / "scripts" / "send_inmail.sh"
+        mock_manager.resolve_script.return_value = override_path
+        mock_manager_class.return_value = mock_manager
 
-        # Create runtime bundle
-        runtime_dir = tmp_path / "current" / "scripts"
-        runtime_dir.mkdir(parents=True)
-        runtime_script = runtime_dir / "send_inmail.sh"
-        runtime_script.write_text("runtime")
-
+        ctx = {"work_dir": str(tmp_path)}
         result = run_send.resolve_send_script(ctx)
 
-        assert result == runtime_script
+        assert result == override_path
 
-    def test_resolves_from_canonical(self, tmp_path):
-        ctx = {
-            "work_dir": str(tmp_path),
-            "current_link": str(tmp_path / "current"),
-            "skill_dir": str(tmp_path / "skill"),
-        }
+    @patch("runtime_manager.RuntimeManager")
+    def test_raises_config_error_when_not_found(self, mock_manager_class, tmp_path):
+        """Should raise ConfigError when script not found."""
+        mock_manager = MagicMock()
+        mock_manager.resolve_script.return_value = None
+        mock_manager_class.return_value = mock_manager
 
-        # Create canonical
-        canonical_dir = tmp_path / "skill" / "scripts"
-        canonical_dir.mkdir(parents=True)
-        canonical_script = canonical_dir / "send_inmail.sh"
-        canonical_script.write_text("canonical")
-
-        result = run_send.resolve_send_script(ctx)
-
-        assert result == canonical_script
-
-    def test_raises_config_error_when_not_found(self, tmp_path):
-        skill_dir = tmp_path / "skill"
-        skill_dir.mkdir()
-        ctx = {
-            "work_dir": str(tmp_path),
-            "current_link": str(tmp_path / "current"),
-            "skill_dir": str(skill_dir),
-        }
+        ctx = {"work_dir": str(tmp_path)}
 
         with pytest.raises(run_send.ConfigError) as exc_info:
             run_send.resolve_send_script(ctx)
@@ -120,28 +100,29 @@ class TestResolveSendScript:
 
 
 class TestResolveExcelUtils:
-    """Tests for resolve_excel_utils function."""
+    """Tests for resolve_excel_utils function using canonical RuntimeManager resolution."""
 
-    def test_resolves_from_override(self, tmp_path):
-        ctx = {"work_dir": str(tmp_path), "current_link": str(tmp_path / "current")}
+    @patch("runtime_manager.RuntimeManager")
+    def test_uses_runtime_manager_resolution(self, mock_manager_class, tmp_path):
+        """Should use RuntimeManager.resolve_script for consistent resolution."""
+        mock_manager = MagicMock()
+        mock_manager.resolve_script.return_value = tmp_path / "excel_utils.py"
+        mock_manager_class.return_value = mock_manager
 
-        override_dir = tmp_path / "scripts"
-        override_dir.mkdir()
-        override_script = override_dir / "excel_utils.py"
-        override_script.write_text("override")
-
+        ctx = {"work_dir": str(tmp_path)}
         result = run_send.resolve_excel_utils(ctx)
 
-        assert result == override_script
+        mock_manager.resolve_script.assert_called_once_with("excel_utils.py")
+        assert result == tmp_path / "excel_utils.py"
 
-    def test_raises_config_error_when_not_found(self, tmp_path):
-        skill_dir = tmp_path / "skill"
-        skill_dir.mkdir()
-        ctx = {
-            "work_dir": str(tmp_path),
-            "current_link": str(tmp_path / "current"),
-            "skill_dir": str(skill_dir),
-        }
+    @patch("runtime_manager.RuntimeManager")
+    def test_raises_config_error_when_not_found(self, mock_manager_class, tmp_path):
+        """Should raise ConfigError when excel_utils.py not found."""
+        mock_manager = MagicMock()
+        mock_manager.resolve_script.return_value = None
+        mock_manager_class.return_value = mock_manager
+
+        ctx = {"work_dir": str(tmp_path)}
 
         with pytest.raises(run_send.ConfigError) as exc_info:
             run_send.resolve_excel_utils(ctx)
@@ -150,81 +131,70 @@ class TestResolveExcelUtils:
 
 
 class TestGetWorkbookPath:
-    """Tests for get_workbook_path function."""
+    """Tests for get_workbook_path function using canonical project_ref_utils resolution."""
 
-    def test_returns_new_layout_workbook_path(self, tmp_path):
-        """Should find workbook.xlsx inside project dir (new layout)."""
+    @patch("project_ref_utils.resolve_project_ref")
+    def test_uses_project_ref_resolution(self, mock_resolve, tmp_path):
+        """Should use project_ref_utils.resolve_project_ref for resolution."""
+        mock_resolve.return_value = {
+            "success": True,
+            "config_path": str(tmp_path / "config.sh"),
+            "workbook_path": str(tmp_path / "workbook.xlsx"),
+        }
+
         ctx = {"work_dir": str(tmp_path)}
+        result = run_send.get_workbook_path(ctx, "my_project")
 
-        # Create project with new layout
-        project_dir = tmp_path / "projects" / "12345_test-project"
-        project_dir.mkdir(parents=True)
-        config_path = project_dir / "config.sh"
-        config_path.write_text('PROJECT_ID="12345"\n')
-        workbook = project_dir / "workbook.xlsx"
-        workbook.write_text("dummy")
+        mock_resolve.assert_called_once()
+        assert result == tmp_path / "workbook.xlsx"
 
-        result = run_send.get_workbook_path(ctx, "12345")
+    @patch("project_ref_utils.resolve_project_ref")
+    def test_accepts_recruiter_url(self, mock_resolve, tmp_path):
+        """Should accept LinkedIn Recruiter URL as project reference."""
+        mock_resolve.return_value = {
+            "success": True,
+            "config_path": str(tmp_path / "config.sh"),
+            "workbook_path": str(tmp_path / "workbook.xlsx"),
+            "recruiter_project_id": "12345",
+        }
 
-        assert result == workbook
-
-    def test_returns_legacy_workbook_path(self, tmp_path):
-        """Should fall back to {PROJECT_ID}.xlsx at projects root (legacy)."""
         ctx = {"work_dir": str(tmp_path)}
+        url = "https://linkedin.com/talent/hire/12345/overview"
+        result = run_send.get_workbook_path(ctx, url)
 
-        projects_dir = tmp_path / "projects"
-        projects_dir.mkdir()
-        workbook = projects_dir / "test_project.xlsx"
-        workbook.write_text("dummy")
+        mock_resolve.assert_called_once_with(url, work_dir=tmp_path)
+        assert result == tmp_path / "workbook.xlsx"
 
-        result = run_send.get_workbook_path(ctx, "test_project")
+    @patch("project_ref_utils.resolve_project_ref")
+    def test_raises_config_error_on_resolution_failure(self, mock_resolve, tmp_path):
+        """Should raise ConfigError when project resolution fails."""
+        mock_resolve.return_value = {
+            "success": False,
+            "error": "Project not found",
+        }
 
-        assert result == workbook
-
-    def test_prefers_new_layout_over_legacy(self, tmp_path):
-        """Should prefer new layout workbook even if legacy exists."""
-        ctx = {"work_dir": str(tmp_path)}
-
-        # Create both new and legacy layout
-        project_dir = tmp_path / "projects" / "12345_test-project"
-        project_dir.mkdir(parents=True)
-        config_path = project_dir / "config.sh"
-        config_path.write_text('PROJECT_ID="12345"\n')
-        new_workbook = project_dir / "workbook.xlsx"
-        new_workbook.write_text("new layout")
-
-        legacy_workbook = tmp_path / "projects" / "12345.xlsx"
-        legacy_workbook.write_text("legacy")
-
-        result = run_send.get_workbook_path(ctx, "12345")
-
-        # Should prefer new layout
-        assert result == new_workbook
-
-    def test_finds_project_by_scanning_config(self, tmp_path):
-        """Should find project by scanning config.sh files, not folder name."""
-        ctx = {"work_dir": str(tmp_path)}
-
-        # Create project with misleading folder name
-        project_dir = tmp_path / "projects" / "misleading-folder-name"
-        project_dir.mkdir(parents=True)
-        config_path = project_dir / "config.sh"
-        # Actual PROJECT_ID is different from folder name
-        config_path.write_text('PROJECT_ID="actual-id"\n')
-        workbook = project_dir / "workbook.xlsx"
-        workbook.write_text("dummy")
-
-        result = run_send.get_workbook_path(ctx, "actual-id")
-
-        assert result == workbook
-
-    def test_raises_config_error_when_not_found(self, tmp_path):
         ctx = {"work_dir": str(tmp_path)}
 
         with pytest.raises(run_send.ConfigError) as exc_info:
             run_send.get_workbook_path(ctx, "nonexistent")
 
-        assert "Workbook not found" in str(exc_info.value)
+        assert "Project not found" in str(exc_info.value)
+
+    @patch("project_ref_utils.resolve_project_ref")
+    def test_raises_config_error_when_no_workbook_path(self, mock_resolve, tmp_path):
+        """Should raise ConfigError when resolution succeeds but no workbook path."""
+        mock_resolve.return_value = {
+            "success": True,
+            "config_path": str(tmp_path / "config.sh"),
+            # Missing workbook_path
+        }
+
+        ctx = {"work_dir": str(tmp_path)}
+
+        with pytest.raises(run_send.ConfigError) as exc_info:
+            run_send.get_workbook_path(ctx, "my_project")
+
+        assert "no workbook path returned" in str(exc_info.value)
 
 
 class TestReadSendableRows:
@@ -302,7 +272,7 @@ class TestSendInmail:
 
         send_script = tmp_path / "send_inmail.sh"
         result = run_send.send_inmail(
-            send_script, "9230", "http://test.com", "Subject", "Body"
+            send_script, "9234", None, "http://test.com", "Subject", "Body"
         )
 
         assert result["status"] == "SENT"
@@ -324,13 +294,19 @@ class TestSendInmail:
 
         send_script = tmp_path / "send_inmail.sh"
         result = run_send.send_inmail(
-            send_script, "9230", "http://test.com", "Subject", "Body", verify_only=True
+            send_script,
+            "9234",
+            None,
+            "http://test.com",
+            "Subject",
+            "Body",
+            verify_only=True,
         )
 
         assert result["status"] == "VERIFIED"
         # Verify verify_only flag was passed to subprocess via environment
         call_kwargs = mock_run.call_args[1]
-        assert call_kwargs.get("env", {}).get("CDP_PORT") == "9230"
+        assert call_kwargs.get("env", {}).get("CDP_PORT") == "9234"
 
     @patch("run_send.subprocess.run")
     def test_preserves_parent_environment(self, mock_run, tmp_path):
@@ -349,7 +325,14 @@ class TestSendInmail:
         )
 
         send_script = tmp_path / "send_inmail.sh"
-        run_send.send_inmail(send_script, "9230", "http://test.com", "Subject", "Body")
+        run_send.send_inmail(
+            send_script,
+            "9234",
+            None,
+            "http://test.com",
+            "Subject",
+            "Body",
+        )
 
         call_kwargs = mock_run.call_args[1]
         env = call_kwargs.get("env", {})
@@ -357,7 +340,34 @@ class TestSendInmail:
         # Should preserve parent environment variables
         assert "HOME" in env or "PATH" in env, "Parent environment should be preserved"
         # Should override CDP_PORT
-        assert env.get("CDP_PORT") == "9230"
+        assert env.get("CDP_PORT") == "9234"
+
+    @patch("run_send.subprocess.run")
+    def test_passes_work_dir_to_subprocess(self, mock_run, tmp_path):
+        """Subprocess should receive WORK_DIR for browser mode resolution."""
+        mock_run.return_value = MagicMock(
+            stdout=json.dumps(
+                {
+                    "status": "SENT",
+                    "reason": "message_sent_successfully",
+                    "clean_state": True,
+                }
+            ),
+            returncode=0,
+        )
+
+        send_script = tmp_path / "send_inmail.sh"
+        run_send.send_inmail(
+            send_script,
+            "9234",
+            "/tmp/custom-workdir",
+            "http://test.com",
+            "Subject",
+            "Body",
+        )
+
+        env = mock_run.call_args[1].get("env", {})
+        assert env.get("WORK_DIR") == "/tmp/custom-workdir"
 
     @patch("run_send.subprocess.run")
     def test_rejects_legacy_output_as_failure(self, mock_run, tmp_path):
@@ -369,7 +379,7 @@ class TestSendInmail:
 
         send_script = tmp_path / "send_inmail.sh"
         result = run_send.send_inmail(
-            send_script, "9230", "http://test.com", "Subject", "Body"
+            send_script, "9234", None, "http://test.com", "Subject", "Body"
         )
 
         assert result["status"] == "FAILED"
@@ -386,7 +396,7 @@ class TestSendInmail:
 
         send_script = tmp_path / "send_inmail.sh"
         result = run_send.send_inmail(
-            send_script, "9230", "http://test.com", "Subject", "Body"
+            send_script, "9234", None, "http://test.com", "Subject", "Body"
         )
 
         assert result["status"] == "FAILED"
@@ -401,7 +411,7 @@ class TestSendInmail:
 
         send_script = tmp_path / "send_inmail.sh"
         result = run_send.send_inmail(
-            send_script, "9230", "http://test.com", "Subject", "Body"
+            send_script, "9234", None, "http://test.com", "Subject", "Body"
         )
 
         assert result["status"] == "FAILED"
@@ -569,7 +579,8 @@ class TestUpdateRowAfterSend:
         send_script = tmp_path / "send_inmail.sh"
         result = run_send.send_inmail(
             send_script,
-            "9230",
+            "9234",
+            None,
             "http://test.com",
             "Subject",
             "Body",
@@ -626,7 +637,7 @@ class TestRunSendMacro:
         mock_ctx.return_value = {
             "work_dir": "/test",
             "current_link": "/test/current",
-            "profile": {"CDP_PORT": "9230"},
+            "profile": {"CDP_PORT": "9234"},
         }
         mock_script.return_value = Path("/test/send_inmail.sh")
         mock_excel.return_value = Path("/test/excel_utils.py")
@@ -664,7 +675,7 @@ class TestRunSendMacro:
         mock_ctx.return_value = {
             "work_dir": "/test",
             "current_link": "/test/current",
-            "profile": {"CDP_PORT": "9230"},
+            "profile": {"CDP_PORT": "9234"},
         }
         mock_script.return_value = Path("/test/send_inmail.sh")
         mock_excel.return_value = Path("/test/excel_utils.py")
@@ -687,7 +698,7 @@ class TestRunSendMacro:
         mock_ctx.return_value = {
             "work_dir": "/test",
             "current_link": "/test/current",
-            "profile": {"CDP_PORT": "9230"},
+            "profile": {"CDP_PORT": "9234"},
         }
         mock_script.return_value = Path("/test/send_inmail.sh")
         mock_excel.return_value = Path("/test/excel_utils.py")
@@ -731,7 +742,7 @@ class TestRunSendMacro:
         mock_ctx.return_value = {
             "work_dir": "/test",
             "current_link": "/test/current",
-            "profile": {"CDP_PORT": "9230"},
+            "profile": {"CDP_PORT": "9234"},
         }
         mock_script.return_value = Path("/test/send_inmail.sh")
         mock_excel.return_value = Path("/test/excel_utils.py")
@@ -771,7 +782,7 @@ class TestRunSendMacro:
         mock_ctx.return_value = {
             "work_dir": "/test",
             "current_link": "/test/current",
-            "profile": {"CDP_PORT": "9230"},
+            "profile": {"CDP_PORT": "9234"},
         }
         mock_script.return_value = Path("/test/send_inmail.sh")
         mock_excel.return_value = Path("/test/excel_utils.py")
@@ -800,7 +811,7 @@ class TestRunSendMacro:
         mock_ctx.return_value = {
             "work_dir": "/test",
             "current_link": "/test/current",
-            "profile": {"CDP_PORT": "9230"},
+            "profile": {"CDP_PORT": "9234"},
         }
         mock_script.return_value = Path("/test/send_inmail.sh")
         mock_excel.return_value = Path("/test/excel_utils.py")
@@ -830,7 +841,7 @@ class TestRunSendMacro:
         mock_ctx.return_value = {
             "work_dir": "/test",
             "current_link": "/test/current",
-            "profile": {"CDP_PORT": "9230"},
+            "profile": {"CDP_PORT": "9234"},
         }
         mock_script.return_value = Path("/test/send_inmail.sh")
         mock_excel.return_value = Path("/test/excel_utils.py")
@@ -909,7 +920,7 @@ class TestProjectRefResolution:
         mock_ctx.return_value = {
             "work_dir": "/test",
             "current_link": "/test/current",
-            "profile": {"CDP_PORT": "9230"},
+            "profile": {"CDP_PORT": "9234"},
         }
         mock_script.return_value = Path("/test/send_inmail.sh")
         mock_excel.return_value = Path("/test/excel_utils.py")
@@ -936,7 +947,7 @@ class TestProjectRefResolution:
             "error": "Project not found",
         }
 
-        # Simulate main() logic for --project (not --project-id)
+        # Simulate main() logic for --project
         # When --project is used and resolution fails, it should return exit code 3
         project_ref = "my_project"
         resolution = mock_resolve_ref(project_ref)
@@ -944,16 +955,6 @@ class TestProjectRefResolution:
         # For --project, failed resolution means error exit - no fallback
         assert resolution["success"] is False
         # In real main(), this would return exit code 3
-
-    def test_legacy_project_id_no_resolution(self):
-        """Legacy --project-id should be used literally without calling resolver."""
-        # When --project-id is used (not --project), the resolver should NOT be called
-        # and the project_id should be used as-is
-        project_id = "legacy_project"
-
-        # No resolution happens for --project-id
-        # The project_id is used directly for workbook lookup
-        assert project_id == "legacy_project"
 
     @patch("project_ref_utils.resolve_project_ref")
     def test_project_url_resolution(
@@ -996,43 +997,6 @@ class TestProjectRefResolution:
         assert resolution["success"] is True
         assert resolution["recruiter_project_id"] == "12345"
 
-    @patch("project_ref_utils.resolve_project_ref")
-    @patch("run_send.load_runtime_context")
-    @patch("run_send.resolve_send_script")
-    @patch("run_send.resolve_excel_utils")
-    @patch("run_send.get_workbook_path")
-    @patch("run_send.read_sendable_rows")
-    def test_legacy_project_id_still_works(
-        self,
-        mock_read,
-        mock_workbook,
-        mock_excel,
-        mock_script,
-        mock_ctx,
-        mock_resolve_ref,
-    ):
-        """Legacy --project-id should still work for backward compatibility."""
-        mock_ctx.return_value = {
-            "work_dir": "/test",
-            "current_link": "/test/current",
-            "profile": {"CDP_PORT": "9230"},
-        }
-        mock_script.return_value = Path("/test/send_inmail.sh")
-        mock_excel.return_value = Path("/test/excel_utils.py")
-        mock_workbook.return_value = Path("/test/legacy_project.xlsx")
-        mock_read.return_value = []
-
-        # Simulate using legacy project_id directly (no resolution needed)
-        project_id = "legacy_project"
-
-        result = run_send.run_send_macro(project_id)
-
-        assert result == 0
-        mock_workbook.assert_called_once()
-        # Verify workbook was looked up using the legacy project_id
-        call_args = mock_workbook.call_args
-        assert call_args[0][1] == "legacy_project"
-
 
 # Import pytest for exception testing
 try:
@@ -1057,6 +1021,156 @@ except ImportError:
                     return True
 
             return ContextManager()
+
+
+class TestBrowserStateErrorWithActionRequired:
+    """Tests for BrowserStateError with action_required."""
+
+    def test_browser_state_error_with_action_required(self):
+        """BrowserStateError should accept and store action_required."""
+        action = {
+            "code": "element_missing",
+            "summary": "Send button not found",
+            "steps": ["Check browser", "Retry"],
+            "can_retry": True,
+            "context": {"selector": "button.send"},
+        }
+        error = run_send.BrowserStateError(
+            "Browser state not clean",
+            row_id=5,
+            action_required=action,
+        )
+
+        assert error.exit_code == 2
+        assert error.row_id == 5
+        assert error.action_required == action
+        assert error.action_required["code"] == "element_missing"
+
+    def test_browser_state_error_without_action_required(self):
+        """BrowserStateError should work without action_required (backward compat)."""
+        error = run_send.BrowserStateError("Browser state not clean", row_id=3)
+
+        assert error.exit_code == 2
+        assert error.row_id == 3
+        assert error.action_required is None
+
+
+class TestUpdateRowAfterSendWithActionRequired:
+    """Tests for update_row_after_send with action_required handling."""
+
+    def test_failed_with_action_required_raises_browser_state_error(self, tmp_path):
+        """FAILED status with action_required should raise BrowserStateError."""
+        excel_utils = tmp_path / "excel_utils.py"
+        workbook = tmp_path / "test.xlsx"
+        row = {"row_id": 5}
+        send_result = {
+            "status": "FAILED",
+            "reason": "click_send_button_failed",
+            "failure_code": "element_missing",
+            "action_required": {
+                "code": "element_missing",
+                "summary": "Send button not found",
+                "steps": ["Check browser", "Retry"],
+                "can_retry": True,
+                "context": {"selector": "button.send"},
+            },
+            "clean_state": True,  # Clean but failed
+        }
+
+        with pytest.raises(run_send.BrowserStateError) as exc_info:
+            run_send.update_row_after_send(
+                excel_utils, workbook, row, send_result, "2026-04-11"
+            )
+
+        assert exc_info.value.row_id == 5
+        assert exc_info.value.action_required is not None
+        assert exc_info.value.action_required["code"] == "element_missing"
+        assert "click_send_button_failed" in str(exc_info.value)
+        assert "element_missing" in str(exc_info.value)
+
+    def test_unclean_state_with_action_required_raises_browser_state_error(
+        self, tmp_path
+    ):
+        """Unclean state with action_required should include it in error."""
+        excel_utils = tmp_path / "excel_utils.py"
+        workbook = tmp_path / "test.xlsx"
+        row = {"row_id": 5}
+        send_result = {
+            "status": "SENT",  # Even SENT status
+            "reason": "message_sent_successfully",
+            "clean_state": False,  # But unclean
+            "action_required": {
+                "code": "ambiguous_state",
+                "summary": "Cleanup failed",
+                "steps": ["Close composer manually"],
+                "can_retry": True,
+                "context": {},
+            },
+        }
+
+        with pytest.raises(run_send.BrowserStateError) as exc_info:
+            run_send.update_row_after_send(
+                excel_utils, workbook, row, send_result, "2026-04-11"
+            )
+
+        assert exc_info.value.row_id == 5
+        assert exc_info.value.action_required is not None
+        assert exc_info.value.action_required["code"] == "ambiguous_state"
+
+
+class TestRunSendMacroWithActionRequired:
+    """Tests for run_send_macro surfacing action_required."""
+
+    @patch("run_send.load_runtime_context")
+    @patch("run_send.resolve_send_script")
+    @patch("run_send.resolve_excel_utils")
+    @patch("run_send.get_workbook_path")
+    @patch("run_send.read_sendable_rows")
+    @patch("run_send.send_inmail")
+    def test_action_required_surfaced_in_browser_state_error(
+        self, mock_send, mock_read, mock_workbook, mock_excel, mock_script, mock_ctx
+    ):
+        """BrowserStateError should surface action_required steps to operator."""
+        mock_ctx.return_value = {
+            "work_dir": "/test",
+            "current_link": "/test/current",
+            "profile": {"CDP_PORT": "9234"},
+        }
+        mock_script.return_value = Path("/test/send_inmail.sh")
+        mock_excel.return_value = Path("/test/excel_utils.py")
+        mock_workbook.return_value = Path("/test/project.xlsx")
+        mock_read.return_value = [
+            {
+                "row_id": 1,
+                "name": "Test User",
+                "profile_url": "http://linkedin.com/in/test",
+                "draft_subject": "Test Subject",
+                "draft_body": "Test Body",
+            }
+        ]
+        mock_send.return_value = {
+            "status": "FAILED",
+            "reason": "click_send_button_failed",
+            "failure_code": "element_missing",
+            "action_required": {
+                "code": "element_missing",
+                "summary": "Send button not found on profile page",
+                "steps": [
+                    "Check the Chrome browser to verify the page has loaded correctly",
+                    "Look for the expected element (e.g., 'Message' button, composer field)",
+                    "If the page layout has changed, manual intervention may be required",
+                    "Refresh the page and retry the operation",
+                ],
+                "can_retry": True,
+                "context": {"selector": "Send button"},
+            },
+            "clean_state": True,
+        }
+
+        result = run_send.run_send_macro("test_project")
+
+        # Should return exit code 2 (BrowserStateError)
+        assert result == 2
 
 
 if __name__ == "__main__":

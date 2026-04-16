@@ -6,6 +6,7 @@ Run with: python3 -m pytest skills/linkedin-sourcing/tests/test_bootstrap_projec
 
 from __future__ import annotations
 
+import json
 import sys
 import tempfile
 from pathlib import Path
@@ -857,6 +858,19 @@ class TestCheckExistingProjectByRecruiterId:
 
         assert result == config_path
 
+    def test_handles_spaced_assignment_in_config(self, tmp_path):
+        """Should use shared config parsing for spaced assignments."""
+        projects_dir = tmp_path / "projects" / "project2"
+        projects_dir.mkdir(parents=True)
+        config_path = projects_dir / "config.sh"
+        config_path.write_text(
+            'RECRUITER_PROJECT_URL = "https://linkedin.com/talent/hire/24680/overview"\n'
+        )
+
+        result = bp.check_existing_project_by_recruiter_id(tmp_path, "24680")
+
+        assert result == config_path
+
 
 class TestEnsureRecruiterProjectAndGetId:
     """Tests for ensure_recruiter_project integration."""
@@ -874,7 +888,7 @@ class TestEnsureRecruiterProjectAndGetId:
         result = bp.ensure_recruiter_project_and_get_id(
             project_name="Test Project",
             description="Test description",
-            browser_mode="9230",  # Can pass string CDP port for backward compatibility
+            browser_mode="9234",  # Can pass string CDP port for backward compatibility
             work_dir=tmp_path,
         )
 
@@ -895,7 +909,7 @@ class TestEnsureRecruiterProjectAndGetId:
         result = bp.ensure_recruiter_project_and_get_id(
             project_name="Test Project",
             description="Test description",
-            browser_mode="9230",  # Can pass string CDP port for backward compatibility
+            browser_mode="9234",  # Can pass string CDP port for backward compatibility
             work_dir=tmp_path,
         )
 
@@ -916,7 +930,7 @@ class TestEnsureRecruiterProjectAndGetId:
         bp.ensure_recruiter_project_and_get_id(
             project_name="Test",
             description="",
-            browser_mode="9230",  # Can pass string CDP port for backward compatibility
+            browser_mode="9234",  # Can pass string CDP port for backward compatibility
             work_dir=tmp_path,
         )
 
@@ -955,6 +969,45 @@ class TestEnsureRecruiterProjectAndGetId:
         call_args = mock_ensure.call_args[1]
         assert call_args["browser_mode"] is browser_mode
 
+    @patch("ensure_recruiter_project.ensure_project_exists")
+    def test_preserves_failure_code_and_action_required(self, mock_ensure, tmp_path):
+        """Should preserve failure_code and action_required from ensure_project_exists.
+
+        Regression test: The wrapper was stripping failure_code and action_required fields,
+        causing the agent to receive generic fallback text instead of structured guidance.
+        """
+        mock_ensure.return_value = {
+            "status": "error",
+            "project_id": None,
+            "url": None,
+            "message": "Failed to navigate to Projects page",
+            "failure_code": "browser_unavailable",
+            "action_required": {
+                "code": "browser_unavailable",
+                "summary": "Chrome is not running or not accessible",
+                "steps": [
+                    "Start Chrome with: google-chrome --remote-debugging-port=9234",
+                    "Ensure Chrome is accessible on port 9234",
+                    "Retry the operation",
+                ],
+                "can_retry": True,
+            },
+        }
+
+        result = bp.ensure_recruiter_project_and_get_id(
+            project_name="Test Project",
+            description="Test description",
+            browser_mode="9234",
+            work_dir=tmp_path,
+        )
+
+        # Should preserve structured failure info for agent manual guidance
+        assert result["success"] is False
+        assert result["failure_code"] == "browser_unavailable"
+        assert result["action_required"] is not None
+        assert result["action_required"]["code"] == "browser_unavailable"
+        assert "Chrome is not running" in result["action_required"]["summary"]
+
 
 class TestBootstrapProject:
     """Integration tests for full bootstrap flow with Recruiter-derived PROJECT_ID."""
@@ -972,7 +1025,7 @@ class TestBootstrapProject:
         args.recruiter_url = (
             "https://linkedin.com/talent/hire/12345/discover/recruiterSearch"
         )
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.project_id = None  # Not overriding
         args.position_title = "Senior Engineer"
         args.team_name = None
@@ -1001,13 +1054,21 @@ class TestBootstrapProject:
         assert Path(result["workbook_path"]).exists()
 
     @patch("bootstrap_project.ensure_recruiter_project_and_get_id")
+    @patch("bootstrap_project.ensure_browser_auth")
     def test_creates_recruiter_project_when_no_url_provided(
-        self, mock_ensure, tmp_path, monkeypatch
+        self, mock_ensure_browser, mock_ensure_project, tmp_path, monkeypatch
     ):
         """Should create Recruiter project and derive PROJECT_ID when no URL provided."""
         monkeypatch.setattr(bp.Path, "home", lambda: tmp_path)
 
-        mock_ensure.return_value = {
+        # Mock browser auth to succeed
+        mock_ensure_browser.return_value = {
+            "success": True,
+            "mode": None,
+            "error": None,
+        }
+
+        mock_ensure_project.return_value = {
             "success": True,
             "project_id": "67890",
             "url": "https://linkedin.com/talent/hire/67890/overview",
@@ -1020,7 +1081,7 @@ class TestBootstrapProject:
         args.jd_text = "JD content"
         args.work_dir = str(tmp_path / "work")
         args.recruiter_url = None  # No URL provided
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.project_id = None
         args.position_title = "ML Engineer"
         args.team_name = "AI Team"
@@ -1035,10 +1096,10 @@ class TestBootstrapProject:
 
         # PROJECT_ID should be derived from created Recruiter project
         assert result["project_id"] == "67890"
-        mock_ensure.assert_called_once()
+        mock_ensure_project.assert_called_once()
 
         # Check the project name was passed correctly
-        call_args = mock_ensure.call_args[1]
+        call_args = mock_ensure_project.call_args[1]
         assert call_args["project_name"] == "ML Engineer"
 
     def test_allows_explicit_project_id_override(self, tmp_path, monkeypatch):
@@ -1050,7 +1111,7 @@ class TestBootstrapProject:
         args.jd_text = "JD content"
         args.work_dir = str(tmp_path / "work")
         args.recruiter_url = "https://linkedin.com/talent/hire/12345/"
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.project_id = "custom_id"  # Explicit override
         args.position_title = "Engineer"
         args.team_name = None
@@ -1075,7 +1136,7 @@ class TestBootstrapProject:
         args.jd_text = "JD content"
         args.work_dir = str(tmp_path / "work")
         args.recruiter_url = "https://invalid-url.com/no-project-id"
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.project_id = None
         args.position_title = "Engineer"
         args.team_name = None
@@ -1107,7 +1168,7 @@ class TestBootstrapProject:
         args.jd_text = "JD content"
         args.work_dir = str(tmp_path / "work")
         args.recruiter_url = "https://invalid-url.com/no-project-id"
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.project_id = "custom_override_id"  # Override provided
         args.position_title = "Engineer"
         args.team_name = None
@@ -1131,13 +1192,21 @@ class TestBootstrapProject:
         )
 
     @patch("bootstrap_project.ensure_recruiter_project_and_get_id")
+    @patch("bootstrap_project.ensure_browser_auth")
     def test_fails_closed_when_recruiter_creation_fails(
-        self, mock_ensure, tmp_path, monkeypatch
+        self, mock_ensure_browser, mock_ensure_project, tmp_path, monkeypatch
     ):
         """Should fail closed when ensure_recruiter_project fails."""
         monkeypatch.setattr(bp.Path, "home", lambda: tmp_path)
 
-        mock_ensure.return_value = {
+        # Mock browser auth to succeed
+        mock_ensure_browser.return_value = {
+            "success": True,
+            "mode": None,
+            "error": None,
+        }
+
+        mock_ensure_project.return_value = {
             "success": False,
             "project_id": None,
             "url": None,
@@ -1150,7 +1219,7 @@ class TestBootstrapProject:
         args.jd_text = "JD content"
         args.work_dir = str(tmp_path / "work")
         args.recruiter_url = None
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.project_id = None
         args.position_title = "Engineer"
         args.team_name = None
@@ -1196,7 +1265,7 @@ class TestBootstrapProject:
         args.recruiter_url = (
             "https://linkedin.com/talent/hire/12345/discover/recruiterSearch"
         )
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.project_id = "different_id"  # Would prefer different local ID
         args.position_title = "New Title"
         args.team_name = None
@@ -1242,7 +1311,7 @@ class TestBootstrapProject:
         args.recruiter_url = (
             "https://linkedin.com/talent/hire/12345/discover/recruiterSearch"
         )
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.project_id = None
         args.position_title = "Updated Title"
         args.team_name = None
@@ -1293,7 +1362,7 @@ class TestBootstrapProject:
         args.recruiter_url = (
             "https://linkedin.com/talent/hire/12345/discover/recruiterSearch"
         )
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.project_id = None
         args.position_title = "Updated Title"
         args.team_name = None
@@ -1339,7 +1408,7 @@ class TestBootstrapProject:
         args.recruiter_url = (
             "https://linkedin.com/talent/hire/12345/discover/recruiterSearch"
         )
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.project_id = None
         args.position_title = "Updated Title"
         args.team_name = None
@@ -1387,7 +1456,7 @@ class TestBootstrapProject:
         args.recruiter_url = (
             "https://linkedin.com/talent/hire/12345/discover/recruiterSearch"
         )
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.project_id = None  # Would derive "12345" but legacy project exists
         args.position_title = "Updated Title"
         args.team_name = None
@@ -1435,7 +1504,7 @@ class TestBootstrapProject:
         args.recruiter_url = (
             "https://linkedin.com/talent/hire/67890/discover/recruiterSearch"
         )
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.project_id = None
         args.position_title = "New Title"
         args.team_name = None
@@ -1474,7 +1543,7 @@ class TestBootstrapProject:
         args.recruiter_url = (
             "https://linkedin.com/talent/hire/11111/discover/recruiterSearch"
         )
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.project_id = None
         args.position_title = "ML Engineer"
         args.team_name = None
@@ -1496,7 +1565,7 @@ class TestBootstrapProject:
         assert Path(result["workbook_path"]).parent.name.startswith("11111_")
 
     def test_next_steps_with_search_url(self, tmp_path, monkeypatch):
-        """Should indicate ready for extraction when search URL is available."""
+        """Should require search review before extraction when search URL is available."""
         monkeypatch.setattr(bp.Path, "home", lambda: tmp_path)
 
         args = Mock()
@@ -1504,7 +1573,7 @@ class TestBootstrapProject:
         args.jd_text = "JD content"
         args.work_dir = str(tmp_path / "work")
         args.recruiter_url = "https://linkedin.com/talent/hire/12345/discover/recruiterSearch?searchContextId=abc"
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.project_id = None
         args.position_title = "Engineer"
         args.team_name = None
@@ -1518,7 +1587,10 @@ class TestBootstrapProject:
         result = bp.bootstrap_project(args)
 
         next_steps_text = "\n".join(result["next_steps"])
-        assert "ready for extraction" in next_steps_text.lower()
+        assert (
+            "create/review the candidate search before extraction"
+            in next_steps_text.lower()
+        )
 
     def test_next_steps_without_search_url(self, tmp_path, monkeypatch):
         """Should indicate need for ensure_recruiter_project when only overview URL."""
@@ -1529,7 +1601,7 @@ class TestBootstrapProject:
         args.jd_text = "JD content"
         args.work_dir = str(tmp_path / "work")
         args.recruiter_url = "https://linkedin.com/talent/hire/12345/overview"
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.project_id = None
         args.position_title = "Engineer"
         args.team_name = None
@@ -1564,7 +1636,7 @@ class TestBootstrapProject:
         args.recruiter_url = (
             "https://linkedin.com/talent/hire/12345/discover/recruiterSearch"
         )
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.project_id = None
         args.position_title = None  # No explicit title
         args.team_name = None
@@ -1596,7 +1668,7 @@ class TestBootstrapProject:
         args.recruiter_url = (
             "https://linkedin.com/talent/hire/12345/discover/recruiterSearch"
         )
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.project_id = None
         args.position_title = None
         args.team_name = None
@@ -1640,7 +1712,7 @@ class TestBootstrapProject:
         args.recruiter_url = (
             "https://linkedin.com/talent/hire/12345/discover/recruiterSearch"
         )
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.project_id = None
         args.position_title = None
         args.team_name = None
@@ -1669,7 +1741,7 @@ class TestBootstrapProject:
         args.recruiter_url = (
             "https://linkedin.com/talent/hire/12345/discover/recruiterSearch"
         )
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.project_id = None
         args.position_title = "Custom Title"  # Explicit override
         args.team_name = None
@@ -1698,7 +1770,7 @@ class TestBootstrapProject:
         args.recruiter_url = (
             "https://linkedin.com/talent/hire/12345/discover/recruiterSearch"
         )
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.project_id = None
         args.position_title = None
         args.team_name = None
@@ -1759,7 +1831,7 @@ class TestBootstrapProject:
         args.recruiter_url = (
             "https://linkedin.com/talent/hire/12345/discover/recruiterSearch"
         )
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.project_id = None
         # No overrides - should preserve all existing values
         args.position_title = None
@@ -1815,7 +1887,7 @@ class TestBootstrapProject:
         args.recruiter_url = (
             "https://linkedin.com/talent/hire/12345/discover/recruiterSearch"
         )
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.project_id = None
         # Override some values
         args.position_title = "Override Title"
@@ -1865,7 +1937,7 @@ class TestBootstrapProject:
         args.recruiter_url = (
             "https://linkedin.com/talent/hire/12345/discover/recruiterSearch"
         )
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.project_id = None
         # No overrides
         args.position_title = None
@@ -1940,7 +2012,7 @@ class TestParseArgs:
         """Should use default CDP port when not specified."""
         with patch.object(sys, "argv", ["script", "--jd-url", "https://example.com"]):
             args = bp.parse_args()
-            assert args.cdp_port == "9230"
+            assert args.cdp_port == "9234"
 
     def test_accepts_all_overrides(self):
         """Should accept all override arguments."""
@@ -2178,17 +2250,17 @@ class TestEnsureBrowserAuth:
         mock_bootstrap.return_value = {
             "success": True,
             "mode": "cdp",
-            "cdp_port": "9230",
+            "cdp_port": "9234",
             "message": "Using existing authenticated browser",
         }
 
-        result = bp.ensure_browser_auth(tmp_path, "9230")
+        result = bp.ensure_browser_auth(tmp_path, "9234")
 
         assert result["success"] is True
         assert result["error"] is None
         mock_bootstrap.assert_called_once_with(
             work_dir=tmp_path,
-            preferred_cdp_port="9230",
+            preferred_cdp_port="9234",
             allow_browser_launch=True,
         )
 
@@ -2201,7 +2273,7 @@ class TestEnsureBrowserAuth:
             "message": "Cannot launch Chrome for manual login",
         }
 
-        result = bp.ensure_browser_auth(tmp_path, "9230")
+        result = bp.ensure_browser_auth(tmp_path, "9234")
 
         assert result["success"] is False
         assert "Browser launch not allowed" in result["error"]
@@ -2212,12 +2284,12 @@ class TestEnsureBrowserAuth:
         mock_bootstrap.return_value = {
             "success": True,
             "mode": "cdp",
-            "cdp_port": "9230",
+            "cdp_port": "9234",
             "headed": True,
             "message": "Using existing authenticated browser",
         }
 
-        result = bp.ensure_browser_auth(tmp_path, "9230")
+        result = bp.ensure_browser_auth(tmp_path, "9234")
 
         assert result["success"] is True
         assert result["mode"].mode == "cdp"
@@ -2237,7 +2309,7 @@ class TestEnsureBrowserAuth:
             "message": "Session started",
         }
 
-        result = bp.ensure_browser_auth(tmp_path, "9230")
+        result = bp.ensure_browser_auth(tmp_path, "9234")
 
         assert result["success"] is True
         assert result["mode"].mode == "agent-browser"
@@ -2250,12 +2322,12 @@ class TestEnsureBrowserAuth:
         mock_bootstrap.return_value = {
             "success": True,
             "mode": "cdp",
-            "cdp_port": "9230",
+            "cdp_port": "9234",
             # headed not included - should default to True
             "message": "Using existing authenticated browser",
         }
 
-        result = bp.ensure_browser_auth(tmp_path, "9230")
+        result = bp.ensure_browser_auth(tmp_path, "9234")
 
         assert result["success"] is True
         assert result["mode"].headed is True
@@ -2288,7 +2360,7 @@ class TestBootstrapProjectBrowserAuth:
         args.jd_text = "JD content"
         args.work_dir = str(tmp_path / "work")
         args.recruiter_url = None  # No URL provided - should trigger browser bootstrap
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.project_id = None
         args.position_title = "ML Engineer"
         args.team_name = None
@@ -2302,7 +2374,7 @@ class TestBootstrapProjectBrowserAuth:
         result = bp.bootstrap_project(args)
 
         # Should call browser auth first
-        mock_ensure_browser.assert_called_once_with(tmp_path / "work", "9230")
+        mock_ensure_browser.assert_called_once_with(tmp_path / "work", "9234")
         # Then call ensure_recruiter_project
         mock_ensure_project.assert_called_once()
         # Project should be created successfully
@@ -2323,7 +2395,7 @@ class TestBootstrapProjectBrowserAuth:
         args.recruiter_url = (
             "https://linkedin.com/talent/hire/12345/discover/recruiterSearch"
         )
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.project_id = None
         args.position_title = "Engineer"
         args.team_name = None
@@ -2356,7 +2428,7 @@ class TestBootstrapProjectBrowserAuth:
         args.jd_text = "JD content"
         args.work_dir = str(tmp_path / "work")
         args.recruiter_url = None
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.project_id = "custom_override_id"  # Explicit override
         args.position_title = "Engineer"
         args.team_name = None
@@ -2394,7 +2466,7 @@ class TestBootstrapProjectBrowserAuth:
         args.jd_text = "JD content"
         args.work_dir = str(tmp_path / "work")
         args.recruiter_url = None  # No URL - needs browser
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.project_id = None
         args.position_title = "Engineer"
         args.team_name = None
@@ -2459,7 +2531,7 @@ class TestBootstrapProjectFreshAuthBootstrap:
         args.jd_text = "JD content"
         args.work_dir = str(tmp_path / "work")
         args.recruiter_url = None  # No URL - triggers browser bootstrap
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.project_id = None
         args.position_title = "Senior ML Engineer"
         args.team_name = None
@@ -2501,7 +2573,7 @@ class TestBootstrapProjectFreshAuthBootstrap:
         # Simulate auth bootstrap returning CDP mode
         browser_mode = BrowserMode(
             mode="cdp",
-            cdp_port="9230",
+            cdp_port="9234",
             headed=True,
         )
         mock_ensure_browser.return_value = {
@@ -2523,7 +2595,7 @@ class TestBootstrapProjectFreshAuthBootstrap:
         args.jd_text = "JD content"
         args.work_dir = str(tmp_path / "work")
         args.recruiter_url = None
-        args.cdp_port = "9230"
+        args.cdp_port = "9234"
         args.project_id = None
         args.position_title = "Engineer"
         args.team_name = None
@@ -2543,7 +2615,236 @@ class TestBootstrapProjectFreshAuthBootstrap:
         passed_mode = call_kwargs["browser_mode"]
         assert passed_mode is browser_mode
         assert passed_mode.mode == "cdp"
-        assert passed_mode.cdp_port == "9230"
+        assert passed_mode.cdp_port == "9234"
+
+
+class TestNormalizeToPlainText:
+    """Tests for HTML to plain text normalization."""
+
+    def test_returns_plain_text_unchanged(self):
+        """Should return plain text with minimal normalization."""
+        text = "This is a plain text job description."
+        result = bp.normalize_to_plain_text(text)
+
+        assert result == text
+
+    def test_normalizes_whitespace_in_plain_text(self):
+        """Should normalize excessive whitespace in plain text."""
+        text = "This   has   extra   spaces\n\n\nand newlines"
+        result = bp.normalize_to_plain_text(text)
+
+        assert result == "This has extra spaces and newlines"
+
+    def test_strips_html_tags(self):
+        """Should strip HTML tags from content."""
+        html = "<p>This is a <strong>job</strong> description.</p>"
+        result = bp.normalize_to_plain_text(html)
+
+        assert "<p>" not in result
+        assert "<strong>" not in result
+        assert "job" in result
+
+    def test_removes_script_tags(self):
+        """Should remove script tags and their content."""
+        html = '<p>Job description</p><script>alert("xss")</script><p>More content</p>'
+        result = bp.normalize_to_plain_text(html)
+
+        assert "<script>" not in result
+        assert "alert" not in result
+        assert "Job description" in result
+        assert "More content" in result
+
+    def test_removes_style_tags(self):
+        """Should remove style tags and their content."""
+        html = "<p>Job</p><style>body { color: red; }</style><p>Description</p>"
+        result = bp.normalize_to_plain_text(html)
+
+        assert "<style>" not in result
+        assert "color: red" not in result
+        assert "Job" in result
+        assert "Description" in result
+
+    def test_decodes_html_entities(self):
+        """Should decode HTML entities to plain text."""
+        html = "<p>Job &amp; Description &lt;test&gt;</p>"
+        result = bp.normalize_to_plain_text(html)
+
+        assert "&amp;" not in result
+        assert "&lt;" not in result
+        assert "Job & Description <test>" in result
+
+    def test_preserves_paragraph_structure(self):
+        """Should preserve paragraph breaks as double newlines."""
+        html = "<p>First paragraph</p><p>Second paragraph</p>"
+        result = bp.normalize_to_plain_text(html)
+
+        assert "First paragraph" in result
+        assert "Second paragraph" in result
+        # Should have paragraph separation
+        assert "\n\n" in result or result.index("Second") > result.index("First") + 20
+
+    def test_handles_div_blocks(self):
+        """Should treat divs as block elements."""
+        html = "<div>First section</div><div>Second section</div>"
+        result = bp.normalize_to_plain_text(html)
+
+        assert "First section" in result
+        assert "Second section" in result
+
+    def test_handles_headings(self):
+        """Should treat headings as block elements."""
+        html = "<h1>Title</h1><h2>Subtitle</h2><p>Content</p>"
+        result = bp.normalize_to_plain_text(html)
+
+        assert "Title" in result
+        assert "Subtitle" in result
+        assert "Content" in result
+
+    def test_handles_list_items(self):
+        """Should treat list items as block elements."""
+        html = "<ul><li>Item 1</li><li>Item 2</li></ul>"
+        result = bp.normalize_to_plain_text(html)
+
+        assert "Item 1" in result
+        assert "Item 2" in result
+
+    def test_handles_br_tags(self):
+        """Should convert br tags to newlines."""
+        html = "Line 1<br>Line 2<br/>Line 3"
+        result = bp.normalize_to_plain_text(html)
+
+        assert "Line 1" in result
+        assert "Line 2" in result
+        assert "Line 3" in result
+
+    def test_handles_empty_content(self):
+        """Should handle empty content gracefully."""
+        assert bp.normalize_to_plain_text("") == ""
+        assert bp.normalize_to_plain_text(None) == ""
+
+    def test_handles_complex_html(self):
+        """Should handle complex real-world HTML."""
+        html = """
+        <!DOCTYPE html>
+        <html>
+        <head><title>Job Posting</title></head>
+        <body>
+            <h1>Senior Engineer</h1>
+            <div class="content">
+                <p>We are looking for a <strong>talented</strong> engineer.</p>
+                <ul>
+                    <li>5+ years experience</li>
+                    <li>Python expertise</li>
+                </ul>
+            </div>
+            <script>console.log('test');</script>
+        </body>
+        </html>
+        """
+        result = bp.normalize_to_plain_text(html)
+
+        # Should contain visible content
+        assert "Senior Engineer" in result
+        assert "talented" in result
+        assert "engineer" in result
+        assert "5+ years experience" in result
+        assert "Python expertise" in result
+
+        # Should not contain HTML/script
+        assert "<script>" not in result
+        assert "console.log" not in result
+        assert "<html>" not in result
+        assert "<body>" not in result
+
+    def test_handles_tiktok_html_structure(self):
+        """Should handle TikTok job page HTML structure."""
+        html = """
+        <div class="job-description">
+            <h1>SoC Digital Design Engineer</h1>
+            <p>Location: San Jose</p>
+            <div class="about">
+                <p>About the team: We build hardware.</p>
+            </div>
+        </div>
+        """
+        result = bp.normalize_to_plain_text(html)
+
+        assert "SoC Digital Design Engineer" in result
+        assert "Location: San Jose" in result
+        assert "About the team" in result
+        assert "<div" not in result
+
+
+class TestProjectStateIntegration:
+    """Tests for project_state.json creation during bootstrap."""
+
+    def test_creates_project_state_on_bootstrap(self, tmp_path, monkeypatch):
+        """Should create project_state.json during bootstrap."""
+        monkeypatch.setattr(bp.Path, "home", lambda: tmp_path)
+
+        args = Mock()
+        args.jd_url = None
+        args.jd_text = "Job description content"
+        args.work_dir = str(tmp_path / "work")
+        args.recruiter_url = (
+            "https://linkedin.com/talent/hire/12345/discover/recruiterSearch"
+        )
+        args.cdp_port = "9234"
+        args.project_id = None
+        args.position_title = "Senior Engineer"
+        args.team_name = None
+        args.location = None
+        args.core_function = None
+        args.business_impact = None
+        args.keywords = None
+        args.companies = None
+        args.exclude_titles = None
+
+        result = bp.bootstrap_project(args)
+
+        # Check project_state.json was created
+        project_dir = Path(result["project_dir"])
+        state_file = project_dir / "project_state.json"
+        assert state_file.exists()
+
+        # Verify state content
+        state = json.loads(state_file.read_text())
+        assert state["project_id"] == "12345"
+        assert state["workflow_mode"] == "reachout"
+        assert state["current_phase"] == "bootstrap"
+        assert state["status"] == "completed"
+
+    def test_saves_normalized_jd_not_html(self, tmp_path, monkeypatch):
+        """Should save normalized plain text JD, not raw HTML."""
+        monkeypatch.setattr(bp.Path, "home", lambda: tmp_path)
+
+        args = Mock()
+        args.jd_url = None
+        args.jd_text = "<p>Job description with <strong>HTML</strong> tags</p>"
+        args.work_dir = str(tmp_path / "work")
+        args.recruiter_url = (
+            "https://linkedin.com/talent/hire/12345/discover/recruiterSearch"
+        )
+        args.cdp_port = "9234"
+        args.project_id = None
+        args.position_title = "Test Position"
+        args.team_name = None
+        args.location = None
+        args.core_function = None
+        args.business_impact = None
+        args.keywords = None
+        args.companies = None
+        args.exclude_titles = None
+
+        result = bp.bootstrap_project(args)
+
+        # Check JD was normalized
+        jd_path = Path(result["jd_path"])
+        jd_content = jd_path.read_text()
+
+        assert "<p>" not in jd_content
+        assert "<strong>" not in jd_content
+        assert "Job description with HTML tags" in jd_content
 
 
 if __name__ == "__main__":

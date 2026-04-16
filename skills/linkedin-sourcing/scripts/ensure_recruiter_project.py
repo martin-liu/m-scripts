@@ -13,7 +13,7 @@ Usage:
         --description "Hardware design role for video codec solutions" \
         --location "San Jose, CA" \
         --job-title "SoC Digital Design Engineer" \
-        --cdp-port 9230
+        --cdp-port 9234
 
 Output:
     Prints structured JSON to stdout:
@@ -46,8 +46,17 @@ SKILL_DIR = SCRIPT_DIR.parent
 # Import shared browser utilities
 sys.path.insert(0, str(SCRIPT_DIR))
 from browser_utils import BrowserMode, run_browser_command as _run_browser_command
-from browser_utils import format_timeout_error
+from browser_utils import (
+    format_timeout_error,
+    FailureCode,
+    ActionRequired,
+    classify_browser_readiness,
+)
 from recruiter_page_utils import RecoveryHelper, PageStateProbe, ensure_page_ready
+from recruiter_url_utils import (
+    extract_recruiter_id_from_url,
+    is_contextual_search_url as _is_contextual_search_url,
+)
 
 # LinkedIn Recruiter URLs
 RECRUITER_BASE = "https://www.linkedin.com/talent"
@@ -369,6 +378,8 @@ def run_browser_command(
         action: The action to perform (e.g., "eval", "goto")
         js_code: JavaScript code to execute or URL to navigate to
     """
+    from browser_utils import safe_get_parsed, FailureCode, ActionRequired
+
     result = _run_browser_command(browser_mode, "eval", js_code, timeout=30)
 
     # Handle timeout with dialog info
@@ -379,23 +390,49 @@ def run_browser_command(
             "error": error_msg,
             "timed_out": True,
             "dialog_info": result.get("dialog_info"),
+            "failure_code": FailureCode.TIMEOUT,
+            "action_required": ActionRequired.timeout(operation=action).to_dict(),
         }
 
     # Handle other errors
     if result.get("error"):
-        return {"error": result["error"], "stderr": result.get("stderr", "")}
+        return {
+            "error": result["error"],
+            "stderr": result.get("stderr", ""),
+            "failure_code": FailureCode.AMBIGUOUS_STATE,
+            "action_required": ActionRequired.ambiguous_state(
+                details=f"Browser command failed: {result['error']}"
+            ).to_dict(),
+        }
 
-    # Return parsed JSON result for backward compatibility
-    parsed = result.get("parsed")
+    # Return parsed JSON result for backward compatibility using safe helper
+    parsed = safe_get_parsed(result, default=None, require_dict=False)
     if parsed is not None:
+        if isinstance(parsed, dict):
+            parsed["failure_code"] = None
+            parsed["action_required"] = None
         return parsed
 
     # No valid JSON - return raw output
     output = result.get("stdout", "")
     if not output:
-        return {"error": "Empty output", "stderr": result.get("stderr", "")}
+        return {
+            "error": "Empty output",
+            "stderr": result.get("stderr", ""),
+            "failure_code": FailureCode.PARSE_ERROR,
+            "action_required": ActionRequired.ambiguous_state(
+                details="Empty output from browser command"
+            ).to_dict(),
+        }
 
-    return {"raw_output": output, "parse_error": True}
+    return {
+        "raw_output": output,
+        "parse_error": True,
+        "failure_code": FailureCode.PARSE_ERROR,
+        "action_required": ActionRequired.ambiguous_state(
+            details="Failed to parse browser command output as JSON"
+        ).to_dict(),
+    }
 
 
 def navigate_to_projects(
@@ -420,6 +457,11 @@ def navigate_to_projects(
     )
 
     if result.get("timed_out"):
+        readiness = classify_browser_readiness(
+            browser_mode,
+            error=result.get("error"),
+            dialog_info=result.get("dialog_info"),
+        )
         error_msg = format_timeout_error(
             "navigate to Projects page",
             result,
@@ -430,14 +472,29 @@ def navigate_to_projects(
             "error": error_msg,
             "dialog_info": result.get("dialog_info"),
             "recovery_attempted": False,
+            "failure_code": readiness.action_required.code
+            if readiness.action_required
+            else FailureCode.TIMEOUT,
+            "action_required": readiness.action_required.to_dict()
+            if readiness.action_required
+            else ActionRequired.timeout(
+                operation="navigate to Projects page"
+            ).to_dict(),
         }
 
     if result.get("error"):
+        readiness = classify_browser_readiness(browser_mode, error=result.get("error"))
         return {
             "success": False,
             "error": result["error"],
             "dialog_info": None,
             "recovery_attempted": False,
+            "failure_code": readiness.action_required.code
+            if readiness.action_required
+            else FailureCode.AMBIGUOUS_STATE,
+            "action_required": readiness.action_required.to_dict()
+            if readiness.action_required
+            else ActionRequired.ambiguous_state(details=result["error"]).to_dict(),
         }
 
     # Wait for page to load
@@ -475,6 +532,8 @@ def navigate_to_projects(
         "error": recovery_result.get("error", "Page recovery failed"),
         "dialog_info": state.get("dialog_info"),
         "recovery_attempted": True,
+        "failure_code": recovery_result.get("failure_code"),
+        "action_required": recovery_result.get("action_required"),
     }
 
 
@@ -616,18 +675,8 @@ def is_contextual_search_url(url: str) -> bool:
     Returns:
         True if URL has at least one contextual search parameter
     """
-    if "discover/recruiterSearch" not in url:
-        return False
-
-    # Contextual params that indicate a real search context
-    context_params = [
-        "searchContextId=",
-        "searchHistoryId=",
-        "searchRequestId=",
-        "projectId=",  # projectId in query params indicates search context
-    ]
-
-    return any(param in url for param in context_params)
+    # Use shared implementation (no project_id validation needed here)
+    return _is_contextual_search_url(url)
 
 
 def resolve_search_url(browser_mode: BrowserMode | str, current_url: str) -> str | None:
@@ -814,6 +863,8 @@ def ensure_project_exists(
         "url": None,
         "project_id": None,
         "message": "",
+        "failure_code": None,
+        "action_required": None,
     }
 
     # Step 1: Navigate to Projects page (with recovery)
@@ -822,10 +873,16 @@ def ensure_project_exists(
         result["message"] = (
             nav_result.get("error") or "Failed to navigate to Projects page"
         )
+        result["failure_code"] = nav_result.get("failure_code")
+        result["action_required"] = nav_result.get("action_required")
         return result
 
     if not wait_for_page_load(browser_mode):
         result["message"] = "Page did not load in time"
+        result["failure_code"] = FailureCode.TIMEOUT
+        result["action_required"] = ActionRequired.timeout(
+            operation="wait for Projects page load"
+        ).to_dict()
         return result
 
     # Validate we're on the Projects page
@@ -837,6 +894,11 @@ def ensure_project_exists(
     )
     if not validation["success"]:
         result["message"] = validation["error"]
+        result["failure_code"] = FailureCode.WRONG_PAGE
+        result["action_required"] = ActionRequired.wrong_page(
+            actual_url=validation.get("current_url", ""),
+            expected_url="/talent/projects",
+        ).to_dict()
         return result
 
     # Step 2: Search for existing project
@@ -856,6 +918,12 @@ def ensure_project_exists(
                 result["message"] = (
                     f"Failed to navigate to project: {goto_result['error']}"
                 )
+                result["failure_code"] = FailureCode.BROWSER_UNAVAILABLE
+                result["action_required"] = ActionRequired.browser_unavailable(
+                    cdp_port=browser_mode.cdp_port
+                    if hasattr(browser_mode, "cdp_port")
+                    else None
+                ).to_dict()
                 return result
             time.sleep(2)
 
@@ -868,6 +936,11 @@ def ensure_project_exists(
             )
             if not open_validation["success"]:
                 result["message"] = open_validation["error"]
+                result["failure_code"] = FailureCode.WRONG_PAGE
+                result["action_required"] = ActionRequired.wrong_page(
+                    actual_url=open_validation.get("current_url", ""),
+                    expected_url="/talent/hire/",
+                ).to_dict()
                 return result
 
             # Wait for page load and resolve search URL
@@ -879,6 +952,10 @@ def ensure_project_exists(
             context_validation = validate_project_context(browser_mode, project_name)
             if not context_validation["valid"]:
                 result["message"] = context_validation["error"]
+                result["failure_code"] = FailureCode.VERIFICATION_FAILED
+                result["action_required"] = ActionRequired.verification_failed(
+                    details=f"Project context validation failed: {context_validation['error']}"
+                ).to_dict()
                 return result
 
             # Store project_id for bootstrap use
@@ -901,6 +978,10 @@ def ensure_project_exists(
                     "The page may not have active search context. "
                     "Try performing a search in LinkedIn Recruiter first."
                 )
+                result["failure_code"] = FailureCode.AMBIGUOUS_STATE
+                result["action_required"] = ActionRequired.ambiguous_state(
+                    details="Could not resolve contextual search URL. Try performing a search in LinkedIn Recruiter first."
+                ).to_dict()
                 return result
 
             # Validate final URL is search-ready
@@ -909,6 +990,11 @@ def ensure_project_exists(
                     f"Final URL is not search-ready: {search_url}. "
                     "Expected /discover/recruiterSearch path."
                 )
+                result["failure_code"] = FailureCode.WRONG_PAGE
+                result["action_required"] = ActionRequired.wrong_page(
+                    actual_url=search_url,
+                    expected_url="/discover/recruiterSearch",
+                ).to_dict()
                 return result
 
             result["status"] = "existing"
@@ -922,6 +1008,11 @@ def ensure_project_exists(
         result["message"] = (
             f"Could not click Create Project button: {create_btn_result.get('error', 'Unknown error')}"
         )
+        result["failure_code"] = FailureCode.ELEMENT_MISSING
+        result["action_required"] = ActionRequired.element_missing(
+            selector="Create Project button",
+            page_url="",
+        ).to_dict()
         return result
 
     time.sleep(2)  # Wait for form to appear
@@ -930,6 +1021,11 @@ def ensure_project_exists(
     fill_result = fill_create_form(browser_mode, project_name, description)
     if not fill_result.get("nameFilled"):
         result["message"] = "Could not fill project name in form"
+        result["failure_code"] = FailureCode.ELEMENT_MISSING
+        result["action_required"] = ActionRequired.element_missing(
+            selector="project name input",
+            page_url="",
+        ).to_dict()
         return result
 
     time.sleep(1)
@@ -948,6 +1044,11 @@ def ensure_project_exists(
     )
     if not submit_validation["success"]:
         result["message"] = f"Form submission failed: {submit_validation['error']}"
+        result["failure_code"] = FailureCode.WRONG_PAGE
+        result["action_required"] = ActionRequired.wrong_page(
+            actual_url=submit_validation.get("current_url", ""),
+            expected_url="/talent/hire/",
+        ).to_dict()
         return result
 
     # Step 7: Check if we landed on an untitled project
@@ -966,6 +1067,10 @@ def ensure_project_exists(
         context_validation = validate_project_context(browser_mode, project_name)
         if not context_validation["valid"]:
             result["message"] = context_validation["error"]
+            result["failure_code"] = FailureCode.VERIFICATION_FAILED
+            result["action_required"] = ActionRequired.verification_failed(
+                details=f"Project context validation failed: {context_validation['error']}"
+            ).to_dict()
             return result
 
         # Store project_id for bootstrap use
@@ -988,6 +1093,10 @@ def ensure_project_exists(
                 "The page may not have active search context. "
                 "Try performing a search in LinkedIn Recruiter first."
             )
+            result["failure_code"] = FailureCode.AMBIGUOUS_STATE
+            result["action_required"] = ActionRequired.ambiguous_state(
+                details="Could not resolve contextual search URL. Try performing a search in LinkedIn Recruiter first."
+            ).to_dict()
             return result
 
         # Validate final URL is search-ready and belongs to project context
@@ -996,6 +1105,11 @@ def ensure_project_exists(
                 f"Final URL is not search-ready: {search_url}. "
                 "Expected /discover/recruiterSearch path."
             )
+            result["failure_code"] = FailureCode.WRONG_PAGE
+            result["action_required"] = ActionRequired.wrong_page(
+                actual_url=search_url,
+                expected_url="/discover/recruiterSearch",
+            ).to_dict()
             return result
 
         # Validate the search URL contains the expected project ID
@@ -1004,6 +1118,10 @@ def ensure_project_exists(
             result["message"] = (
                 f"Search URL does not contain expected project ID {project_id}: {search_url}"
             )
+            result["failure_code"] = FailureCode.VERIFICATION_FAILED
+            result["action_required"] = ActionRequired.verification_failed(
+                details=f"Search URL does not contain expected project ID {project_id}"
+            ).to_dict()
             return result
 
         result["status"] = "created"
@@ -1013,6 +1131,10 @@ def ensure_project_exists(
         result["message"] = (
             f"Project creation may have succeeded but could not verify URL. Current: {final_url}"
         )
+        result["failure_code"] = FailureCode.AMBIGUOUS_STATE
+        result["action_required"] = ActionRequired.ambiguous_state(
+            details=f"Project creation may have succeeded but could not verify URL. Current: {final_url}"
+        ).to_dict()
 
     return result
 
@@ -1047,8 +1169,8 @@ Output:
     )
     parser.add_argument(
         "--cdp-port",
-        default="9230",
-        help="Chrome DevTools Protocol port (default: 9230)",
+        default="9234",
+        help="Chrome DevTools Protocol port (default: 9234)",
     )
 
     return parser.parse_args()
