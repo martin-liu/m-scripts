@@ -25,6 +25,7 @@ export PATH=$PATH:/Library/TeX/texbin
 export PATH=$PATH:$HOME/.rd/bin
 
 ### Pnpm
+export PNPM_HOME="${PNPM_HOME:-$HOME/Library/pnpm}"
 export PATH=$PATH:$PNPM_HOME
 
 ### Python
