@@ -1444,25 +1444,42 @@ class TestBootstrapAuthSession:
 
     @patch("auth_bootstrap.is_interactive_session")
     @patch("auth_bootstrap.check_cdp_available")
-    def test_no_cdp_non_interactive_fails_closed(self, mock_check, mock_interactive):
-        """CRITICAL: No CDP in non-interactive mode must NOT launch browser.
-
-        Even with allow_browser_launch=True, non-interactive session should fail.
-        """
+    @patch("auth_bootstrap.find_system_chrome")
+    @patch("auth_bootstrap.is_port_in_use")
+    @patch("auth_bootstrap.launch_isolated_chrome")
+    @patch("auth_bootstrap._poll_for_authentication")
+    def test_no_cdp_non_interactive_with_opt_in_still_launches_chrome(
+        self,
+        mock_poll,
+        mock_launch,
+        mock_is_port_in_use,
+        mock_find,
+        mock_check,
+        mock_interactive,
+    ):
+        """Explicit opt-in should allow headed Chrome launch without a TTY."""
         mock_check.return_value = False
-        mock_interactive.return_value = False  # Non-interactive
+        mock_interactive.return_value = False
+        mock_find.return_value = "/usr/bin/google-chrome"
+        mock_is_port_in_use.return_value = False
+        mock_process = Mock()
+        mock_process.poll.return_value = None
+        mock_launch.return_value = mock_process
+        mock_poll.return_value = {
+            "authenticated": True,
+            "url": "https://www.linkedin.com/talent/home",
+            "error": None,
+        }
 
         with tempfile.TemporaryDirectory() as tmpdir:
             work_dir = Path(tmpdir)
-
-            # Has opt-in but non-interactive - should still fail
             result = ab.bootstrap_auth_session(
                 work_dir, "9234", allow_browser_launch=True
             )
 
-        # Must fail closed - no browser launch in non-interactive mode
-        assert result["success"] is False
-        assert "interactive" in result["error"].lower()
+        assert result["success"] is True
+        assert result["mode"] == "cdp"
+        mock_launch.assert_called_once()
 
     @patch("auth_bootstrap.check_cdp_available")
     @patch("auth_bootstrap.probe_recruiter_auth")

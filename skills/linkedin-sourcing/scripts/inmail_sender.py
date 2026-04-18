@@ -1116,7 +1116,7 @@ def send_inmail_with_result(
             failure_code=FailureCode.AMBIGUOUS_STATE,
             action_required=ActionRequired.ambiguous_state(
                 details="Browser has an open composer or discard confirmation. "
-                "Please close any open message composers or dialogs manually before retrying."
+                "Please close any open message composers or dialogs in Chrome before retrying."
             ),
             clean_state=False,
             verify_only=verify_only,

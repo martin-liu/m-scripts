@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -36,7 +37,7 @@ class EnrichmentResult:
         success: Whether enrichment succeeded
         phase: Phase identifier (always "enrich" for this utility)
         failure_code: Machine-readable failure code if failed
-        action_required: Structured manual intervention instructions if failed
+        action_required: Structured follow-up instructions if failed
         safe_to_retry: Whether the operation can be safely retried
         partial_result: Any partial data collected before failure
         enrichment_notes: Compact enrichment facts (skills, experience summary)
@@ -86,15 +87,17 @@ def _build_action_required(
     steps: list[str],
     context: dict[str, Any] | None = None,
     can_retry: bool = True,
+    actor: str = "agent",
 ) -> dict[str, Any]:
-    """Build structured action_required dict for browser/manual failures.
+    """Build structured action_required dict for browser failures.
 
     Args:
         code: Machine-readable error code
         summary: Human-readable summary
-        steps: List of manual steps to resolve
+        steps: List of steps to resolve
         context: Optional additional context
         can_retry: Whether retry is expected to succeed after resolution
+        actor: Who should perform the action - "agent" (default) or "user"
 
     Returns:
         Structured action_required dictionary
@@ -105,6 +108,7 @@ def _build_action_required(
         "steps": steps,
         "can_retry": can_retry,
         "context": context or {},
+        "actor": actor,
     }
 
 
@@ -166,11 +170,86 @@ def _extract_compact_facts(page_data: dict[str, Any]) -> str:
         if schools:
             facts.append(f"Education: {', '.join(schools)}")
 
+    if not facts:
+        top_lines = page_data.get("top_lines", [])
+        if top_lines:
+            inferred_name = (page_data.get("name") or top_lines[0]).strip()
+            skip_exact = {
+                inferred_name,
+                "Second degree connection",
+                "\u00b7\u00a02nd",
+                "500+ connections",
+                "(Cell)",
+                "Public profile",
+                "Save to project",
+                "Profile",
+                "More",
+                "Most recent activity",
+                "Hide details",
+                "View all",
+                "Experience",
+                "Enhanced by resume",
+                "Highlight information from resume",
+                "Position title",
+            }
+            skip_prefixes = (
+                "Save ",
+                "Message ",
+                "More actions for ",
+                "Projects (",
+                "Messages (",
+                "Greenhouse (",
+                "Viewed by ",
+            )
+            meaningful = []
+            for line in top_lines:
+                line = line.strip()
+                if not line or line in skip_exact:
+                    continue
+                if any(line.startswith(prefix) for prefix in skip_prefixes):
+                    continue
+                meaningful.append(line)
+
+            if meaningful:
+                facts.append(f"Headline: {meaningful[0]}")
+
+            top_card_line = next(
+                (line for line in meaningful[1:] if "\u00b7" in line), ""
+            )
+            if top_card_line:
+                facts.append(f"Top card: {top_card_line}")
+
+            top_skills_line = next(
+                (line for line in meaningful if line.startswith("Top Skills:")),
+                "",
+            )
+            if top_skills_line:
+                facts.append(top_skills_line)
+
     if facts:
         return " | ".join(facts)
 
     # Fallback: return whatever headline we have
     return headline or "Profile viewed; no structured data extracted"
+
+
+def _page_data_is_still_loading(page_data: dict[str, Any]) -> bool:
+    """Return True when the extracted profile data still reflects a loading shell."""
+    headline = (page_data.get("headline") or "").strip().lower()
+    top_lines = [
+        line.strip().lower() for line in page_data.get("top_lines", []) if line
+    ]
+    if headline == "loading.":
+        return True
+    if (
+        not headline
+        and not top_lines
+        and not page_data.get("skills")
+        and not page_data.get("experience")
+        and not page_data.get("education")
+    ):
+        return True
+    return top_lines == ["loading."]
 
 
 def enrich_profile(
@@ -248,7 +327,8 @@ PROFILE_EXTRACTION_JS = r"""
         experience: [],
         education: [],
         headline: "",
-        name: ""
+        name: "",
+        top_lines: []
     };
 
     // Extract name
@@ -321,6 +401,13 @@ PROFILE_EXTRACTION_JS = r"""
         });
     }
 
+    const visibleText = (document.querySelector('main') || document.body).innerText || '';
+    data.top_lines = visibleText
+        .split('\n')
+        .map(line => line.trim())
+        .filter(Boolean)
+        .slice(0, 40);
+
     return data;
 })()
 """
@@ -380,11 +467,12 @@ def _enrich_via_browser(
                         steps=[
                             "Open Chrome and navigate to linkedin.com",
                             "Log in to your LinkedIn account",
-                            "Ensure you can access the profile manually",
+                            "Ensure you can access the profile in Chrome",
                             "Retry enrichment after authentication",
                         ],
                         context={"error": error_msg, "profile_url": profile_url},
                         can_retry=True,
+                        actor="user",
                     ),
                     safe_to_retry=True,
                     resume_hint="Authenticate in Chrome, then retry",
@@ -398,7 +486,7 @@ def _enrich_via_browser(
                     summary=f"Failed to navigate to profile: {error_msg[:100]}",
                     steps=[
                         "Check browser state: verify Chrome is responsive",
-                        "Navigate to profile manually to verify accessibility",
+                        "Open the profile in Chrome to verify accessibility",
                         "Check for LinkedIn verification prompts or rate limits",
                         "Retry enrichment after resolving any prompts",
                     ],
@@ -460,77 +548,80 @@ def _enrich_via_browser(
     ]
 
     try:
-        eval_result = subprocess.run(
-            eval_cmd,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-
-        # Check for extraction success BEFORE parsing stdout
-        # This ensures JS/runtime failures are properly labeled as extraction_failed
-        # rather than being mislabeled as parse errors
-        if eval_result.returncode != 0:
-            error_msg = eval_result.stderr.strip() or "JavaScript evaluation failed"
-            return EnrichmentResult(
-                success=False,
-                failure_code="extraction_failed",
-                action_required=_build_action_required(
-                    code="extraction_failed",
-                    summary=f"Profile data extraction failed: {error_msg[:100]}",
-                    steps=[
-                        "Check browser state and retry",
-                        "Verify the profile page loaded correctly",
-                        "Check for LinkedIn security checks",
-                    ],
-                    context={
-                        "error": error_msg[:500],
-                        "profile_url": profile_url,
-                    },
-                    can_retry=True,
-                ),
-                safe_to_retry=True,
-                resume_hint="Check browser state and retry",
+        for attempt in range(3):
+            eval_result = subprocess.run(
+                eval_cmd,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
             )
 
-        # Parse JSON output only after confirming success
-        try:
-            page_data = json.loads(eval_result.stdout.strip())
-            # Handle double-encoded JSON
-            if isinstance(page_data, str):
-                page_data = json.loads(page_data)
-        except json.JSONDecodeError:
-            # Non-JSON output means extraction didn't complete properly
+            # Check for extraction success BEFORE parsing stdout
+            # This ensures JS/runtime failures are properly labeled as extraction_failed
+            # rather than being mislabeled as parse errors
+            if eval_result.returncode != 0:
+                error_msg = eval_result.stderr.strip() or "JavaScript evaluation failed"
+                return EnrichmentResult(
+                    success=False,
+                    failure_code="extraction_failed",
+                    action_required=_build_action_required(
+                        code="extraction_failed",
+                        summary=f"Profile data extraction failed: {error_msg[:100]}",
+                        steps=[
+                            "Check browser state and retry",
+                            "Verify the profile page loaded correctly",
+                            "Check for LinkedIn security checks",
+                        ],
+                        context={
+                            "error": error_msg[:500],
+                            "profile_url": profile_url,
+                        },
+                        can_retry=True,
+                    ),
+                    safe_to_retry=True,
+                    resume_hint="Check browser state and retry",
+                )
+
+            # Parse JSON output only after confirming success
+            try:
+                page_data = json.loads(eval_result.stdout.strip())
+                # Handle double-encoded JSON
+                if isinstance(page_data, str):
+                    page_data = json.loads(page_data)
+            except json.JSONDecodeError:
+                # Non-JSON output means extraction didn't complete properly
+                return EnrichmentResult(
+                    success=False,
+                    failure_code="extraction_parse_error",
+                    action_required=_build_action_required(
+                        code="extraction_parse_error",
+                        summary="Profile extraction returned non-JSON output",
+                        steps=[
+                            "Check browser state: verify Chrome is responsive",
+                            "Open the profile in Chrome to verify accessibility",
+                            "Check for LinkedIn verification prompts or rate limits",
+                            "Retry enrichment after resolving any prompts",
+                        ],
+                        context={
+                            "stdout": eval_result.stdout[:500],
+                            "stderr": eval_result.stderr[:500],
+                            "returncode": eval_result.returncode,
+                        },
+                    ),
+                    safe_to_retry=True,
+                    resume_hint="Check browser for prompts, then retry",
+                )
+
+            if attempt < 2 and _page_data_is_still_loading(page_data):
+                time.sleep(1)
+                continue
+
+            enrichment_notes = _extract_compact_facts(page_data)
             return EnrichmentResult(
-                success=False,
-                failure_code="extraction_parse_error",
-                action_required=_build_action_required(
-                    code="extraction_parse_error",
-                    summary="Profile extraction returned non-JSON output",
-                    steps=[
-                        "Check browser state: verify Chrome is responsive",
-                        "Navigate to profile manually to verify accessibility",
-                        "Check for LinkedIn verification prompts or rate limits",
-                        "Retry enrichment after resolving any prompts",
-                    ],
-                    context={
-                        "stdout": eval_result.stdout[:500],
-                        "stderr": eval_result.stderr[:500],
-                        "returncode": eval_result.returncode,
-                    },
-                ),
-                safe_to_retry=True,
-                resume_hint="Check browser for prompts, then retry",
+                success=True,
+                enrichment_notes=enrichment_notes,
+                resume_hint="Enrichment complete - proceed to draft",
             )
-
-        # Success - extract compact facts from parsed data
-        enrichment_notes = _extract_compact_facts(page_data)
-
-        return EnrichmentResult(
-            success=True,
-            enrichment_notes=enrichment_notes,
-            resume_hint="Enrichment complete - proceed to draft",
-        )
 
     except subprocess.TimeoutExpired:
         return EnrichmentResult(

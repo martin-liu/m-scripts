@@ -15,6 +15,107 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 import status
 
 
+class TestGetLoopCommand:
+    """Tests for get_loop_command function."""
+
+    def test_returns_basic_loop_command(self):
+        """Should return basic loop command without confirm-send."""
+        cmd = status.get_loop_command("my_project")
+        assert "run_reachout_loop.py" in cmd
+        assert "--project my_project" in cmd
+        assert "--confirm-send" not in cmd
+
+    def test_returns_confirm_send_command(self):
+        """Should return loop command with confirm-send when requested."""
+        cmd = status.get_loop_command("my_project", confirm_send=True)
+        assert "run_reachout_loop.py" in cmd
+        assert "--project my_project" in cmd
+        assert "--confirm-send" in cmd
+
+
+class TestGetLoopResumeGuidance:
+    """Tests for get_loop_resume_guidance function."""
+
+    def test_returns_none_when_no_action_required(self):
+        """Should return None when action_required is None."""
+        guidance = status.get_loop_resume_guidance(None, "my_project")
+        assert guidance is None
+
+    def test_includes_code_and_summary(self):
+        """Should include code and summary from action_required."""
+        action_required = {
+            "code": "search_not_configured",
+            "summary": "Search needs configuration",
+        }
+        guidance = status.get_loop_resume_guidance(action_required, "my_project")
+        assert guidance is not None
+        assert guidance["code"] == "search_not_configured"
+        assert guidance["summary"] == "Search needs configuration"
+
+    def test_includes_loop_command(self):
+        """Should include loop command to resume."""
+        action_required = {"code": "auth_required", "summary": "Login required"}
+        guidance = status.get_loop_resume_guidance(action_required, "my_project")
+        assert guidance is not None
+        assert "run_reachout_loop.py" in guidance["then_run"]
+        assert "--project my_project" in guidance["then_run"]
+
+    def test_search_not_configured_guidance(self):
+        """Should provide specific guidance for search_not_configured."""
+        action_required = {
+            "code": "search_not_configured",
+            "summary": "Search needs configuration",
+            "actor": "agent",
+        }
+        guidance = status.get_loop_resume_guidance(action_required, "my_project")
+        assert "configure the candidate search" in guidance["resolve_now"].lower()
+        assert "manually" not in guidance["resolve_now"].lower()
+        assert guidance["actor"] == "agent"
+
+    def test_preserves_user_actor_in_guidance(self):
+        """Should preserve actor so callers can distinguish user-only blockers."""
+        action_required = {
+            "code": "auth_required",
+            "summary": "Login required",
+            "actor": "user",
+        }
+        guidance = status.get_loop_resume_guidance(action_required, "my_project")
+        assert guidance is not None
+        assert guidance["actor"] == "user"
+
+    def test_auth_required_guidance(self):
+        """Should provide specific guidance for auth_required."""
+        action_required = {"code": "auth_required", "summary": "Login required"}
+        guidance = status.get_loop_resume_guidance(action_required, "my_project")
+        assert "Log in to LinkedIn Recruiter" in guidance["resolve_now"]
+
+    def test_generic_guidance_for_unknown_code(self):
+        """Should provide generic guidance for unknown blocker codes."""
+        action_required = {"code": "unknown_blocker", "summary": "Something is wrong"}
+        guidance = status.get_loop_resume_guidance(action_required, "my_project")
+        assert "Resolve the blocker" in guidance["resolve_now"]
+
+    def test_includes_steps_from_action_required(self):
+        """Should include steps from action_required in guidance."""
+        action_required = {
+            "code": "auth_required",
+            "summary": "Login required",
+            "steps": ["Open Chrome", "Log in to LinkedIn", "Retry"],
+        }
+        guidance = status.get_loop_resume_guidance(action_required, "my_project")
+        assert guidance is not None
+        assert "steps" in guidance
+        assert guidance["steps"] == ["Open Chrome", "Log in to LinkedIn", "Retry"]
+
+    def test_steps_defaults_to_empty_list(self):
+        """Should default to empty list when steps not provided."""
+        action_required = {"code": "auth_required", "summary": "Login required"}
+        guidance = status.get_loop_resume_guidance(action_required, "my_project")
+        assert guidance is not None
+        assert "steps" in guidance
+        assert guidance["steps"] == []
+
+
 class TestDetermineNextPhase:
     """Tests for determine_next_phase function."""
 
@@ -381,8 +482,35 @@ class TestGetStatus:
         assert result["current_phase"] == "filter"
         assert result["status"] == "completed"
 
-    def test_includes_next_command(self, tmp_path):
-        """Should include next_command in result."""
+    def test_includes_loop_resume_guidance_when_blocked(self, tmp_path):
+        """Should include loop_resume_guidance when action_required is present."""
+        project_dir = tmp_path / "projects" / "test_project"
+        project_dir.mkdir(parents=True)
+        config_file = project_dir / "config.sh"
+        config_file.write_text('PROJECT_ID="test_project"\n')
+
+        from project_state import save_project_state, create_initial_state
+
+        state = create_initial_state(
+            "test_project",
+            current_phase="create_search",
+            status="search_not_configured",
+        )
+        state["action_required"] = {
+            "code": "search_not_configured",
+            "summary": "Search needs configuration",
+        }
+        save_project_state(project_dir, state)
+
+        result = status.get_status("test_project", tmp_path)
+
+        assert result["action_required"] is not None
+        assert result["loop_resume_guidance"] is not None
+        assert result["loop_resume_guidance"]["code"] == "search_not_configured"
+        assert "run_reachout_loop.py" in result["loop_resume_guidance"]["then_run"]
+
+    def test_includes_loop_command(self, tmp_path):
+        """Should include loop_command in result."""
         project_dir = tmp_path / "projects" / "test_project"
         project_dir.mkdir(parents=True)
         config_file = project_dir / "config.sh"
@@ -407,7 +535,39 @@ class TestGetStatus:
 
         result = status.get_status("test_project", tmp_path)
 
+        assert result.get("loop_command") is not None
+        assert "run_reachout_loop.py" in result["loop_command"]
+
+    def test_includes_next_command_for_backward_compatibility(self, tmp_path):
+        """Should include next_command as compatibility shim for existing consumers."""
+        project_dir = tmp_path / "projects" / "test_project"
+        project_dir.mkdir(parents=True)
+        config_file = project_dir / "config.sh"
+        config_file.write_text('PROJECT_ID="test_project"\n')
+
+        # Create workbook with rows waiting for filter
+        workbook_path = project_dir / "workbook.xlsx"
+        from excel_utils import create, append
+
+        create(str(workbook_path))
+        append(
+            str(workbook_path),
+            {"name": "John", "next_action": "filter", "status": "Extracted"},
+        )
+
+        from project_state import save_project_state, create_initial_state
+
+        state = create_initial_state(
+            "test_project", current_phase="filter", status="completed"
+        )
+        save_project_state(project_dir, state)
+
+        result = status.get_status("test_project", tmp_path)
+
+        # next_command should exist and point to loop_command for compatibility
         assert result.get("next_command") is not None
+        assert result["next_command"] == result["loop_command"]
+        assert "run_reachout_loop.py" in result["next_command"]
 
 
 class TestStatusIntegration:

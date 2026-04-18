@@ -2,7 +2,7 @@
 """Tests for run_phase.py result handling (Sprint 3).
 
 Tests that phase results are properly classified and state is updated correctly,
-especially for browser/manual blockers vs generic failures.
+especially for action_required blockers vs generic failures.
 
 Run with: python3 -m pytest skills/linkedin-sourcing/tests/test_run_phase_results.py -v
 """
@@ -33,8 +33,11 @@ class TestCreateSearchResultHandling:
             project_dir = Path("/tmp/test_project")
             config_path = project_dir / "config.sh"
             workbook_path = project_dir / "workbook.xlsx"
+            local_project_id = "test_project"
 
-            result = rp.run_create_search_phase(project_dir, config_path, workbook_path)
+            result = rp.run_create_search_phase(
+                project_dir, config_path, workbook_path, local_project_id
+            )
 
             assert result["success"] is True
             assert result["next_phase"] == "extract"
@@ -59,12 +62,15 @@ class TestCreateSearchResultHandling:
             project_dir = Path("/tmp/test_project")
             config_path = project_dir / "config.sh"
             workbook_path = project_dir / "workbook.xlsx"
+            local_project_id = "test_project"
 
-            result = rp.run_create_search_phase(project_dir, config_path, workbook_path)
+            result = rp.run_create_search_phase(
+                project_dir, config_path, workbook_path, local_project_id
+            )
 
             assert result["success"] is False
             assert result["blocked"] is True
-            assert result["block_reason"] == "manual_intervention"
+            assert result["block_reason"] == "action_required"
             assert "action_required" in result
 
     def test_preserves_next_phase_on_failure(self):
@@ -79,8 +85,11 @@ class TestCreateSearchResultHandling:
             project_dir = Path("/tmp/test_project")
             config_path = project_dir / "config.sh"
             workbook_path = project_dir / "workbook.xlsx"
+            local_project_id = "test_project"
 
-            result = rp.run_create_search_phase(project_dir, config_path, workbook_path)
+            result = rp.run_create_search_phase(
+                project_dir, config_path, workbook_path, local_project_id
+            )
 
             assert result["next_phase"] == "create_search"
 
@@ -100,14 +109,17 @@ class TestEnrichResultHandling:
             project_dir = Path("/tmp/test_project")
             config_path = project_dir / "config.sh"
             workbook_path = project_dir / "workbook.xlsx"
+            local_project_id = "test_project"
 
-            result = rp.run_enrich_phase(project_dir, config_path, workbook_path)
+            result = rp.run_enrich_phase(
+                project_dir, config_path, workbook_path, local_project_id
+            )
 
             assert result["success"] is True
             assert result["error"] is None
 
     def test_blocked_on_exit_code_2(self):
-        """Should report blocked when exit code is 2 (browser/manual)."""
+        """Should report blocked when exit code is 2 (browser blocker)."""
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(
                 returncode=2,
@@ -118,13 +130,16 @@ class TestEnrichResultHandling:
             project_dir = Path("/tmp/test_project")
             config_path = project_dir / "config.sh"
             workbook_path = project_dir / "workbook.xlsx"
+            local_project_id = "test_project"
 
-            result = rp.run_enrich_phase(project_dir, config_path, workbook_path)
+            result = rp.run_enrich_phase(
+                project_dir, config_path, workbook_path, local_project_id
+            )
 
             assert result["success"] is False
             assert result["blocked"] is True
-            assert result["block_reason"] == "browser_manual_intervention"
-            assert "intervention" in result["error"].lower()
+            assert result["block_reason"] == "browser_blocked"
+            assert "action required" in result["error"].lower()
 
     def test_failure_on_exit_code_1(self):
         """Should report failure when exit code is 1 (generic failure)."""
@@ -138,8 +153,11 @@ class TestEnrichResultHandling:
             project_dir = Path("/tmp/test_project")
             config_path = project_dir / "config.sh"
             workbook_path = project_dir / "workbook.xlsx"
+            local_project_id = "test_project"
 
-            result = rp.run_enrich_phase(project_dir, config_path, workbook_path)
+            result = rp.run_enrich_phase(
+                project_dir, config_path, workbook_path, local_project_id
+            )
 
             assert result["success"] is False
             assert result.get("blocked") is None  # Not a blocker
@@ -160,8 +178,11 @@ class TestSendResultHandling:
             project_dir = Path("/tmp/test_project")
             config_path = project_dir / "config.sh"
             workbook_path = project_dir / "workbook.xlsx"
+            local_project_id = "test_project"
 
-            result = rp.run_send_phase(project_dir, config_path, workbook_path)
+            result = rp.run_send_phase(
+                project_dir, config_path, workbook_path, local_project_id
+            )
 
             assert result["success"] is True
             assert result["error"] is None
@@ -178,8 +199,11 @@ class TestSendResultHandling:
             project_dir = Path("/tmp/test_project")
             config_path = project_dir / "config.sh"
             workbook_path = project_dir / "workbook.xlsx"
+            local_project_id = "test_project"
 
-            result = rp.run_send_phase(project_dir, config_path, workbook_path)
+            result = rp.run_send_phase(
+                project_dir, config_path, workbook_path, local_project_id
+            )
 
             assert result["success"] is False
             assert result["blocked"] is True
@@ -198,8 +222,11 @@ class TestSendResultHandling:
             project_dir = Path("/tmp/test_project")
             config_path = project_dir / "config.sh"
             workbook_path = project_dir / "workbook.xlsx"
+            local_project_id = "test_project"
 
-            result = rp.run_send_phase(project_dir, config_path, workbook_path)
+            result = rp.run_send_phase(
+                project_dir, config_path, workbook_path, local_project_id
+            )
 
             assert result["success"] is False
             assert result.get("blocked") is None  # Not a blocker
@@ -226,7 +253,7 @@ class TestRunPhaseStateUpdates:
                         mock_runner.return_value = {
                             "success": False,
                             "blocked": True,
-                            "block_reason": "browser_manual_intervention",
+                            "block_reason": "browser_blocked",
                             "action_required": {
                                 "code": "auth_required",
                                 "summary": "Login required",
@@ -291,7 +318,7 @@ class TestRunPhaseStateUpdates:
                         mock_runner.return_value = {
                             "success": False,
                             "blocked": True,
-                            "block_reason": "browser_manual_intervention",
+                            "block_reason": "browser_blocked",
                             "error": "Browser intervention required",
                         }
                         mock_runners.get.return_value = mock_runner
@@ -303,8 +330,7 @@ class TestRunPhaseStateUpdates:
                         last_call = call_args[-1]
                         assert last_call[1]["status"] == "action_required"
                         assert (
-                            last_call[1]["action_required"]["code"]
-                            == "browser_manual_intervention"
+                            last_call[1]["action_required"]["code"] == "browser_blocked"
                         )
 
 
@@ -429,8 +455,11 @@ class TestExtractPhaseBlockerPreservation:
             project_dir = Path("/tmp/test_project")
             config_path = project_dir / "config.sh"
             workbook_path = project_dir / "workbook.xlsx"
+            local_project_id = "test_project"
 
-            result = rp.run_extract_phase(project_dir, config_path, workbook_path)
+            result = rp.run_extract_phase(
+                project_dir, config_path, workbook_path, local_project_id
+            )
 
             assert result["success"] is False
             assert result["blocked"] is True
@@ -449,8 +478,11 @@ class TestExtractPhaseBlockerPreservation:
             project_dir = Path("/tmp/test_project")
             config_path = project_dir / "config.sh"
             workbook_path = project_dir / "workbook.xlsx"
+            local_project_id = "test_project"
 
-            result = rp.run_extract_phase(project_dir, config_path, workbook_path)
+            result = rp.run_extract_phase(
+                project_dir, config_path, workbook_path, local_project_id
+            )
 
             assert result["success"] is False
             assert result["failure_code"] == "wrong_page"
@@ -467,8 +499,11 @@ class TestExtractPhaseBlockerPreservation:
             project_dir = Path("/tmp/test_project")
             config_path = project_dir / "config.sh"
             workbook_path = project_dir / "workbook.xlsx"
+            local_project_id = "test_project"
 
-            result = rp.run_extract_phase(project_dir, config_path, workbook_path)
+            result = rp.run_extract_phase(
+                project_dir, config_path, workbook_path, local_project_id
+            )
 
             assert result["blocked"] is True
             assert result["block_reason"] == "auth_required"

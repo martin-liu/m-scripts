@@ -78,3 +78,7 @@ if [ "$(uname -s)" = "Darwin" ]; then
 else
   alias netwhat='lsof -i +c 40'
 fi
+
+
+# AI
+alias claude='claude --model opusplan'

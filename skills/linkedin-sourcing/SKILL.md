@@ -4,163 +4,105 @@ description: LinkedIn Recruiter (paid product) sourcing assistant for macOS. Exc
 license: MIT
 metadata:
   author: martinliu
-  version: "1.1.0"
+  version: "1.2.0"
 allowed-tools: Bash(npx agent-browser:*), Bash(agent-browser:*), Bash(grep:*), Bash(rg:*), Bash(ls:*), Bash(mkdir:*), Bash(cat:*), Bash(echo:*), Bash(date:*), Bash(timeout:*), Bash(python3:*), Bash(open:*), Bash(chmod:*), Bash(bash:*)
 ---
 
 # LinkedIn Sourcing
 
-Automates candidate outreach via **LinkedIn Recruiter** (the paid hiring product at `linkedin.com/talent/hire/`). Requires macOS and Google Chrome.
+Automates LinkedIn Recruiter sourcing with a loop-first workflow. Live-proven path: `bootstrap -> loop -> review boundary -> send boundary`.
 
-## Install / Update
+## Normal Workflow
+
+Use exactly this flow:
+
+1. Bootstrap once.
+2. Run the loop.
+3. If the loop stops, do the required action.
+4. Run the same loop command again.
 
 ```bash
-npx -y skills add martin-liu/m-scripts --skill linkedin-sourcing
-npx -y skills update linkedin-sourcing
-```
-
-## Quick Start
-
-```bash
-# 1. Bootstrap a new project from JD
+# Bootstrap from a JD URL
 python3 $SKILL_DIR/scripts/bootstrap_project.py \
-  --jd-url "https://example.com/job" \
-  --position-title "Senior Engineer"
+  --jd-url "https://example.com/job"
 
-# 2. Run the reachout loop (stops cleanly at boundaries)
+# Main workflow after bootstrap
 python3 $SKILL_DIR/scripts/run_reachout_loop.py --project "{PROJECT_ID}"
 
-# 3. To include sending (requires explicit confirmation)
-python3 $SKILL_DIR/scripts/run_reachout_loop.py --project "{PROJECT_ID}" --confirm-send
+# Check current state without changing anything
+python3 $SKILL_DIR/scripts/status.py "{PROJECT_ID}" --pretty
 ```
 
-## Loop Rule
+Do not choose phases manually in normal operation. The loop decides.
 
-The loop is the primary workflow driver:
+## Stop Conditions
 
-```
-while True:
-    status = get_status(project)
-    if should_stop(status): break
-    run_phase(project, status.next_phase)
-```
+- `action_required` with `actor=agent`: do the browser or automation action, then rerun the loop
+- `action_required` with `actor=user`: stop and ask the user
+- `review`: stop for human review
+- `send`: stop unless `--confirm-send` is provided
+- `complete`: no more work
+- `failed`: fix the issue, then rerun the loop
 
-**Stop conditions** (clean stops):
-- `action_required` present (browser/manual blocker)
-- Review phase reached (human boundary)
-- Send phase reached (unless `--confirm-send`)
-- Workflow complete (no more work)
-- Phase failed
+## Review And Send
 
-## Three Sources of Truth
+Review is a hard stop.
 
-| Source | Purpose |
-|--------|---------|
-| `workbook.xlsx` | Row-level truth (candidates, next_action, status) |
-| `project_state.json` | Workflow checkpoint (current_phase, action_required) |
-| `config.sh` | Project configuration |
-
-## Phase Boundaries
-
-| Phase | Type | Stop Behavior |
-|-------|------|---------------|
-| create_search | Browser | Stop if search not configured |
-| extract | Browser | Stop on browser/manual blocker |
-| filter | Automated | Continue automatically |
-| enrich | Browser | Stop on browser/manual blocker |
-| draft | Automated | Continue automatically |
-| review | Human | **Always stop** - human review required |
-| send | Browser | Stop unless `--confirm-send` |
-
-## Key Commands
+- Review the drafts in `workbook.xlsx`
+- Approve them
+- Resume with:
 
 ```bash
-# Status check
-python3 $SKILL_DIR/scripts/status.py "{PROJECT_ID}" --pretty
-
-# Run single phase
-python3 $SKILL_DIR/scripts/run_phase.py "{PROJECT_ID}" filter
-
-# Run loop (recommended)
-python3 $SKILL_DIR/scripts/run_reachout_loop.py --project "{PROJECT_ID}"
-
-# With send confirmation
 python3 $SKILL_DIR/scripts/run_reachout_loop.py --project "{PROJECT_ID}" --confirm-send
+```
 
-# Dry run (preview only)
-python3 $SKILL_DIR/scripts/run_reachout_loop.py --project "{PROJECT_ID}" --dry-run
+Never send without `--confirm-send`.
 
-# Single iteration
+## State Files
+
+- `workbook.xlsx`: row-level truth
+- `project_state.json`: current checkpoint and `action_required`
+- `config.sh`: project configuration
+
+Agents should treat these as read-only unless the task explicitly requires changing config.
+
+## Minimal Debug Surface
+
+Use these only for debugging or live verification of a small slice.
+
+```bash
+# Verify one enrich row in the browser
+python3 $SKILL_DIR/scripts/run_enrich.py --project "{PROJECT_ID}" --row-id 3
+
+# Draft one row without touching the rest
+python3 $SKILL_DIR/scripts/run_draft.py "{PROJECT_ID}" --row-id 3
+
+# Verify send flow for one approved row without sending
+python3 $SKILL_DIR/scripts/run_send.py --project "{PROJECT_ID}" --verify-only --row-id 3
+
+# Run exactly one loop iteration
 python3 $SKILL_DIR/scripts/run_reachout_loop.py --project "{PROJECT_ID}" --once
 ```
 
-## Bootstrap & Setup
+## If State Looks Wrong
 
-**First-time setup** (creates `~/.config/linkedin-sourcing/profile.sh`):
-
-```bash
-python3 $SKILL_DIR/scripts/init_runtime.py
-```
-
-**Create new project**:
+Use reconcile only for obviously stale checkpoint state.
 
 ```bash
-python3 $SKILL_DIR/scripts/bootstrap_project.py \
-  --jd-url "https://lifeattiktok.com/search/..." \
-  --position-title "SoC Digital Design Engineer" \
-  --team-name "Multimedia Lab"
+python3 $SKILL_DIR/scripts/reconcile_state.py "{PROJECT_ID}" --pretty
+python3 $SKILL_DIR/scripts/reconcile_state.py "{PROJECT_ID}" --apply --pretty
 ```
 
-This creates:
-- `$WORK_DIR/projects/{PROJECT_ID}_{slug}/config.sh`
-- `$WORK_DIR/projects/{PROJECT_ID}_{slug}/workbook.xlsx`
-- `$WORK_DIR/projects/{PROJECT_ID}_{slug}/job_description.txt`
+## Do Not
 
-## Browser Connection
+- Do not orchestrate phases manually in normal flow
+- Do not write directly to `workbook.xlsx` or `project_state.json`
+- Do not skip review
+- Do not send without `--confirm-send`
+- Do not invent next steps when `status.py` or the loop already tells you what to do
 
-```bash
-# Connect to Chrome (auto-bootstrap auth if needed)
-bash "$SKILL_DIR/scripts/connect_browser.sh"
+## Workbook Model
 
-# Check status
-bash "$SKILL_DIR/scripts/connect_browser.sh" --status
-```
-
-## Excel Schema
-
-Key columns: `row_id`, `name`, `company`, `title`, `profile_url`, `status`, `next_action`, `draft_subject`, `draft_body`, `enrichment_notes`
-
-**Status flow**: `Extracted` → `Filtered` / `Enriched` / `Drafted` → `Approved` → `Sent`
-
-**Next action flow**: `filter` → `enrich` → `draft` → `review` → `send` → `done`
-
-## Exit Codes
-
-| Code | Meaning |
-|------|---------|
-| 0 | Success / clean stop |
-| 1 | Phase failure |
-| 2 | Browser/manual intervention required |
-| 3 | Configuration error |
-
-## Path Rules
-
-- `SKILL_DIR` = this skill directory
-- `WORK_DIR` = runtime data from `~/.config/linkedin-sourcing/profile.sh`
-- Scripts: `$SKILL_DIR/scripts/`
-- Templates: `$SKILL_DIR/templates/`
-
-**Permission trigger**: On fresh sessions, create `$WORK_DIR/.permission_probe` before browser operations.
-
-## Legacy: Direct Phase Commands
-
-Individual phase runners (used by loop internally):
-
-```bash
-python3 $SKILL_DIR/scripts/run_create_search.py --project "{PROJECT_ID}"
-python3 $SKILL_DIR/scripts/run_extraction.py --config "$WORK_DIR/projects/{PROJECT_ID}/config.sh"
-python3 $SKILL_DIR/scripts/run_filter.py "{PROJECT_ID}"
-python3 $SKILL_DIR/scripts/run_enrich.py --project "{PROJECT_ID}"
-python3 $SKILL_DIR/scripts/run_draft.py "{PROJECT_ID}"
-python3 $SKILL_DIR/scripts/run_send.py --project "{PROJECT_ID}"
-```
+- `status` = where the row is now
+- `next_action` = what the loop will do next
+- normal flow: `filter -> enrich -> draft -> review -> send -> done`

@@ -119,6 +119,27 @@ class TestBuildActionRequired:
         assert action["context"]["selector"] == "button.send"
         assert action["can_retry"] is False
 
+    def test_action_default_actor(self):
+        """Build action with default actor=agent."""
+        action = pe._build_action_required(
+            code="test_error",
+            summary="Something went wrong",
+            steps=["Step 1"],
+        )
+
+        assert action["actor"] == "agent"
+
+    def test_action_with_explicit_actor(self):
+        """Build action with explicit actor override."""
+        action = pe._build_action_required(
+            code="auth_required",
+            summary="Login required",
+            steps=["Log in"],
+            actor="user",
+        )
+
+        assert action["actor"] == "user"
+
 
 class TestExtractCompactFacts:
     """Tests for _extract_compact_facts helper."""
@@ -201,6 +222,30 @@ class TestExtractCompactFacts:
 
         assert "Profile viewed" in result or result == ""
 
+    def test_top_lines_fallback_extracts_visible_profile_context(self):
+        """Fallback should use visible recruiter top-card lines when structured fields are empty."""
+        page_data = {
+            "name": "Upasana Wadhwa",
+            "top_lines": [
+                "Upasana Wadhwa",
+                "Second degree connection",
+                "\u00b7\u00a02nd",
+                "Software Engineer at NetApp| Ex-Nutanix | NIT K Surathkal | Expertise in Machine Learning, Backend Development, Distributed Systems",
+                "National Institute of Technology Karnataka \u00b7 San Jose, California, United States \u00b7 Software Development \u00b7 500+",
+                "500+ connections",
+                "Message Upasana",
+                "Top Skills: Agentic Gen AI Containerization Kubernetes",
+            ],
+        }
+
+        result = pe._extract_compact_facts(page_data)
+
+        assert "Headline:" in result
+        assert "Software Engineer at NetApp" in result
+        assert "Top card:" in result
+        assert "National Institute of Technology Karnataka" in result
+        assert "Top Skills:" in result
+
 
 class TestEnrichProfile:
     """Tests for enrich_profile function."""
@@ -269,6 +314,53 @@ class TestEnrichViaBrowser:
         assert calls[0][0][0][3] == "open"
         # Second call should be 'eval' command
         assert calls[1][0][0][3] == "eval"
+
+    @patch("time.sleep")
+    @patch("subprocess.run")
+    def test_browser_retries_when_profile_is_still_loading(self, mock_run, mock_sleep):
+        """Should retry eval when the profile page is still in a loading shell."""
+        open_result = MagicMock(returncode=0, stdout="", stderr="")
+        loading_eval = MagicMock(
+            returncode=0,
+            stdout=json.dumps({"headline": "Loading.", "top_lines": ["Loading."]}),
+            stderr="",
+        )
+        empty_eval = MagicMock(
+            returncode=0,
+            stdout=json.dumps(
+                {
+                    "headline": "",
+                    "top_lines": [],
+                    "skills": [],
+                    "experience": [],
+                    "education": [],
+                }
+            ),
+            stderr="",
+        )
+        ready_eval = MagicMock(
+            returncode=0,
+            stdout=json.dumps(
+                {
+                    "top_lines": [
+                        "Upasana Wadhwa",
+                        "Software Engineer at NetApp| Ex-Nutanix | NIT K Surathkal",
+                        "National Institute of Technology Karnataka \u00b7 San Jose, California, United States \u00b7 Software Development \u00b7 500+",
+                        "Top Skills: Agentic Gen AI Containerization Kubernetes",
+                    ]
+                }
+            ),
+            stderr="",
+        )
+
+        mock_run.side_effect = [open_result, loading_eval, empty_eval, ready_eval]
+
+        result = pe._enrich_via_browser("https://linkedin.com/in/test", "9234", 60)
+
+        assert result.success is True
+        assert "Software Engineer at NetApp" in result.enrichment_notes
+        assert mock_run.call_count == 4
+        assert mock_sleep.call_count == 2
 
     @patch("subprocess.run")
     def test_browser_open_failure_auth_required(self, mock_run):

@@ -270,12 +270,12 @@ class TestClassifyPhaseResult:
         assert exit_code == 0
 
     def test_stops_on_browser_blocker(self):
-        """Should stop with exit code 2 when browser/manual blocker present."""
+        """Should stop with exit code 2 when an action_required blocker is present."""
         phase_result = {
             "success": False,
             "phase": "enrich",
             "blocked": True,
-            "block_reason": "browser_manual_intervention",
+            "block_reason": "browser_blocked",
             "state_after": {
                 "action_required": {
                     "code": "auth_required",
@@ -402,6 +402,144 @@ class TestRunLoopIteration:
                 mock_run.assert_not_called()
                 assert should_continue is True  # Dry run continues
 
+    def test_prints_guidance_after_phase_blocker(self, capsys):
+        """Blocked phases should print loop-first guidance before stopping."""
+        initial_status = {
+            "current_phase": "bootstrap",
+            "status": "completed",
+            "next_phase": "create_search",
+            "action_required": None,
+            "workbook_summary": {"total_rows": 0, "by_next_action": {}},
+        }
+        refreshed_status = {
+            "current_phase": "create_search",
+            "status": "action_required",
+            "next_phase": None,
+            "action_required": {
+                "code": "timeout",
+                "summary": "Operation timed out - page may be loading slowly or stuck",
+            },
+            "loop_resume_guidance": {"resolve_now": "Check the Chrome window"},
+            "loop_command": "python3 /tmp/run_reachout_loop.py --project test_project",
+            "workbook_summary": {"total_rows": 0, "by_next_action": {}},
+        }
+        phase_result = {
+            "success": False,
+            "phase": "create_search",
+            "state_after": {
+                "action_required": {
+                    "code": "timeout",
+                    "summary": "Operation timed out - page may be loading slowly or stuck",
+                }
+            },
+        }
+
+        with patch.object(loop, "load_status") as mock_load:
+            with patch.object(loop, "run_single_phase") as mock_run:
+                mock_load.side_effect = [initial_status, refreshed_status]
+                mock_run.return_value = phase_result
+
+                should_continue, _message, exit_code = loop.run_loop_iteration(
+                    "test_project", confirm_send=False, dry_run=False
+                )
+
+        output = capsys.readouterr().out
+        assert should_continue is False
+        assert exit_code == 2
+        assert "Agent should resolve now:" in output
+        assert "Then resume with:" in output
+        assert "python3 /tmp/run_reachout_loop.py --project test_project" in output
+
+    def test_prints_agent_actionable_guidance_for_create_search(self, capsys):
+        """Create-search blockers should read as agent work, not user/manual work."""
+        initial_status = {
+            "current_phase": "bootstrap",
+            "status": "completed",
+            "next_phase": "create_search",
+            "action_required": None,
+            "workbook_summary": {"total_rows": 0, "by_next_action": {}},
+        }
+        refreshed_status = {
+            "current_phase": "create_search",
+            "status": "action_required",
+            "next_phase": None,
+            "action_required": {
+                "code": "search_not_configured",
+                "summary": "The Recruiter project needs a candidate search configured",
+                "actor": "agent",
+            },
+            "loop_resume_guidance": {
+                "actor": "agent",
+                "resolve_now": "Open the Recruiter search page in Chrome and configure the candidate search using the provided search brief",
+                "steps": [
+                    "Open the Recruiter project search page in Chrome",
+                    "Use the search brief provided in context.search_brief",
+                ],
+            },
+            "loop_command": "python3 /tmp/run_reachout_loop.py --project test_project",
+            "workbook_summary": {"total_rows": 0, "by_next_action": {}},
+        }
+        phase_result = {
+            "success": False,
+            "phase": "create_search",
+            "state_after": {
+                "action_required": {
+                    "code": "search_not_configured",
+                    "summary": "The Recruiter project needs a candidate search configured",
+                    "actor": "agent",
+                }
+            },
+        }
+
+        with patch.object(loop, "load_status") as mock_load:
+            with patch.object(loop, "run_single_phase") as mock_run:
+                mock_load.side_effect = [initial_status, refreshed_status]
+                mock_run.return_value = phase_result
+
+                should_continue, _message, exit_code = loop.run_loop_iteration(
+                    "test_project", confirm_send=False, dry_run=False
+                )
+
+        output = capsys.readouterr().out
+        assert should_continue is False
+        assert exit_code == 2
+        assert "Agent should resolve now:" in output
+        assert "Use the search brief provided in context.search_brief" in output
+        assert "manual" not in output.lower()
+
+    def test_prints_user_actionable_guidance_for_auth_blocker(self, capsys):
+        """User-only blockers should be labeled explicitly so agents do not improvise."""
+        status = {
+            "current_phase": "extract",
+            "status": "action_required",
+            "next_phase": None,
+            "action_required": {
+                "code": "auth_required",
+                "summary": "LinkedIn authentication required - not logged in to Recruiter",
+                "actor": "user",
+            },
+            "loop_resume_guidance": {
+                "actor": "user",
+                "resolve_now": "Log in to LinkedIn Recruiter in the browser",
+                "steps": ["Navigate to https://www.linkedin.com/talent/home in Chrome"],
+            },
+            "loop_command": "python3 /tmp/run_reachout_loop.py --project test_project",
+            "workbook_summary": {"total_rows": 0, "by_next_action": {}},
+        }
+
+        with patch.object(loop, "load_status") as mock_load:
+            mock_load.return_value = status
+
+            should_continue, _message, exit_code = loop.run_loop_iteration(
+                "test_project", confirm_send=False, dry_run=False
+            )
+
+        output = capsys.readouterr().out
+        assert should_continue is False
+        assert exit_code == 2
+        assert "User must resolve now:" in output
+        assert "Log in to LinkedIn Recruiter in the browser" in output
+
 
 class TestRunReachoutLoop:
     """Tests for run_reachout_loop function."""
@@ -416,7 +554,7 @@ class TestRunReachoutLoop:
             assert exit_code == 0
 
     def test_exits_with_code_2_on_browser_blocker(self):
-        """Should exit with code 2 on browser/manual blocker."""
+        """Should exit with code 2 on an action_required blocker."""
         with patch.object(loop, "run_loop_iteration") as mock_iter:
             mock_iter.return_value = (
                 False,

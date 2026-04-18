@@ -5,6 +5,8 @@ Given a project reference, returns the current phase, status, and exactly
 what command to run next. Uses observable state from project_state.json
 plus workbook next_action rows to determine the next phase.
 
+The loop is the primary workflow. Always use the loop command to resume.
+
 Usage:
     python3 status.py <project_ref>
     python3 status.py my_project
@@ -20,7 +22,7 @@ Output (JSON):
         "status": "completed",
         "workflow_mode": "reachout",
         "next_phase": "enrich",
-        "next_command": "python3 scripts/run_enrich.py ...",
+        "loop_command": "python3 scripts/run_reachout_loop.py --project my_project",
         "action_required": null,
         "workbook_summary": {
             "total_rows": 10,
@@ -34,6 +36,7 @@ Output (JSON):
 from __future__ import annotations
 
 import json
+import shlex
 import sys
 from pathlib import Path
 from typing import Any
@@ -46,8 +49,85 @@ from project_state import load_project_state
 from phase_registry import (
     get_next_phase,
     get_phase_metadata,
-    get_command_for_phase,
 )
+
+
+def get_loop_command(project_ref: str, confirm_send: bool = False) -> str:
+    """Get the canonical loop command to resume workflow.
+
+    The loop is the primary workflow driver. Always use this command
+    to resume after resolving blockers or boundaries.
+
+    Args:
+        project_ref: Project reference (ID, URL, or config path)
+        confirm_send: Whether to include --confirm-send flag
+
+    Returns:
+        Command string to run the loop
+    """
+    script_path = shlex.quote(str(SCRIPT_DIR / "run_reachout_loop.py"))
+    quoted_project_ref = shlex.quote(project_ref)
+    base_cmd = f"python3 {script_path} --project {quoted_project_ref}"
+    if confirm_send:
+        return f"{base_cmd} --confirm-send"
+    return base_cmd
+
+
+def get_loop_resume_guidance(
+    action_required: dict[str, Any] | None,
+    project_ref: str,
+) -> dict[str, Any] | None:
+    """Generate guidance for resuming the loop after resolving a blocker.
+
+    The loop is the primary workflow. After resolving any blocker,
+    always rerun the loop command - it will pick up where it left off.
+
+    Args:
+        action_required: The action_required dict from project state
+        project_ref: Project reference for command generation
+
+    Returns:
+        Guidance dict with resolution steps and resume command, or None
+    """
+    if action_required is None:
+        return None
+
+    code = action_required.get("code", "unknown")
+    summary = action_required.get("summary", "Manual intervention needed")
+    details = action_required.get("details", "")
+    steps = action_required.get("steps", [])
+    actor = action_required.get("actor", "agent")
+
+    # Build guidance based on blocker type
+    # Mental model: resolve it, then rerun the loop
+    guidance = {
+        "code": code,
+        "summary": summary,
+        "details": details,
+        "steps": steps,
+        "actor": actor,
+        "resolve_now": "",
+        "then_run": get_loop_command(project_ref),
+    }
+
+    if code == "search_not_configured":
+        guidance["resolve_now"] = (
+            "Open the Recruiter search page in Chrome and configure the candidate search using the provided search brief"
+        )
+    elif code in {"browser_manual_intervention", "browser_blocked"}:
+        guidance["resolve_now"] = "Complete the browser task in Chrome"
+    elif code == "auth_required":
+        guidance["resolve_now"] = "Log in to LinkedIn Recruiter in the browser"
+    elif code == "create_search_failed":
+        guidance["resolve_now"] = "Fix the search configuration issue"
+    elif actor == "user":
+        guidance["resolve_now"] = (
+            "Resolve the blocker in the browser, then rerun the loop"
+        )
+    else:
+        guidance["resolve_now"] = "Resolve the blocker using the steps above"
+
+    return guidance
 
 
 def get_workbook_summary(workbook_path: Path) -> dict[str, Any]:
@@ -180,7 +260,7 @@ def get_status(project_ref: str, work_dir: Path | None = None) -> dict[str, Any]
         work_dir: Optional WORK_DIR override
 
     Returns:
-        Status dict with phase, next command, and readiness
+        Status dict with phase, loop command, and readiness
     """
     result: dict[str, Any] = {
         "project_ref": project_ref,
@@ -192,7 +272,8 @@ def get_status(project_ref: str, work_dir: Path | None = None) -> dict[str, Any]
         "status": None,
         "workflow_mode": "reachout",
         "next_phase": None,
-        "next_command": None,
+        "loop_command": None,
+        "loop_resume_guidance": None,
         "action_required": None,
         "workbook_summary": None,
         "ready": False,
@@ -255,25 +336,37 @@ def get_status(project_ref: str, work_dir: Path | None = None) -> dict[str, Any]
     result["ready"] = ready
     result["message"] = message
 
-    # Generate next command
-    if next_phase:
-        # Use project_dir_name (includes slug) for slug-safe command generation
-        result["next_command"] = get_command_for_phase(
-            next_phase, result["project_dir_name"]
+    # Generate loop command - the primary way to resume workflow
+    if result["project_id"]:
+        result["loop_command"] = get_loop_command(result["project_id"])
+
+    # Generate loop resume guidance when blocked
+    if result["action_required"]:
+        result["loop_resume_guidance"] = get_loop_resume_guidance(
+            result["action_required"],
+            result["project_id"] or project_ref,
         )
+
+    # Compatibility shim: next_command for existing JSON consumers
+    # Points to the canonical loop command as the primary workflow path
+    result["next_command"] = result["loop_command"]
 
     return result
 
 
 def main():
     """CLI entry point."""
-    if len(sys.argv) < 2:
+    if any(arg in ("-h", "--help") for arg in sys.argv[1:]) or len(sys.argv) < 2:
+        print(
+            f"Normal workflow: python3 {SCRIPT_DIR / 'run_reachout_loop.py'} --project <project_ref>",
+            file=sys.stderr,
+        )
         print("Usage: python3 status.py <project_ref>", file=sys.stderr)
         print(
             "  project_ref: PROJECT_ID, Recruiter URL, or config.sh path",
             file=sys.stderr,
         )
-        sys.exit(1)
+        sys.exit(0 if any(arg in ("-h", "--help") for arg in sys.argv[1:]) else 1)
 
     project_ref = sys.argv[1]
 
@@ -295,9 +388,6 @@ def main():
         print(f"Status: {status['status']}")
         print(f"Workflow Mode: {status['workflow_mode']}")
 
-        if status.get("action_required"):
-            print(f"\n⚠️  Action Required: {status['action_required']}")
-
         summary = status.get("workbook_summary", {})
         print(f"\nWorkbook: {summary.get('total_rows', 0)} total rows")
         by_action = summary.get("by_next_action", {})
@@ -310,9 +400,45 @@ def main():
         print(f"Ready: {'Yes' if status['ready'] else 'No'}")
         print(f"Message: {status['message']}")
 
-        if status.get("next_command"):
-            print(f"\nCommand to run next:")
-            print(f"  {status['next_command']}")
+        # Show blocker guidance if action_required
+        if status.get("action_required"):
+            guidance = status.get("loop_resume_guidance", {})
+            actor_label = (
+                "User must resolve now"
+                if guidance.get("actor") == "user"
+                else "Agent should resolve now"
+            )
+            print(
+                f"\n⚠️  Action Required: {guidance.get('summary', 'Manual intervention needed')}"
+            )
+            if guidance.get("details"):
+                print(f"  {guidance['details']}")
+            if guidance.get("steps"):
+                print(f"\nSteps:")
+                for step in guidance["steps"]:
+                    print(f"  - {step}")
+            if guidance.get("resolve_now"):
+                print(f"\n{actor_label}:")
+                print(f"  {guidance['resolve_now']}")
+            if status.get("loop_command"):
+                print(f"\nThen run:")
+                print(f"  {status['loop_command']}")
+        elif status.get("next_phase") in ("review", "send"):
+            # Boundary guidance with explicit loop resume command
+            next_phase = status["next_phase"]
+            if next_phase == "review":
+                print(f"\n🛑 Boundary: Review required")
+                print(f"  Open the workbook and review drafted messages")
+                print(f"\nAfter review, run:")
+                print(f"  {status['loop_command']}")
+            elif next_phase == "send":
+                print(f"\n🛑 Boundary: Send confirmation required")
+                print(f"  Review messages in workbook, then run with --confirm-send:")
+                print(f"  {status['loop_command']} --confirm-send")
+        elif status.get("loop_command"):
+            # Normal operation - show loop command
+            print(f"\nRun the loop:")
+            print(f"  {status['loop_command']}")
     else:
         # JSON output
         print(json.dumps(status, indent=2, default=str))

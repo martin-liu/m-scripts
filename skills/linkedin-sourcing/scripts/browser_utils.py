@@ -79,17 +79,20 @@ class BrowserReadinessResult:
 
 @dataclass
 class ActionRequired:
-    """Structured payload for manual intervention requirements.
+    """Structured payload for required follow-up actions.
 
     This dataclass provides a standardized way to communicate when
-    automation cannot complete and manual steps are required.
+    automation cannot complete and follow-up steps are required.
 
     Attributes:
         code: Stable failure code from FailureCode enum
         summary: Human-readable summary of the issue
-        steps: List of concrete manual steps to resolve
+        steps: List of concrete steps to resolve
         can_retry: Whether retrying the operation may succeed after intervention
         context: Optional additional context (e.g., URL, element selector)
+        actor: Who should perform the action - "agent" (default) or "user"
+            Use "user" only for genuine user blockers (captcha, login/auth,
+            permissions/account issues). Use "agent" for all other cases.
     """
 
     code: str
@@ -97,6 +100,7 @@ class ActionRequired:
     steps: list[str] = field(default_factory=list)
     can_retry: bool = True
     context: dict[str, Any] = field(default_factory=dict)
+    actor: str = "agent"
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -106,6 +110,7 @@ class ActionRequired:
             "steps": self.steps,
             "can_retry": self.can_retry,
             "context": self.context,
+            "actor": self.actor,
         }
 
     @classmethod
@@ -125,6 +130,7 @@ class ActionRequired:
             ],
             can_retry=True,
             context=context,
+            actor="agent",
         )
 
     @classmethod
@@ -145,6 +151,7 @@ class ActionRequired:
             ],
             can_retry=True,
             context=context,
+            actor="user",
         )
 
     @classmethod
@@ -162,12 +169,13 @@ class ActionRequired:
             summary="A browser dialog is blocking automation progress",
             steps=[
                 "Look at the Chrome browser window for any open dialogs (alert, confirm, prompt)",
-                "Handle the dialog manually by clicking appropriate buttons",
+                "Handle the dialog in Chrome by clicking the appropriate buttons",
                 "Common dialogs: 'Session expired', 'Confirm navigation', 'Save changes'",
                 "Once the dialog is dismissed, retry the operation",
             ],
             can_retry=True,
             context=context,
+            actor="agent",
         )
 
     @classmethod
@@ -181,12 +189,13 @@ class ActionRequired:
             summary="LinkedIn security check or CAPTCHA is blocking access",
             steps=[
                 "Check the Chrome browser for any CAPTCHA challenges",
-                "Complete the security verification manually in the browser",
+                "Complete the security verification in the browser",
                 "Wait a few minutes before retrying if rate-limited",
                 "Consider reducing automation frequency to avoid future blocks",
             ],
             can_retry=True,
             context=context,
+            actor="user",
         )
 
     @classmethod
@@ -209,6 +218,7 @@ class ActionRequired:
             ],
             can_retry=True,
             context=context,
+            actor="agent",
         )
 
     @classmethod
@@ -227,11 +237,12 @@ class ActionRequired:
             steps=[
                 "Check the Chrome browser to verify the page has loaded correctly",
                 "Look for the expected element (e.g., 'Message' button, composer field)",
-                "If the page layout has changed, manual intervention may be required",
+                "If the page layout has changed, adjust in Chrome before retrying",
                 "Refresh the page and retry the operation",
             ],
             can_retry=True,
             context=context,
+            actor="agent",
         )
 
     @classmethod
@@ -246,11 +257,12 @@ class ActionRequired:
             steps=[
                 "Check the Chrome browser to see the current page state",
                 "Wait for any loading indicators to complete",
-                "If the page appears stuck, refresh it manually",
+                "If the page appears stuck, refresh it in Chrome",
                 "Retry the operation once the page is responsive",
             ],
             can_retry=True,
             context=context,
+            actor="agent",
         )
 
     @classmethod
@@ -274,6 +286,7 @@ class ActionRequired:
             ],
             can_retry=True,
             context=context,
+            actor="agent",
         )
 
     @classmethod
@@ -287,13 +300,14 @@ class ActionRequired:
             summary="Browser is in an ambiguous state that cannot be automatically resolved",
             steps=[
                 "Check the Chrome browser for any open dialogs, composers, or error messages",
-                "Close any open message composers or dialogs manually",
+                "Close any open message composers or dialogs in Chrome",
                 "Navigate to a known good LinkedIn Recruiter page",
                 "Refresh the page if it appears stuck",
                 "Retry the operation once the browser is in a clean state",
             ],
             can_retry=True,
             context=context,
+            actor="agent",
         )
 
 
@@ -919,7 +933,7 @@ def format_timeout_error(
         base_msg += f"; a {dialog_type} dialog may be blocking progress"
         if dialog_msg:
             base_msg += f": '{dialog_msg}'"
-        base_msg += ". Please handle the dialog manually and retry"
+        base_msg += ". Please handle the dialog in Chrome and retry"
     else:
         base_msg += "; no blocking dialog detected"
 

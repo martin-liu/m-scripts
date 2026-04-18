@@ -1542,6 +1542,38 @@ class TestActionRequired:
         assert data["steps"] == ["Step 1", "Step 2"]
         assert data["can_retry"] is True
         assert data["context"] == {"key": "value"}
+        assert data["actor"] == "agent"  # Default actor
+
+    def test_to_dict_with_explicit_actor(self):
+        """Should include actor in dictionary when explicitly set."""
+        ar = bu.ActionRequired(
+            code="test_code",
+            summary="Test summary",
+            steps=["Step 1"],
+            actor="user",
+        )
+        data = ar.to_dict()
+
+        assert data["actor"] == "user"
+
+    def test_default_actor_is_agent(self):
+        """Default actor should be 'agent'."""
+        ar = bu.ActionRequired(
+            code="test_code",
+            summary="Test summary",
+        )
+
+        assert ar.actor == "agent"
+
+    def test_explicit_actor_override(self):
+        """Should allow explicit actor override."""
+        ar = bu.ActionRequired(
+            code="test_code",
+            summary="Test summary",
+            actor="user",
+        )
+
+        assert ar.actor == "user"
 
     def test_browser_unavailable_factory(self):
         """Should create browser_unavailable action_required."""
@@ -1552,9 +1584,10 @@ class TestActionRequired:
         assert len(ar.steps) >= 3
         assert ar.can_retry is True
         assert ar.context["cdp_port"] == "9234"
+        assert ar.actor == "agent"
 
     def test_auth_required_factory(self):
-        """Should create auth_required action_required."""
+        """Should create auth_required action_required with actor=user."""
         ar = bu.ActionRequired.auth_required(current_url="https://linkedin.com/login")
 
         assert ar.code == "auth_required"
@@ -1562,9 +1595,10 @@ class TestActionRequired:
         assert len(ar.steps) >= 4
         assert ar.can_retry is True
         assert ar.context["current_url"] == "https://linkedin.com/login"
+        assert ar.actor == "user"  # Auth is a user blocker
 
     def test_dialog_blocked_factory(self):
-        """Should create dialog_blocked action_required."""
+        """Should create dialog_blocked action_required with actor=agent."""
         ar = bu.ActionRequired.dialog_blocked(
             dialog_type="confirm",
             message="Are you sure?",
@@ -1576,9 +1610,10 @@ class TestActionRequired:
         assert ar.can_retry is True
         assert ar.context["dialog_type"] == "confirm"
         assert ar.context["message"] == "Are you sure?"
+        assert ar.actor == "agent"  # Generic dialogs are agent-actionable
 
     def test_blocked_or_captcha_factory(self):
-        """Should create blocked_or_captcha action_required."""
+        """Should create blocked_or_captcha action_required with actor=user."""
         ar = bu.ActionRequired.blocked_or_captcha(
             current_url="https://linkedin.com/checkpoint"
         )
@@ -1588,9 +1623,10 @@ class TestActionRequired:
         assert len(ar.steps) >= 3
         assert ar.can_retry is True
         assert ar.context["current_url"] == "https://linkedin.com/checkpoint"
+        assert ar.actor == "user"  # CAPTCHA is a user blocker
 
     def test_wrong_page_factory(self):
-        """Should create wrong_page action_required."""
+        """Should create wrong_page action_required with actor=agent."""
         ar = bu.ActionRequired.wrong_page(
             expected_url="https://linkedin.com/talent/home",
             actual_url="https://linkedin.com/feed",
@@ -1602,9 +1638,10 @@ class TestActionRequired:
         assert ar.can_retry is True
         assert ar.context["expected_url"] == "https://linkedin.com/talent/home"
         assert ar.context["actual_url"] == "https://linkedin.com/feed"
+        assert ar.actor == "agent"
 
     def test_element_missing_factory(self):
-        """Should create element_missing action_required."""
+        """Should create element_missing action_required with actor=agent."""
         ar = bu.ActionRequired.element_missing(
             selector="button.send-button",
             page_url="https://linkedin.com/talent/profile/123",
@@ -1616,9 +1653,10 @@ class TestActionRequired:
         assert ar.can_retry is True
         assert ar.context["selector"] == "button.send-button"
         assert ar.context["page_url"] == "https://linkedin.com/talent/profile/123"
+        assert ar.actor == "agent"
 
     def test_timeout_factory(self):
-        """Should create timeout action_required."""
+        """Should create timeout action_required with actor=agent."""
         ar = bu.ActionRequired.timeout(operation="click send button")
 
         assert ar.code == "timeout"
@@ -1626,9 +1664,10 @@ class TestActionRequired:
         assert len(ar.steps) >= 3
         assert ar.can_retry is True
         assert ar.context["operation"] == "click send button"
+        assert ar.actor == "agent"
 
     def test_verification_failed_factory(self):
-        """Should create verification_failed action_required."""
+        """Should create verification_failed action_required with actor=agent."""
         ar = bu.ActionRequired.verification_failed(
             verification_type="field_content",
             details="Subject field is empty",
@@ -1640,9 +1679,10 @@ class TestActionRequired:
         assert ar.can_retry is True
         assert ar.context["verification_type"] == "field_content"
         assert ar.context["details"] == "Subject field is empty"
+        assert ar.actor == "agent"
 
     def test_ambiguous_state_factory(self):
-        """Should create ambiguous_state action_required."""
+        """Should create ambiguous_state action_required with actor=agent."""
         ar = bu.ActionRequired.ambiguous_state(details="Unknown error occurred")
 
         assert ar.code == "ambiguous_state"
@@ -1650,6 +1690,7 @@ class TestActionRequired:
         assert len(ar.steps) >= 4
         assert ar.can_retry is True
         assert ar.context["details"] == "Unknown error occurred"
+        assert ar.actor == "agent"
 
 
 class TestAttemptBrowserAction:

@@ -485,7 +485,12 @@ def cmd_filter(workbook_path: str, config_path: str, use_enrichment: bool = True
     }
 
 
-def cmd_draft(workbook_path: str, config_path: str, template_path: str):
+def cmd_draft(
+    workbook_path: str,
+    config_path: str,
+    template_path: str,
+    row_ids: list[int] | None = None,
+):
     """Generate draft inmails for candidates ready for drafting.
 
     Processes rows where next_action=draft or (next_action=enrich and already enriched).
@@ -506,6 +511,10 @@ def cmd_draft(workbook_path: str, config_path: str, template_path: str):
         next_action = row.get("next_action") or ""
         status = row.get("status") or ""
         row_id = row.get("row_id")
+
+        if row_ids and row_id not in row_ids:
+            skipped += 1
+            continue
 
         # Allow drafting for:
         # 1. next_action=draft (standard path)

@@ -242,6 +242,94 @@ USER_EMAIL="test@example.com"
         assert updated_state["current_phase"] == "draft"
         assert updated_state["status"] == "completed"
 
+    def test_clears_last_error_on_success(self, tmp_path):
+        """Should clear stale last_error after a successful draft rerun."""
+        from project_state import (
+            create_initial_state,
+            load_project_state,
+            save_project_state,
+        )
+
+        config_path = tmp_path / "config.sh"
+        config_path.write_text(
+            'PROJECT_ID="test"\nPOSITION_TITLE="Engineer"\nTEAM_NAME="AI"\nLOCATION="SF"\nCORE_FUNCTION="building"\nBUSINESS_IMPACT="impact"\nUSER_EMAIL="test@example.com"\n'
+        )
+
+        template_path = tmp_path / "inmail_template.txt"
+        template_path.write_text("Subject: Test\n\nBody")
+
+        workbook_path = self.create_test_workbook(
+            tmp_path,
+            [
+                {
+                    "name": "John",
+                    "title": "Engineer",
+                    "status": "Extracted",
+                    "next_action": "draft",
+                }
+            ],
+        )
+
+        state = create_initial_state("test", current_phase="draft", status="failed")
+        state["last_error"] = "Template file not found"
+        save_project_state(tmp_path, state)
+
+        result = rd.run_draft(tmp_path, config_path, workbook_path, template_path)
+
+        assert result["success"] is True
+        updated_state = load_project_state(tmp_path)
+        assert updated_state["last_error"] is None
+
+    def test_can_draft_specific_row_ids(self, tmp_path):
+        """Should support drafting only the requested row IDs."""
+        config_path = tmp_path / "config.sh"
+        config_path.write_text(
+            'PROJECT_ID="test"\nPOSITION_TITLE="Engineer"\nTEAM_NAME="AI"\nLOCATION="SF"\nCORE_FUNCTION="building"\nBUSINESS_IMPACT="impact"\nUSER_EMAIL="test@example.com"\n'
+        )
+
+        template_path = tmp_path / "inmail_template.txt"
+        template_path.write_text("Subject: Test\n\nBody for {FirstName}")
+
+        workbook_path = self.create_test_workbook(
+            tmp_path,
+            [
+                {
+                    "name": "Jane",
+                    "title": "Engineer",
+                    "company": "Meta",
+                    "status": "Extracted",
+                    "next_action": "draft",
+                },
+                {
+                    "name": "John",
+                    "title": "Engineer",
+                    "company": "Google",
+                    "status": "Extracted",
+                    "next_action": "draft",
+                },
+            ],
+        )
+
+        result = rd.run_draft(
+            tmp_path,
+            config_path,
+            workbook_path,
+            template_path,
+            row_ids=[2],
+        )
+
+        assert result["success"] is True
+        assert result["drafted"] == 1
+        assert result["skipped"] == 1
+
+        from excel_utils import read
+
+        rows = {row["row_id"]: row for row in read(str(workbook_path))}
+        assert rows[1]["status"] == "Extracted"
+        assert rows[1]["next_action"] == "draft"
+        assert rows[2]["status"] == "Drafted"
+        assert rows[2]["next_action"] == "review"
+
     def test_uses_enrichment_notes_when_available(self, tmp_path):
         """Should use enrichment_notes for personalization."""
         config_path = tmp_path / "config.sh"

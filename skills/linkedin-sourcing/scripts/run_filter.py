@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
-"""Normalized filter phase runner for LinkedIn sourcing.
+"""Filter phase runner for LinkedIn sourcing (internal/advanced use only).
+
+This script is used internally by the reachout loop. For normal workflow,
+use the loop command which handles phase sequencing automatically:
+    python3 scripts/run_reachout_loop.py --project <PROJECT_ID>
 
 Wraps reachout_automation.py filter functionality with a clean interface.
-Does not require callers to know reachout_automation.py subcommands.
-
-Usage:
-    python3 run_filter.py <project_ref>
-    python3 run_filter.py my_project
-    python3 run_filter.py 12345
 
 Returns:
     JSON result with counts and status
@@ -120,7 +118,11 @@ def run_filter(
 
 def main():
     """CLI entry point."""
-    if len(sys.argv) < 2:
+    if any(arg in ("-h", "--help") for arg in sys.argv[1:]) or len(sys.argv) < 2:
+        print(
+            f"Advanced/debug only. Normal workflow: python3 {SCRIPT_DIR / 'run_reachout_loop.py'} --project <project_ref>",
+            file=sys.stderr,
+        )
         print(
             "Usage: python3 run_filter.py <project_ref> [--no-enrichment]",
             file=sys.stderr,
@@ -129,11 +131,7 @@ def main():
             "  project_ref: PROJECT_ID, Recruiter URL, or config.sh path",
             file=sys.stderr,
         )
-        print(
-            "  --no-enrichment: Route kept rows directly to draft (legacy)",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+        sys.exit(0 if any(arg in ("-h", "--help") for arg in sys.argv[1:]) else 1)
 
     project_ref = sys.argv[1]
     use_enrichment = "--no-enrichment" not in sys.argv

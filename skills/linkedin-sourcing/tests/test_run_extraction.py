@@ -1716,6 +1716,7 @@ class TestPaginationControls:
         second_call_args = mock_extract.call_args_list[1]
         assert "start=25" in second_call_args[1]["target_url"]
 
+    @patch("recruiter_page_utils.ensure_page_ready")
     @patch("run_extraction.validate_pagination_result")
     @patch("run_extraction.click_next_page_pagination")
     @patch("run_extraction.extract_candidates_from_page")
@@ -1732,6 +1733,7 @@ class TestPaginationControls:
         mock_extract,
         mock_click_next,
         mock_validate,
+        mock_ensure_ready,
         tmp_path,
     ):
         """Should return clear error when pagination lands on wrong page."""
@@ -1763,6 +1765,7 @@ class TestPaginationControls:
             "valid": False,
             "error": "Project ID mismatch after pagination: expected 123, got 999",
         }
+        mock_ensure_ready.return_value = {"ready": True, "state": "ready"}
 
         args = Mock()
         args.config = "/path/to/config.sh"

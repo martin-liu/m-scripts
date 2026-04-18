@@ -1043,6 +1043,50 @@ Team""")
 
         assert result["drafted"] == 1  # Should draft the enriched row
 
+    def test_draft_can_target_specific_row_ids(self, tmp_path):
+        """Draft command should only draft requested row IDs when provided."""
+        template_file = tmp_path / "template.txt"
+        template_file.write_text("Subject: Test\n\nBody for {FirstName}")
+
+        config_file = tmp_path / "config.sh"
+        config_file.write_text(
+            'POSITION_TITLE="Engineer"\nTEAM_NAME="AI"\nLOCATION="SF"\nCORE_FUNCTION="training"\nBUSINESS_IMPACT="impact"\nUSER_EMAIL="test@test.com"'
+        )
+
+        rows = [
+            {
+                "name": "Jane",
+                "title": "Engineer",
+                "company": "Meta",
+                "status": "Extracted",
+                "next_action": "draft",
+            },
+            {
+                "name": "John",
+                "title": "Engineer",
+                "company": "Google",
+                "status": "Extracted",
+                "next_action": "draft",
+            },
+        ]
+
+        wb_path = self.create_test_workbook(tmp_path, rows)
+        result = ra.cmd_draft(
+            wb_path, str(config_file), str(template_file), row_ids=[2]
+        )
+
+        assert result["drafted"] == 1
+        assert result["skipped"] == 1
+
+        wb = ra.load_workbook(wb_path)
+        updated_rows = ra.read_all_rows(wb)
+        jane_row = next(r for r in updated_rows if r["name"] == "Jane")
+        john_row = next(r for r in updated_rows if r["name"] == "John")
+        assert jane_row["status"] == "Extracted"
+        assert jane_row["next_action"] == "draft"
+        assert john_row["status"] == "Drafted"
+        assert john_row["next_action"] == "review"
+
     def test_approve_command(self, tmp_path):
         """Test the approve command updates drafted rows."""
         rows = [

@@ -817,6 +817,60 @@ class TestFetchUrl:
         assert "Not Found" in content
 
 
+class TestFetchJdUrl:
+    """Tests for JD URL fetching strategy."""
+
+    @patch("bootstrap_project.fetch_url_via_agent_browser")
+    @patch("bootstrap_project.fetch_url")
+    def test_tiktok_url_prefers_agent_browser(self, mock_fetch_url, mock_browser_fetch):
+        """TikTok job pages should prefer agent-browser for dynamic content."""
+        mock_browser_fetch.return_value = (200, "<html>dynamic jd</html>")
+
+        status, content = bp.fetch_jd_url(
+            "https://lifeattiktok.com/search/7619156093767485701"
+        )
+
+        assert status == 200
+        assert content == "<html>dynamic jd</html>"
+        mock_browser_fetch.assert_called_once()
+        mock_fetch_url.assert_not_called()
+
+    @patch("bootstrap_project.fetch_url_via_agent_browser")
+    @patch("bootstrap_project.fetch_url")
+    def test_tiktok_url_falls_back_to_static_fetch(
+        self, mock_fetch_url, mock_browser_fetch
+    ):
+        """TikTok job pages should fall back to static fetch if agent-browser fails."""
+        mock_browser_fetch.return_value = (0, "agent-browser not found")
+        mock_fetch_url.return_value = (200, "<html>fallback jd</html>")
+
+        status, content = bp.fetch_jd_url(
+            "https://lifeattiktok.com/search/7619156093767485701"
+        )
+
+        assert status == 200
+        assert content == "<html>fallback jd</html>"
+        mock_browser_fetch.assert_called_once()
+        mock_fetch_url.assert_called_once()
+
+    @patch("subprocess.run")
+    def test_fetch_url_via_agent_browser_returns_html(self, mock_run):
+        """agent-browser fetch should return evaluated page HTML."""
+        mock_run.side_effect = [
+            Mock(returncode=0, stdout="", stderr=""),
+            Mock(
+                returncode=0,
+                stdout='{"html":"<html>jd</html>","title":"JD"}',
+                stderr="",
+            ),
+        ]
+
+        status, content = bp.fetch_url_via_agent_browser("https://example.com/job")
+
+        assert status == 200
+        assert content == "<html>jd</html>"
+
+
 class TestCheckExistingProjectByRecruiterId:
     """Tests for checking existing projects by recruiter ID."""
 
@@ -1102,17 +1156,27 @@ class TestBootstrapProject:
         call_args = mock_ensure_project.call_args[1]
         assert call_args["project_name"] == "ML Engineer"
 
-    def test_allows_explicit_project_id_override(self, tmp_path, monkeypatch):
-        """Should allow --project-id override for advanced use cases."""
+    def test_explicit_project_id_reuses_existing_project(self, tmp_path, monkeypatch):
+        """Should reuse existing project when explicit --project-id matches."""
         monkeypatch.setattr(bp.Path, "home", lambda: tmp_path)
+
+        # Create existing project with custom_id
+        work_dir = tmp_path / "work"
+        existing_project = work_dir / "projects" / "custom_id"
+        existing_project.mkdir(parents=True)
+        config_path = existing_project / "config.sh"
+        config_path.write_text(
+            'PROJECT_ID="custom_id"\n'
+            'RECRUITER_PROJECT_URL="https://linkedin.com/talent/hire/12345/"\n'
+        )
 
         args = Mock()
         args.jd_url = None
         args.jd_text = "JD content"
-        args.work_dir = str(tmp_path / "work")
+        args.work_dir = str(work_dir)
         args.recruiter_url = "https://linkedin.com/talent/hire/12345/"
         args.cdp_port = "9234"
-        args.project_id = "custom_id"  # Explicit override
+        args.project_id = "custom_id"  # Explicit override matching existing
         args.position_title = "Engineer"
         args.team_name = None
         args.location = None
@@ -1124,8 +1188,113 @@ class TestBootstrapProject:
 
         result = bp.bootstrap_project(args)
 
-        # Should use explicit project_id
+        # Should reuse existing project with custom_id
         assert result["project_id"] == "custom_id"
+        assert result["reused"] is True
+        assert result["match_type"] == "explicit_project_id"
+
+    @patch("run_create_search.inspect_search_state")
+    def test_reuse_clears_stale_search_blocker_when_search_is_visible(
+        self, mock_inspect_search_state, tmp_path, monkeypatch
+    ):
+        """Bootstrap reuse should clear stale create-search blocker when search is already ready."""
+        from project_state import (
+            create_initial_state,
+            load_project_state,
+            save_project_state,
+        )
+
+        monkeypatch.setattr(bp.Path, "home", lambda: tmp_path)
+
+        work_dir = tmp_path / "work"
+        existing_project = (
+            work_dir / "projects" / "1693735164_tiktok-engineering-position"
+        )
+        existing_project.mkdir(parents=True)
+        config_path = existing_project / "config.sh"
+        config_path.write_text(
+            'PROJECT_ID="1693735164"\n'
+            'RECRUITER_PROJECT_URL="https://linkedin.com/talent/hire/1693735164/discover/recruiterSearch"\n'
+        )
+
+        stale_state = create_initial_state(
+            "1693735164", current_phase="bootstrap", status="completed"
+        )
+        stale_state["action_required"] = {
+            "code": "search_not_configured",
+            "summary": "The Recruiter project needs a candidate search configured",
+            "steps": ["Open Recruiter"],
+            "can_retry": True,
+            "context": {},
+            "actor": "agent",
+        }
+        stale_state["last_error"] = (
+            "Open the Recruiter project and create the candidate search"
+        )
+        save_project_state(existing_project, stale_state)
+
+        mock_inspect_search_state.return_value = {
+            "success": True,
+            "status": "ready",
+            "current_url": "https://linkedin.com/talent/hire/1693735164/discover/recruiterSearch",
+            "failure_code": None,
+            "action_required": None,
+        }
+
+        args = Mock()
+        args.jd_url = None
+        args.jd_text = "JD content"
+        args.work_dir = str(work_dir)
+        args.recruiter_url = (
+            "https://linkedin.com/talent/hire/1693735164/discover/recruiterSearch"
+        )
+        args.cdp_port = "9234"
+        args.project_id = "1693735164"
+        args.position_title = "Engineer"
+        args.team_name = None
+        args.location = None
+        args.core_function = None
+        args.business_impact = None
+        args.keywords = None
+        args.companies = None
+        args.exclude_titles = None
+
+        result = bp.bootstrap_project(args)
+
+        assert result["reused"] is True
+        updated_state = load_project_state(existing_project)
+        assert updated_state["current_phase"] == "create_search"
+        assert updated_state["status"] == "completed"
+        assert updated_state["action_required"] is None
+        assert updated_state["last_error"] is None
+
+    def test_explicit_project_id_missing_fails_clearly(self, tmp_path, monkeypatch):
+        """Should fail clearly when explicit --project-id does not exist."""
+        monkeypatch.setattr(bp.Path, "home", lambda: tmp_path)
+
+        args = Mock()
+        args.jd_url = None
+        args.jd_text = "JD content"
+        args.work_dir = str(tmp_path / "work")
+        args.recruiter_url = "https://linkedin.com/talent/hire/12345/"
+        args.cdp_port = "9234"
+        args.project_id = "nonexistent_id"  # Explicit override not matching any project
+        args.position_title = "Engineer"
+        args.team_name = None
+        args.location = None
+        args.core_function = None
+        args.business_impact = None
+        args.keywords = None
+        args.companies = None
+        args.exclude_titles = None
+
+        try:
+            bp.bootstrap_project(args)
+            assert False, "Should have raised ValueError"
+        except ValueError as e:
+            assert "nonexistent_id" in str(e)
+            assert "not found" in str(e)
+            assert "--project-id" in str(e)
 
     def test_fails_closed_on_invalid_recruiter_url(self, tmp_path, monkeypatch):
         """Should fail closed when recruiter URL doesn't contain valid project ID."""
@@ -1153,13 +1322,13 @@ class TestBootstrapProject:
         except ValueError as e:
             assert "Could not extract project ID" in str(e)
 
-    def test_fails_closed_on_invalid_recruiter_url_even_with_project_id_override(
+    def test_explicit_project_id_takes_precedence_over_recruiter_url(
         self, tmp_path, monkeypatch
     ):
-        """Should fail closed when recruiter URL is invalid even if --project-id is provided.
+        """Explicit project_id should be checked first, before validating recruiter URL.
 
-        This is a security measure: if the user provides a recruiter URL, it must be valid
-        before any local files are written, regardless of other overrides.
+        If explicit project_id is provided but doesn't exist, fail immediately
+        without validating other parameters.
         """
         monkeypatch.setattr(bp.Path, "home", lambda: tmp_path)
 
@@ -1169,7 +1338,9 @@ class TestBootstrapProject:
         args.work_dir = str(tmp_path / "work")
         args.recruiter_url = "https://invalid-url.com/no-project-id"
         args.cdp_port = "9234"
-        args.project_id = "custom_override_id"  # Override provided
+        args.project_id = (
+            "nonexistent_override_id"  # Override provided but doesn't exist
+        )
         args.position_title = "Engineer"
         args.team_name = None
         args.location = None
@@ -1183,7 +1354,9 @@ class TestBootstrapProject:
             bp.bootstrap_project(args)
             assert False, "Should have raised ValueError"
         except ValueError as e:
-            assert "Could not extract project ID" in str(e)
+            # Should fail on missing project_id first
+            assert "nonexistent_override_id" in str(e)
+            assert "not found" in str(e)
 
         # Verify no files were written
         work_dir = tmp_path / "work"
@@ -1236,14 +1409,13 @@ class TestBootstrapProject:
         except RuntimeError as e:
             assert "Failed to ensure Recruiter project" in str(e)
 
-    def test_reuses_existing_project_when_explicit_override_conflicts_with_recruiter_id(
+    def test_explicit_project_id_fails_when_not_found_even_with_matching_recruiter_id(
         self, tmp_path, monkeypatch
     ):
-        """Should reuse existing project when explicit --project-id conflicts with existing Recruiter ID.
+        """Explicit --project-id that doesn't exist should fail, even if recruiter_id matches.
 
-        The Recruiter ID is authoritative. If an existing project already maps to the same
-        Recruiter ID, reuse it regardless of the requested project_id override.
-        This prevents duplicate projects for the same Recruiter search.
+        The new behavior requires explicit project_id to exist. If the user wants to
+        reuse by recruiter_id, they should omit --project-id.
         """
         monkeypatch.setattr(bp.Path, "home", lambda: tmp_path)
 
@@ -1266,7 +1438,53 @@ class TestBootstrapProject:
             "https://linkedin.com/talent/hire/12345/discover/recruiterSearch"
         )
         args.cdp_port = "9234"
-        args.project_id = "different_id"  # Would prefer different local ID
+        args.project_id = "different_id"  # Explicit but doesn't exist
+        args.position_title = "New Title"
+        args.team_name = None
+        args.location = None
+        args.core_function = None
+        args.business_impact = None
+        args.keywords = None
+        args.companies = None
+        args.exclude_titles = None
+
+        try:
+            bp.bootstrap_project(args)
+            assert False, "Should have raised ValueError"
+        except ValueError as e:
+            assert "different_id" in str(e)
+            assert "not found" in str(e)
+
+    def test_creates_new_project_when_no_jd_match_even_with_recruiter_id_match(
+        self, tmp_path, monkeypatch
+    ):
+        """Should create new project when no exact JD match, even if recruiter_id matches existing.
+
+        The new contract: reuse ONLY on exact JD_URL or exact JD-content match.
+        No auto-reuse by recruiter_id alone.
+        """
+        monkeypatch.setattr(bp.Path, "home", lambda: tmp_path)
+
+        # Create existing project with recruiter ID 12345
+        work_dir = tmp_path / "work"
+        existing_project = work_dir / "projects" / "existing_proj"
+        existing_project.mkdir(parents=True)
+        config_path = existing_project / "config.sh"
+        config_path.write_text(
+            'PROJECT_ID="existing_proj"\n'
+            'RECRUITER_PROJECT_URL="https://linkedin.com/talent/hire/12345/overview"\n'
+            'POSITION_TITLE="Old Title"\n'
+        )
+
+        args = Mock()
+        args.jd_url = None
+        args.jd_text = "Different JD content"  # Different from existing
+        args.work_dir = str(work_dir)
+        args.recruiter_url = (
+            "https://linkedin.com/talent/hire/12345/discover/recruiterSearch"
+        )
+        args.cdp_port = "9234"
+        args.project_id = None  # No explicit override
         args.position_title = "New Title"
         args.team_name = None
         args.location = None
@@ -1278,35 +1496,39 @@ class TestBootstrapProject:
 
         result = bp.bootstrap_project(args)
 
-        # Should reuse existing project (Recruiter ID is authoritative)
-        assert result["project_id"] == "existing_proj"
-        assert "existing_proj" in result["project_dir"]
+        # Should create NEW project (not reuse) because no exact JD match
+        assert result["project_id"] == "12345"  # Derived from recruiter_url
+        assert result["reused"] is False
+        # Should be a new directory, not the existing one
+        assert "existing_proj" not in result["project_dir"]
+        assert "12345" in result["project_dir"]
 
-        # Config should be updated
-        config_content = Path(result["config_path"]).read_text()
-        assert "New Title" in config_content
-
-        # Should NOT create the requested "different_id" project
-        different_project = work_dir / "projects" / "different_id"
-        assert not different_project.exists()
-
-    def test_reuses_existing_project_with_same_id(self, tmp_path, monkeypatch):
-        """Should reuse existing project when same PROJECT_ID and Recruiter ID."""
+    def test_reuses_existing_project_by_exact_jd_content_match(
+        self, tmp_path, monkeypatch
+    ):
+        """Should reuse existing project when JD content matches exactly."""
         monkeypatch.setattr(bp.Path, "home", lambda: tmp_path)
 
-        # Create existing project with recruiter ID 12345 (new layout)
+        jd_content = (
+            "Senior ML Engineer\n\nWe are looking for an experienced ML engineer."
+        )
+
+        # Create existing project with JD content
         work_dir = tmp_path / "work"
-        existing_project = work_dir / "projects" / "12345_updated-title"
+        existing_project = work_dir / "projects" / "12345_existing-title"
         existing_project.mkdir(parents=True)
         config_path = existing_project / "config.sh"
         config_path.write_text(
             'PROJECT_ID="12345"\n'
             'RECRUITER_PROJECT_URL="https://linkedin.com/talent/hire/12345/overview"\n'
         )
+        # Save JD content for matching
+        jd_path = existing_project / "job_description.txt"
+        jd_path.write_text(jd_content)
 
         args = Mock()
         args.jd_url = None
-        args.jd_text = "Updated JD content"
+        args.jd_text = jd_content  # Same JD content
         args.work_dir = str(work_dir)
         args.recruiter_url = (
             "https://linkedin.com/talent/hire/12345/discover/recruiterSearch"
@@ -1324,40 +1546,49 @@ class TestBootstrapProject:
 
         result = bp.bootstrap_project(args)
 
-        # Should reuse same project (found by scanning config.sh for PROJECT_ID)
+        # Should reuse same project (found by exact JD content match)
         assert result["project_id"] == "12345"
-        assert "12345_updated-title" in result["project_dir"]
+        assert "12345_existing-title" in result["project_dir"]
+        assert result["reused"] is True
+        assert result["match_type"] == "jd_content"
         # Config should be updated
         config_content = Path(result["config_path"]).read_text()
         assert "Updated Title" in config_content
 
-    def test_preserves_existing_workbook_when_reusing_project(
+    def test_preserves_existing_workbook_when_reusing_by_jd_match(
         self, tmp_path, monkeypatch
     ):
-        """Should preserve existing workbook data when reusing a project.
+        """Should preserve existing workbook data when reusing a project by JD match.
 
         Regression test: Previously, bootstrap would recreate the workbook on every run,
         wiping out existing candidate data. Now it should only create if missing.
         """
         monkeypatch.setattr(bp.Path, "home", lambda: tmp_path)
 
-        # Create existing project with recruiter ID 12345 and existing workbook (new layout)
+        jd_content = (
+            "Senior ML Engineer\n\nWe are looking for an experienced ML engineer."
+        )
+
+        # Create existing project with JD content and existing workbook
         work_dir = tmp_path / "work"
-        existing_project = work_dir / "projects" / "12345_updated-title"
+        existing_project = work_dir / "projects" / "12345_existing-title"
         existing_project.mkdir(parents=True)
         config_path = existing_project / "config.sh"
         config_path.write_text(
             'PROJECT_ID="12345"\n'
             'RECRUITER_PROJECT_URL="https://linkedin.com/talent/hire/12345/overview"\n'
         )
+        # Save JD content for matching
+        jd_path = existing_project / "job_description.txt"
+        jd_path.write_text(jd_content)
 
-        # Create an existing workbook inside project dir (new layout)
+        # Create an existing workbook inside project dir
         workbook_path = existing_project / "workbook.xlsx"
         workbook_path.write_text("existing workbook data")
 
         args = Mock()
         args.jd_url = None
-        args.jd_text = "Updated JD content"
+        args.jd_text = jd_content  # Same JD content - should match
         args.work_dir = str(work_dir)
         args.recruiter_url = (
             "https://linkedin.com/talent/hire/12345/discover/recruiterSearch"
@@ -1375,18 +1606,25 @@ class TestBootstrapProject:
 
         result = bp.bootstrap_project(args)
 
-        # Should reuse same project (found by scanning config.sh for PROJECT_ID)
+        # Should reuse same project (found by exact JD content match)
         assert result["project_id"] == "12345"
+        assert result["reused"] is True
         # Workbook should still contain original data (not be overwritten)
         assert workbook_path.read_text() == "existing workbook data"
         # Result should point to the existing workbook
         assert result["workbook_path"] == str(workbook_path)
 
-    def test_preserves_workbook_for_legacy_project_reuse(self, tmp_path, monkeypatch):
-        """Should preserve workbook when reusing a legacy project (different directory name)."""
+    def test_preserves_workbook_for_legacy_project_reuse_by_jd_match(
+        self, tmp_path, monkeypatch
+    ):
+        """Should preserve workbook when reusing a legacy project by JD content match."""
         monkeypatch.setattr(bp.Path, "home", lambda: tmp_path)
 
-        # Create existing LEGACY project with slug-based name but recruiter ID 12345
+        jd_content = (
+            "SoC Design Engineer\n\nWe are looking for an experienced SoC designer."
+        )
+
+        # Create existing LEGACY project with JD content
         work_dir = tmp_path / "work"
         legacy_project = work_dir / "projects" / "soc-design-engineer-2024"
         legacy_project.mkdir(parents=True)
@@ -1395,6 +1633,9 @@ class TestBootstrapProject:
             'PROJECT_ID="soc-design-engineer-2024"\n'
             'RECRUITER_PROJECT_URL="https://linkedin.com/talent/hire/12345/overview"\n'
         )
+        # Save JD content for matching
+        jd_path = legacy_project / "job_description.txt"
+        jd_path.write_text(jd_content)
 
         # Create an existing workbook for the legacy project
         workbook_path = work_dir / "projects" / "soc-design-engineer-2024.xlsx"
@@ -1402,9 +1643,8 @@ class TestBootstrapProject:
 
         args = Mock()
         args.jd_url = None
-        args.jd_text = "Updated JD content"
+        args.jd_text = jd_content  # Same JD content - should match
         args.work_dir = str(work_dir)
-        # New bootstrap with same recruiter ID but would derive different numeric ID
         args.recruiter_url = (
             "https://linkedin.com/talent/hire/12345/discover/recruiterSearch"
         )
@@ -1421,19 +1661,22 @@ class TestBootstrapProject:
 
         result = bp.bootstrap_project(args)
 
-        # Should reuse the LEGACY project directory
+        # Should reuse the LEGACY project directory (found by JD content match)
         assert result["project_id"] == "soc-design-engineer-2024"
+        assert result["reused"] is True
         # Workbook should still contain original data
         assert workbook_path.read_text() == "legacy workbook with candidate data"
         # Verify NO new numeric directory or workbook was created
         numeric_workbook = work_dir / "projects" / "12345.xlsx"
         assert not numeric_workbook.exists()
 
-    def test_reuses_legacy_project_with_same_recruiter_id(self, tmp_path, monkeypatch):
-        """Should reuse/update legacy project when it maps to same Recruiter ID.
+    def test_creates_new_project_when_no_jd_match_even_with_legacy_recruiter_id(
+        self, tmp_path, monkeypatch
+    ):
+        """Should create new project when no exact JD match, even if legacy recruiter_id matches.
 
-        This supports backward compatibility for existing projects that use
-        slug-based or timestamp-based directory names instead of numeric IDs.
+        The new contract: reuse ONLY on exact JD_URL or exact JD-content match.
+        No auto-reuse by recruiter_id alone, even for legacy projects.
         """
         monkeypatch.setattr(bp.Path, "home", lambda: tmp_path)
 
@@ -1450,14 +1693,14 @@ class TestBootstrapProject:
 
         args = Mock()
         args.jd_url = None
-        args.jd_text = "Updated JD content"
+        args.jd_text = "Different JD content"  # Different from existing
         args.work_dir = str(work_dir)
-        # New bootstrap with same recruiter ID but would derive different numeric ID
+        # Same recruiter ID but different JD
         args.recruiter_url = (
             "https://linkedin.com/talent/hire/12345/discover/recruiterSearch"
         )
         args.cdp_port = "9234"
-        args.project_id = None  # Would derive "12345" but legacy project exists
+        args.project_id = None
         args.position_title = "Updated Title"
         args.team_name = None
         args.location = None
@@ -1469,22 +1712,25 @@ class TestBootstrapProject:
 
         result = bp.bootstrap_project(args)
 
-        # Should reuse the LEGACY project directory, not create new numeric one
-        assert result["project_id"] == "soc-design-engineer-2024"
-        assert "soc-design-engineer-2024" in result["project_dir"]
-        # Config should be updated with new values
-        config_content = Path(result["config_path"]).read_text()
-        assert "Updated Title" in config_content
-        assert "12345" in config_content  # Recruiter URL should be preserved/updated
+        # Should create NEW project (not reuse legacy) because no exact JD match
+        assert result["project_id"] == "12345"  # Derived from recruiter_url
+        assert result["reused"] is False
+        # Should be a new directory, not the legacy one
+        assert "soc-design-engineer-2024" not in result["project_dir"]
+        assert "12345" in result["project_dir"]
 
-        # Verify NO new numeric directory was created
-        numeric_project = work_dir / "projects" / "12345"
-        assert not numeric_project.exists(), (
-            "Should not create numeric directory when legacy exists"
-        )
+        # Verify legacy project still exists unchanged
+        assert config_path.exists()
+        legacy_content = config_path.read_text()
+        assert "Old Title" in legacy_content
 
-    def test_reuses_legacy_project_with_timestamp_name(self, tmp_path, monkeypatch):
-        """Should reuse legacy project with timestamp-based directory name."""
+    def test_creates_new_project_when_no_jd_match_with_timestamp_legacy(
+        self, tmp_path, monkeypatch
+    ):
+        """Should create new project when no exact JD match, even with timestamp legacy project.
+
+        The new contract: reuse ONLY on exact JD_URL or exact JD-content match.
+        """
         monkeypatch.setattr(bp.Path, "home", lambda: tmp_path)
 
         # Create existing project with timestamp-based name
@@ -1499,7 +1745,7 @@ class TestBootstrapProject:
 
         args = Mock()
         args.jd_url = None
-        args.jd_text = "New JD content"
+        args.jd_text = "Different JD content"  # Different from existing
         args.work_dir = str(work_dir)
         args.recruiter_url = (
             "https://linkedin.com/talent/hire/67890/discover/recruiterSearch"
@@ -1517,9 +1763,12 @@ class TestBootstrapProject:
 
         result = bp.bootstrap_project(args)
 
-        # Should reuse timestamp-based project
-        assert result["project_id"] == "project-20240115-143022"
-        assert "project-20240115-143022" in result["project_dir"]
+        # Should create NEW project because no exact JD match
+        assert result["project_id"] == "67890"  # Derived from recruiter_url
+        assert result["reused"] is False
+        # Should be a new directory, not the legacy one
+        assert "project-20240115-143022" not in result["project_dir"]
+        assert "67890" in result["project_dir"]
 
     def test_creates_new_project_when_no_legacy_conflict(self, tmp_path, monkeypatch):
         """Should create new project with title slug when no legacy project has same recruiter ID."""
@@ -1564,9 +1813,74 @@ class TestBootstrapProject:
         assert result["workbook_path"].endswith("workbook.xlsx")
         assert Path(result["workbook_path"]).parent.name.startswith("11111_")
 
-    def test_next_steps_with_search_url(self, tmp_path, monkeypatch):
-        """Should require search review before extraction when search URL is available."""
+    def test_creates_new_project_no_jd_match_same_recruiter_url(
+        self, tmp_path, monkeypatch
+    ):
+        """Should create new project when no JD match even with same recruiter URL.
+
+        This is the key test for the new contract: recruiter_id alone does NOT trigger reuse.
+        Only exact JD_URL or exact JD-content match triggers reuse.
+        """
         monkeypatch.setattr(bp.Path, "home", lambda: tmp_path)
+
+        # Create existing project with specific JD content
+        work_dir = tmp_path / "work"
+        existing_project = work_dir / "projects" / "12345_existing"
+        existing_project.mkdir(parents=True)
+        config_path = existing_project / "config.sh"
+        config_path.write_text(
+            'PROJECT_ID="12345"\n'
+            'RECRUITER_PROJECT_URL="https://linkedin.com/talent/hire/12345/overview"\n'
+            'POSITION_TITLE="Original Title"\n'
+        )
+        # Save original JD content
+        jd_path = existing_project / "job_description.txt"
+        jd_path.write_text("Original JD content")
+
+        args = Mock()
+        args.jd_url = None
+        args.jd_text = "Different JD content"  # Different JD - no match
+        args.work_dir = str(work_dir)
+        # Same recruiter URL as existing project
+        args.recruiter_url = "https://linkedin.com/talent/hire/12345/overview"
+        args.cdp_port = "9234"
+        args.project_id = None  # No explicit project_id
+        args.position_title = "New Title"
+        args.team_name = None
+        args.location = None
+        args.core_function = None
+        args.business_impact = None
+        args.keywords = None
+        args.companies = None
+        args.exclude_titles = None
+
+        result = bp.bootstrap_project(args)
+
+        # Should create NEW project (not reuse) - no JD match, no explicit project_id
+        assert result["project_id"] == "12345"  # Derived from recruiter_url
+        assert result["reused"] is False
+        # Should be a new directory
+        assert "existing" not in result["project_dir"]
+
+        # Original project should still exist with original content
+        assert config_path.exists()
+        original_content = config_path.read_text()
+        assert "Original Title" in original_content
+
+    @patch("run_create_search.inspect_search_state")
+    def test_next_steps_with_ready_search_url(
+        self, mock_inspect_search_state, tmp_path, monkeypatch
+    ):
+        """Should point to status/loop when the search is already visible."""
+        monkeypatch.setattr(bp.Path, "home", lambda: tmp_path)
+
+        mock_inspect_search_state.return_value = {
+            "success": True,
+            "status": "ready",
+            "current_url": "https://linkedin.com/talent/hire/12345/discover/recruiterSearch",
+            "failure_code": None,
+            "action_required": None,
+        }
 
         args = Mock()
         args.jd_url = None
@@ -1587,10 +1901,9 @@ class TestBootstrapProject:
         result = bp.bootstrap_project(args)
 
         next_steps_text = "\n".join(result["next_steps"])
-        assert (
-            "create/review the candidate search before extraction"
-            in next_steps_text.lower()
-        )
+        assert "recruiter search already shows candidates" in next_steps_text.lower()
+        assert "status.py 12345 --pretty" in next_steps_text
+        assert "run_reachout_loop.py --project 12345" in next_steps_text
 
     def test_next_steps_without_search_url(self, tmp_path, monkeypatch):
         """Should indicate need for ensure_recruiter_project when only overview URL."""
@@ -1792,19 +2105,23 @@ class TestBootstrapProject:
         # Position title should be placeholder
         assert "[EXTRACT FROM JD]" in result["inferred"]["position_title"]
 
-    def test_preserves_existing_config_when_reusing_project(
+    def test_preserves_existing_config_when_reusing_by_jd_match(
         self, tmp_path, monkeypatch
     ):
-        """Should preserve existing curated config values when reusing a project.
+        """Should preserve existing curated config values when reusing by JD match.
 
-        When bootstrap reuses an existing project (same Recruiter ID), it should
+        When bootstrap reuses an existing project (exact JD content match), it should
         preserve existing curated values like TEAM_NAME, LOCATION, CORE_FUNCTION,
         BUSINESS_IMPACT, KEYWORDS, COMPANIES, EXCLUDE_TITLES unless the user
         explicitly provides overrides.
         """
         monkeypatch.setattr(bp.Path, "home", lambda: tmp_path)
 
-        # Create existing project with curated config values
+        jd_content = (
+            "Senior ML Engineer\n\nWe are looking for an experienced ML engineer."
+        )
+
+        # Create existing project with curated config values and JD content
         work_dir = tmp_path / "work"
         existing_project = work_dir / "projects" / "12345"
         existing_project.mkdir(parents=True)
@@ -1823,10 +2140,13 @@ class TestBootstrapProject:
             'DAILY_LIMIT="500"\n'
             'CANDIDATE_DELAY_SEC="5"\n'
         )
+        # Save JD content for matching
+        jd_path = existing_project / "job_description.txt"
+        jd_path.write_text(jd_content)
 
         args = Mock()
         args.jd_url = None
-        args.jd_text = "New JD content"
+        args.jd_text = jd_content  # Same JD content - should match and reuse
         args.work_dir = str(work_dir)
         args.recruiter_url = (
             "https://linkedin.com/talent/hire/12345/discover/recruiterSearch"
@@ -1845,8 +2165,9 @@ class TestBootstrapProject:
 
         result = bp.bootstrap_project(args)
 
-        # Should reuse same project
+        # Should reuse same project (found by JD content match)
         assert result["project_id"] == "12345"
+        assert result["reused"] is True
 
         # Config should preserve existing curated values (shell_escape uses single quotes for values with spaces)
         config_content = Path(result["config_path"]).read_text()
@@ -1861,13 +2182,17 @@ class TestBootstrapProject:
         assert "DAILY_LIMIT=500" in config_content
         assert "CANDIDATE_DELAY_SEC=5" in config_content
 
-    def test_overrides_preserve_existing_config_when_reusing_project(
+    def test_overrides_preserve_existing_config_when_reusing_by_jd_match(
         self, tmp_path, monkeypatch
     ):
-        """CLI overrides should take precedence over existing config when reusing."""
+        """CLI overrides should take precedence over existing config when reusing by JD match."""
         monkeypatch.setattr(bp.Path, "home", lambda: tmp_path)
 
-        # Create existing project with curated config values
+        jd_content = (
+            "Senior ML Engineer\n\nWe are looking for an experienced ML engineer."
+        )
+
+        # Create existing project with curated config values and JD content
         work_dir = tmp_path / "work"
         existing_project = work_dir / "projects" / "12345"
         existing_project.mkdir(parents=True)
@@ -1879,10 +2204,13 @@ class TestBootstrapProject:
             'TEAM_NAME="Existing Team"\n'
             'LOCATION="Existing Location"\n'
         )
+        # Save JD content for matching
+        jd_path = existing_project / "job_description.txt"
+        jd_path.write_text(jd_content)
 
         args = Mock()
         args.jd_url = None
-        args.jd_text = "New JD content"
+        args.jd_text = jd_content  # Same JD content - should match and reuse
         args.work_dir = str(work_dir)
         args.recruiter_url = (
             "https://linkedin.com/talent/hire/12345/discover/recruiterSearch"
@@ -1901,19 +2229,26 @@ class TestBootstrapProject:
 
         result = bp.bootstrap_project(args)
 
+        # Should reuse project by JD match
+        assert result["reused"] is True
+
         # Config should have overrides for specified fields, existing for others
         config_content = Path(result["config_path"]).read_text()
         assert "POSITION_TITLE='Override Title'" in config_content  # overridden
         assert "TEAM_NAME='Existing Team'" in config_content  # preserved
         assert "LOCATION='Override Location'" in config_content  # overridden
 
-    def test_preserves_existing_config_for_legacy_project_reuse(
+    def test_preserves_existing_config_for_legacy_project_reuse_by_jd_match(
         self, tmp_path, monkeypatch
     ):
-        """Should preserve existing config when reusing a legacy project."""
+        """Should preserve existing config when reusing a legacy project by JD match."""
         monkeypatch.setattr(bp.Path, "home", lambda: tmp_path)
 
-        # Create existing LEGACY project with curated config
+        jd_content = (
+            "SoC Design Engineer\n\nWe are looking for an experienced SoC designer."
+        )
+
+        # Create existing LEGACY project with curated config and JD content
         work_dir = tmp_path / "work"
         legacy_project = work_dir / "projects" / "soc-design-2024"
         legacy_project.mkdir(parents=True)
@@ -1928,12 +2263,14 @@ class TestBootstrapProject:
             'BUSINESS_IMPACT="Powering next-gen hardware"\n'
             'KEYWORDS="Verilog, SystemVerilog, ASIC"\n'
         )
+        # Save JD content for matching
+        jd_path = legacy_project / "job_description.txt"
+        jd_path.write_text(jd_content)
 
         args = Mock()
         args.jd_url = None
-        args.jd_text = "New JD content"
+        args.jd_text = jd_content  # Same JD content - should match and reuse
         args.work_dir = str(work_dir)
-        # Same recruiter ID - should reuse legacy project
         args.recruiter_url = (
             "https://linkedin.com/talent/hire/12345/discover/recruiterSearch"
         )
@@ -1951,8 +2288,9 @@ class TestBootstrapProject:
 
         result = bp.bootstrap_project(args)
 
-        # Should reuse legacy project
+        # Should reuse legacy project (found by JD content match)
         assert result["project_id"] == "soc-design-2024"
+        assert result["reused"] is True
 
         # Config should preserve existing curated values (shell_escape uses single quotes for values with spaces)
         config_content = Path(result["config_path"]).read_text()
@@ -1961,6 +2299,179 @@ class TestBootstrapProject:
         assert "CORE_FUNCTION='Designing SoC components'" in config_content
         assert "BUSINESS_IMPACT='Powering next-gen hardware'" in config_content
         assert "KEYWORDS='Verilog, SystemVerilog, ASIC'" in config_content
+
+    def test_does_not_overwrite_existing_folder_on_new_project_creation(
+        self, tmp_path, monkeypatch
+    ):
+        """Regression test: Non-matching existing folder should NOT be overwritten.
+
+        When creating a new project, if a folder already exists at the derived path
+        (from a non-matching old project), bootstrap should create a new unique folder
+        instead of overwriting the existing one.
+        """
+        monkeypatch.setattr(bp.Path, "home", lambda: tmp_path)
+
+        # Create existing project at the path that would be derived for new project
+        work_dir = tmp_path / "work"
+        existing_project = work_dir / "projects" / "12345_engineer"
+        existing_project.mkdir(parents=True)
+        config_path = existing_project / "config.sh"
+        config_path.write_text(
+            'PROJECT_ID="old_project_id"\n'  # Different PROJECT_ID
+            'RECRUITER_PROJECT_URL="https://linkedin.com/talent/hire/99999/overview"\n'
+            'POSITION_TITLE="Old Title"\n'
+        )
+        # Save different JD content (so no match)
+        jd_path = existing_project / "job_description.txt"
+        jd_path.write_text("Old JD content that does not match")
+
+        # New bootstrap with same recruiter_id (12345) but different JD
+        args = Mock()
+        args.jd_url = None
+        args.jd_text = "New JD content that is different from existing"
+        args.work_dir = str(work_dir)
+        args.recruiter_url = "https://linkedin.com/talent/hire/12345/"
+        args.cdp_port = "9234"
+        args.project_id = None
+        args.position_title = "Engineer"  # Same title slug as existing folder
+        args.team_name = None
+        args.location = None
+        args.core_function = None
+        args.business_impact = None
+        args.keywords = None
+        args.companies = None
+        args.exclude_titles = None
+
+        result = bp.bootstrap_project(args)
+
+        # Should create NEW project (not reuse) - no JD match
+        assert result["project_id"] == "12345"
+        assert result["reused"] is False
+
+        # Should create a NEW directory with unique name, not overwrite existing
+        assert "12345_engineer_1" in result["project_dir"]
+        assert result["project_dir"] != str(existing_project)
+
+        # Original project should still exist unchanged
+        assert config_path.exists()
+        original_content = config_path.read_text()
+        assert "old_project_id" in original_content
+        assert "Old Title" in original_content
+
+        # New project should be in a different directory
+        new_project_dir = Path(result["project_dir"])
+        assert new_project_dir.exists()
+        assert new_project_dir != existing_project
+
+    def test_generates_unique_folder_name_for_multiple_collisions(
+        self, tmp_path, monkeypatch
+    ):
+        """Should generate unique folder names when multiple collisions exist.
+
+        If projects/12345_engineer, projects/12345_engineer_1, etc. all exist,
+        bootstrap should create projects/12345_engineer_2, etc.
+        """
+        monkeypatch.setattr(bp.Path, "home", lambda: tmp_path)
+
+        work_dir = tmp_path / "work"
+
+        # Create multiple existing projects that would collide
+        for i in range(3):
+            if i == 0:
+                folder_name = "12345_engineer"
+            else:
+                folder_name = f"12345_engineer_{i}"
+            existing_project = work_dir / "projects" / folder_name
+            existing_project.mkdir(parents=True)
+            config_path = existing_project / "config.sh"
+            config_path.write_text(
+                f'PROJECT_ID="old_project_{i}"\n'
+                'RECRUITER_PROJECT_URL="https://linkedin.com/talent/hire/99999/overview"\n'
+            )
+            jd_path = existing_project / "job_description.txt"
+            jd_path.write_text(f"Old JD content {i}")
+
+        # New bootstrap with same recruiter_id and title
+        args = Mock()
+        args.jd_url = None
+        args.jd_text = "New unique JD content"
+        args.work_dir = str(work_dir)
+        args.recruiter_url = "https://linkedin.com/talent/hire/12345/"
+        args.cdp_port = "9234"
+        args.project_id = None
+        args.position_title = "Engineer"
+        args.team_name = None
+        args.location = None
+        args.core_function = None
+        args.business_impact = None
+        args.keywords = None
+        args.companies = None
+        args.exclude_titles = None
+
+        result = bp.bootstrap_project(args)
+
+        # Should create NEW project with unique folder name
+        assert result["project_id"] == "12345"
+        assert result["reused"] is False
+
+        # Should use the next available suffix (_3 since _0, _1, _2 exist via base + _1, _2)
+        # Actually base is 12345_engineer, then _1, _2, so next is _3
+        assert "12345_engineer_3" in result["project_dir"]
+
+        # All original projects should still exist
+        for i in range(3):
+            if i == 0:
+                folder_name = "12345_engineer"
+            else:
+                folder_name = f"12345_engineer_{i}"
+            assert (work_dir / "projects" / folder_name).exists()
+
+    def test_reuse_still_works_when_folder_exists_with_matching_project(
+        self, tmp_path, monkeypatch
+    ):
+        """Reuse should still work when the folder exists and matches.
+
+        This verifies the fix doesn't break the normal reuse case.
+        """
+        monkeypatch.setattr(bp.Path, "home", lambda: tmp_path)
+
+        jd_content = "Senior ML Engineer\n\nWe are looking for an ML engineer."
+
+        work_dir = tmp_path / "work"
+        existing_project = work_dir / "projects" / "12345_senior-ml-engineer"
+        existing_project.mkdir(parents=True)
+        config_path = existing_project / "config.sh"
+        config_path.write_text(
+            'PROJECT_ID="12345"\n'
+            'RECRUITER_PROJECT_URL="https://linkedin.com/talent/hire/12345/overview"\n'
+            'POSITION_TITLE="Existing Title"\n'
+        )
+        jd_path = existing_project / "job_description.txt"
+        jd_path.write_text(jd_content)
+
+        # Bootstrap with same JD content - should reuse
+        args = Mock()
+        args.jd_url = None
+        args.jd_text = jd_content  # Same JD content
+        args.work_dir = str(work_dir)
+        args.recruiter_url = "https://linkedin.com/talent/hire/12345/"
+        args.cdp_port = "9234"
+        args.project_id = None
+        args.position_title = "Senior ML Engineer"
+        args.team_name = None
+        args.location = None
+        args.core_function = None
+        args.business_impact = None
+        args.keywords = None
+        args.companies = None
+        args.exclude_titles = None
+
+        result = bp.bootstrap_project(args)
+
+        # Should reuse existing project
+        assert result["project_id"] == "12345"
+        assert result["reused"] is True
+        assert result["project_dir"] == str(existing_project)
 
 
 class TestParseArgs:
@@ -2417,19 +2928,29 @@ class TestBootstrapProjectBrowserAuth:
 
     @patch("bootstrap_project.ensure_browser_auth")
     @patch("bootstrap_project.ensure_recruiter_project_and_get_id")
-    def test_skips_browser_bootstrap_when_project_id_override_provided(
+    def test_skips_browser_bootstrap_when_explicit_project_id_exists(
         self, mock_ensure_project, mock_ensure_browser, tmp_path, monkeypatch
     ):
-        """Should NOT trigger browser bootstrap when --project-id override is provided."""
+        """Should NOT trigger browser bootstrap when --project-id matches existing project."""
         monkeypatch.setattr(bp.Path, "home", lambda: tmp_path)
+
+        # Create existing project
+        work_dir = tmp_path / "work"
+        existing_project = work_dir / "projects" / "custom_override_id"
+        existing_project.mkdir(parents=True)
+        config_path = existing_project / "config.sh"
+        config_path.write_text(
+            'PROJECT_ID="custom_override_id"\n'
+            'RECRUITER_PROJECT_URL="https://linkedin.com/talent/hire/12345/"\n'
+        )
 
         args = Mock()
         args.jd_url = None
         args.jd_text = "JD content"
-        args.work_dir = str(tmp_path / "work")
+        args.work_dir = str(work_dir)
         args.recruiter_url = None
         args.cdp_port = "9234"
-        args.project_id = "custom_override_id"  # Explicit override
+        args.project_id = "custom_override_id"  # Explicit override matching existing
         args.position_title = "Engineer"
         args.team_name = None
         args.location = None
@@ -2441,12 +2962,13 @@ class TestBootstrapProjectBrowserAuth:
 
         result = bp.bootstrap_project(args)
 
-        # Should NOT call browser auth when project_id override is provided
+        # Should NOT call browser auth when existing project_id is provided
         mock_ensure_browser.assert_not_called()
         # Should NOT call ensure_recruiter_project
         mock_ensure_project.assert_not_called()
         # Project ID should use the override
         assert result["project_id"] == "custom_override_id"
+        assert result["reused"] is True
 
     @patch("bootstrap_project.ensure_browser_auth")
     def test_raises_clear_error_when_browser_auth_fails(
@@ -2845,6 +3367,377 @@ class TestProjectStateIntegration:
         assert "<p>" not in jd_content
         assert "<strong>" not in jd_content
         assert "Job description with HTML tags" in jd_content
+
+
+class TestProjectDeduplication:
+    """Tests for project deduplication/reuse behavior."""
+
+    def test_reuses_project_by_exact_jd_url(self, tmp_path, monkeypatch):
+        """Should reuse existing project when JD URL matches exactly."""
+        monkeypatch.setattr(bp.Path, "home", lambda: tmp_path)
+
+        # Create existing project with JD_URL
+        work_dir = tmp_path / "work"
+        existing_project = work_dir / "projects" / "12345_engineer"
+        existing_project.mkdir(parents=True)
+        config_path = existing_project / "config.sh"
+        config_path.write_text(
+            'PROJECT_ID="12345"\n'
+            'RECRUITER_PROJECT_URL="https://linkedin.com/talent/hire/12345/overview"\n'
+            'JD_URL="https://example.com/jobs/123"\n'
+            'POSITION_TITLE="Existing Engineer"\n'
+        )
+
+        args = Mock()
+        args.jd_url = "https://example.com/jobs/123"  # Same JD URL
+        args.jd_text = None
+        args.work_dir = str(work_dir)
+        args.recruiter_url = "https://linkedin.com/talent/hire/12345/"
+        args.cdp_port = "9234"
+        args.project_id = None
+        args.position_title = "New Title"
+        args.team_name = None
+        args.location = None
+        args.core_function = None
+        args.business_impact = None
+        args.keywords = None
+        args.companies = None
+        args.exclude_titles = None
+
+        result = bp.bootstrap_project(args)
+
+        # Should reuse by JD URL
+        assert result["project_id"] == "12345"
+        assert result["reused"] is True
+        assert result["match_type"] == "jd_url"
+
+    def test_reuses_project_by_exact_jd_content(self, tmp_path, monkeypatch):
+        """Should reuse existing project when JD content matches exactly."""
+        monkeypatch.setattr(bp.Path, "home", lambda: tmp_path)
+
+        jd_content = (
+            "Senior ML Engineer\n\nWe are looking for an experienced ML engineer."
+        )
+
+        # Create existing project with JD content
+        work_dir = tmp_path / "work"
+        existing_project = work_dir / "projects" / "12345_engineer"
+        existing_project.mkdir(parents=True)
+        config_path = existing_project / "config.sh"
+        config_path.write_text(
+            'PROJECT_ID="12345"\n'
+            'RECRUITER_PROJECT_URL="https://linkedin.com/talent/hire/12345/overview"\n'
+            'POSITION_TITLE="Existing Engineer"\n'
+        )
+        # Write JD content
+        jd_path = existing_project / "job_description.txt"
+        jd_path.write_text(jd_content)
+
+        args = Mock()
+        args.jd_url = None
+        args.jd_text = jd_content  # Same JD content
+        args.work_dir = str(work_dir)
+        args.recruiter_url = "https://linkedin.com/talent/hire/12345/"
+        args.cdp_port = "9234"
+        args.project_id = None
+        args.position_title = "New Title"
+        args.team_name = None
+        args.location = None
+        args.core_function = None
+        args.business_impact = None
+        args.keywords = None
+        args.companies = None
+        args.exclude_titles = None
+
+        result = bp.bootstrap_project(args)
+
+        # Should reuse by JD content
+        assert result["project_id"] == "12345"
+        assert result["reused"] is True
+        assert result["match_type"] == "jd_content"
+
+    def test_ambiguous_matches_raise_error_with_candidates(self, tmp_path, monkeypatch):
+        """Should raise error with candidate list when multiple projects match."""
+        monkeypatch.setattr(bp.Path, "home", lambda: tmp_path)
+
+        jd_content = (
+            "Senior ML Engineer\n\nWe are looking for an experienced ML engineer."
+        )
+
+        # Create TWO existing projects with same JD content
+        work_dir = tmp_path / "work"
+
+        # First project
+        project1 = work_dir / "projects" / "11111_first"
+        project1.mkdir(parents=True)
+        (project1 / "config.sh").write_text(
+            'PROJECT_ID="11111"\n'
+            'RECRUITER_PROJECT_URL="https://linkedin.com/talent/hire/11111/overview"\n'
+            'POSITION_TITLE="First Project"\n'
+        )
+        (project1 / "job_description.txt").write_text(jd_content)
+
+        # Second project
+        project2 = work_dir / "projects" / "22222_second"
+        project2.mkdir(parents=True)
+        (project2 / "config.sh").write_text(
+            'PROJECT_ID="22222"\n'
+            'RECRUITER_PROJECT_URL="https://linkedin.com/talent/hire/22222/overview"\n'
+            'POSITION_TITLE="Second Project"\n'
+        )
+        (project2 / "job_description.txt").write_text(jd_content)
+
+        args = Mock()
+        args.jd_url = None
+        args.jd_text = jd_content  # Same JD content as both projects
+        args.work_dir = str(work_dir)
+        args.recruiter_url = (
+            "https://linkedin.com/talent/hire/33333/"  # Different recruiter
+        )
+        args.cdp_port = "9234"
+        args.project_id = None
+        args.position_title = "New Title"
+        args.team_name = None
+        args.location = None
+        args.core_function = None
+        args.business_impact = None
+        args.keywords = None
+        args.companies = None
+        args.exclude_titles = None
+
+        try:
+            bp.bootstrap_project(args)
+            assert False, "Should have raised ValueError"
+        except ValueError as e:
+            error_msg = str(e)
+            assert "Multiple existing projects match" in error_msg
+            assert "11111" in error_msg
+            assert "22222" in error_msg
+            assert "First Project" in error_msg
+            assert "Second Project" in error_msg
+            assert "--project-id" in error_msg
+
+    def test_no_fuzzy_match_creates_new_project(self, tmp_path, monkeypatch):
+        """Should create new project when JD content is similar but not exact match."""
+        monkeypatch.setattr(bp.Path, "home", lambda: tmp_path)
+
+        # Create existing project with specific JD content
+        work_dir = tmp_path / "work"
+        existing_project = work_dir / "projects" / "12345_engineer"
+        existing_project.mkdir(parents=True)
+        config_path = existing_project / "config.sh"
+        config_path.write_text(
+            'PROJECT_ID="12345"\n'
+            'RECRUITER_PROJECT_URL="https://linkedin.com/talent/hire/12345/overview"\n'
+        )
+        (existing_project / "job_description.txt").write_text(
+            "Senior ML Engineer\n\nWe are looking for an experienced ML engineer."
+        )
+
+        # Different JD content (not exact match)
+        new_jd_content = "Senior ML Engineer\n\nWe are looking for a senior ML engineer with 5+ years experience."
+
+        args = Mock()
+        args.jd_url = None
+        args.jd_text = new_jd_content  # Similar but not exact
+        args.work_dir = str(work_dir)
+        args.recruiter_url = "https://linkedin.com/talent/hire/67890/"
+        args.cdp_port = "9234"
+        args.project_id = None
+        args.position_title = "Engineer"
+        args.team_name = None
+        args.location = None
+        args.core_function = None
+        args.business_impact = None
+        args.keywords = None
+        args.companies = None
+        args.exclude_titles = None
+
+        result = bp.bootstrap_project(args)
+
+        # Should create new project, not reuse
+        assert result["project_id"] == "67890"
+        assert result["reused"] is False
+
+    def test_jd_url_persisted_in_config(self, tmp_path, monkeypatch):
+        """Should persist JD_URL in config for future deduplication."""
+        monkeypatch.setattr(bp.Path, "home", lambda: tmp_path)
+
+        args = Mock()
+        args.jd_url = "https://example.com/jobs/unique-123"
+        args.jd_text = None
+        args.work_dir = str(tmp_path / "work")
+        args.recruiter_url = "https://linkedin.com/talent/hire/12345/"
+        args.cdp_port = "9234"
+        args.project_id = None
+        args.position_title = "Engineer"
+        args.team_name = None
+        args.location = None
+        args.core_function = None
+        args.business_impact = None
+        args.keywords = None
+        args.companies = None
+        args.exclude_titles = None
+
+        result = bp.bootstrap_project(args)
+
+        # Check JD_URL is persisted in config (shell_escape may use single quotes)
+        config_content = Path(result["config_path"]).read_text()
+        assert "JD_URL=" in config_content
+        assert "https://example.com/jobs/unique-123" in config_content
+
+    def test_no_reuse_for_old_projects_without_jd_match(self, tmp_path, monkeypatch):
+        """Old projects without JD_URL or JD content match should NOT be auto-reused.
+
+        New contract: reuse ONLY on exact JD_URL or exact JD-content match.
+        No auto-reuse by recruiter_id alone, even for legacy projects.
+        """
+        monkeypatch.setattr(bp.Path, "home", lambda: tmp_path)
+
+        # Create old project without JD_URL and without matching JD content
+        work_dir = tmp_path / "work"
+        old_project = work_dir / "projects" / "legacy_project"
+        old_project.mkdir(parents=True)
+        config_path = old_project / "config.sh"
+        config_path.write_text(
+            'PROJECT_ID="legacy_project"\n'
+            'RECRUITER_PROJECT_URL="https://linkedin.com/talent/hire/12345/overview"\n'
+            # No JD_URL - simulating old project
+        )
+        # No job_description.txt or different content
+
+        # New bootstrap with same recruiter_id but different JD
+        args = Mock()
+        args.jd_url = "https://example.com/jobs/new-job"
+        args.jd_text = None
+        args.work_dir = str(work_dir)
+        args.recruiter_url = "https://linkedin.com/talent/hire/12345/"
+        args.cdp_port = "9234"
+        args.project_id = None
+        args.position_title = "Engineer"
+        args.team_name = None
+        args.location = None
+        args.core_function = None
+        args.business_impact = None
+        args.keywords = None
+        args.companies = None
+        args.exclude_titles = None
+
+        result = bp.bootstrap_project(args)
+
+        # Should create NEW project (not reuse) - no JD match
+        assert result["project_id"] == "12345"  # Derived from recruiter_url
+        assert result["reused"] is False
+        # Should be a new directory, not the legacy one
+        assert "legacy_project" not in result["project_dir"]
+
+    @patch("bootstrap_project.fetch_url")
+    def test_reuses_legacy_project_by_jd_content_when_jd_url_provided(
+        self, mock_fetch, tmp_path, monkeypatch
+    ):
+        """Regression test: Legacy project without JD_URL should be reused by JD content match even when --jd-url is provided.
+
+        Issue: When bootstrapping with --jd-url, the old code disabled JD-content matching,
+        breaking backward compatibility for legacy projects that don't have JD_URL persisted.
+        Fix: Always pass jd_content for matching, allowing legacy projects to be found by
+        exact normalized job_description.txt content even when current input comes via --jd-url.
+        """
+        monkeypatch.setattr(bp.Path, "home", lambda: tmp_path)
+
+        jd_content = (
+            "Senior ML Engineer\n\nWe are looking for an experienced ML engineer."
+        )
+
+        # Create legacy project WITHOUT JD_URL but WITH matching job_description.txt
+        work_dir = tmp_path / "work"
+        legacy_project = work_dir / "projects" / "legacy_project"
+        legacy_project.mkdir(parents=True)
+        config_path = legacy_project / "config.sh"
+        config_path.write_text(
+            'PROJECT_ID="legacy_project"\n'
+            'RECRUITER_PROJECT_URL="https://linkedin.com/talent/hire/99999/overview"\n'
+            'POSITION_TITLE="Legacy Position"\n'
+            # No JD_URL - simulating legacy project created before JD_URL persistence
+        )
+        # Write JD content that will match
+        jd_path = legacy_project / "job_description.txt"
+        jd_path.write_text(jd_content)
+
+        # Mock fetch_url to return the same JD content
+        mock_fetch.return_value = (200, f"<html><body>{jd_content}</body></html>")
+
+        # Bootstrap with --jd-url where fetched content matches existing job_description.txt
+        args = Mock()
+        args.jd_url = (
+            "https://example.com/jobs/123"  # Different URL than legacy project
+        )
+        args.jd_text = None
+        args.work_dir = str(work_dir)
+        args.recruiter_url = "https://linkedin.com/talent/hire/99999/"
+        args.cdp_port = "9234"
+        args.project_id = None
+        args.position_title = "Updated Title"
+        args.team_name = None
+        args.location = None
+        args.core_function = None
+        args.business_impact = None
+        args.keywords = None
+        args.companies = None
+        args.exclude_titles = None
+
+        result = bp.bootstrap_project(args)
+
+        # Should reuse the legacy project by JD content match (not by JD URL since it doesn't have one)
+        assert result["project_id"] == "legacy_project"
+        assert result["reused"] is True
+        assert result["match_type"] == "jd_content"
+
+        # Config should be updated
+        config_content = Path(result["config_path"]).read_text()
+        assert "Updated Title" in config_content
+        # JD_URL should now be persisted for future deduplication
+        assert "JD_URL=" in config_content
+        assert "https://example.com/jobs/123" in config_content
+
+
+class TestCreateSearchMessaging:
+    """Tests for agent-actionable create_search messaging."""
+
+    def test_action_required_is_agent_actionable(self):
+        """Action required message should direct the agent, not the user."""
+        # Import run_create_search functions
+        sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
+        import run_create_search as rcs
+
+        action = rcs.build_action_required(
+            recruiter_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch",
+            search_brief="Test search brief",
+        )
+
+        # Should have agent-actionable summary
+        assert "needs a candidate search" in action["summary"]
+        # Should NOT use "You need to" phrasing
+        assert "You need to" not in action.get("message", "")
+        # Should have clear message for agent
+        assert "Open the Recruiter project" in action["message"]
+        assert "search brief" in action["message"].lower()
+
+    def test_action_required_steps_are_agent_focused(self):
+        """Action required steps should be clear for agent execution."""
+        sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
+        import run_create_search as rcs
+
+        action = rcs.build_action_required(
+            recruiter_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch",
+            search_brief="Test search brief",
+        )
+
+        steps = action["steps"]
+        # Steps should be actionable by agent
+        assert any("Open the Recruiter project" in step for step in steps)
+        assert any("search brief" in step.lower() for step in steps)
+        # Should include retry instruction
+        assert any("Re-run" in step for step in steps)
 
 
 if __name__ == "__main__":

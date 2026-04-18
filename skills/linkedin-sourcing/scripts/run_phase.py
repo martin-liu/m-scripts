@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
-"""Generic one-phase runner for LinkedIn sourcing workflow.
+"""Generic one-phase runner for LinkedIn sourcing workflow (advanced/debug only).
+
+This script is for debugging and advanced use only. For normal workflow,
+use the loop command which handles phase sequencing automatically:
+    python3 scripts/run_reachout_loop.py --project <PROJECT_ID>
 
 Runs exactly one phase, not the whole workflow. Updates project state
 before and after execution.
-
-Usage:
-    python3 run_phase.py <project_ref> <phase>
-    python3 run_phase.py my_project filter
-    python3 run_phase.py 12345 draft
 
 Phases:
     create_search  - Create LinkedIn Recruiter search
@@ -75,7 +74,7 @@ def _run_subprocess_with_json_output(
     timeout: int,
     success_code: int = 0,
     blocked_code: int | None = None,
-    blocked_reason: str = "manual_intervention",
+    blocked_reason: str = "action_required",
 ) -> dict[str, Any]:
     """Run subprocess and parse JSON output.
 
@@ -83,7 +82,7 @@ def _run_subprocess_with_json_output(
         cmd: Command to run
         timeout: Timeout in seconds
         success_code: Exit code indicating success
-        blocked_code: Exit code indicating blocked/manual intervention
+        blocked_code: Exit code indicating an action_required blocker
         blocked_reason: Reason string for blocked state
 
     Returns:
@@ -117,7 +116,7 @@ def _run_subprocess_with_json_output(
                 "stderr": result.stderr,
                 "parsed": parsed,
                 "action_required": parsed.get("action_required"),
-                "error": parsed.get("message", "Manual intervention required"),
+                "error": parsed.get("message", "Action required before continuing"),
             }
         else:
             return {
@@ -207,7 +206,7 @@ def run_enrich_phase(
 ) -> dict[str, Any]:
     """Run enrich phase via subprocess to existing script.
 
-    Exit code 2 indicates browser/manual intervention required.
+    Exit code 2 indicates an action_required browser blocker.
     """
     cmd = [
         sys.executable,
@@ -221,12 +220,14 @@ def run_enrich_phase(
         timeout=600,
         success_code=0,
         blocked_code=2,
-        blocked_reason="browser_manual_intervention",
+        blocked_reason="browser_blocked",
     )
 
     # Add enrich-specific error message for blocked state
     if result.get("blocked"):
-        result["error"] = "Browser/manual intervention required (see output for steps)"
+        result["error"] = (
+            "Browser action required before continuing (see output for steps)"
+        )
 
     return result
 
@@ -253,7 +254,7 @@ def run_send_phase(
 ) -> dict[str, Any]:
     """Run send phase via subprocess to existing script.
 
-    Exit code 2 indicates browser state not clean / manual intervention required.
+    Exit code 2 indicates the browser state is not ready and needs follow-up.
     """
     cmd = [
         sys.executable,
@@ -372,6 +373,7 @@ def run_phase(
                     "code": "human_review",
                     "summary": f"Human action required for {phase} phase",
                     "steps": [f"Open workbook: {workbook_path}"],
+                    "actor": "agent",
                 },
             )
         return result
@@ -421,7 +423,7 @@ def run_phase(
                     last_result_summary=str(phase_result)[:200],
                 )
             elif phase_result.get("blocked"):
-                # Browser/manual blocker - preserve action_required if present
+                # action_required blocker - preserve action_required if present
                 result["error"] = phase_result.get("error", "Phase blocked")
                 action_required = phase_result.get("action_required")
                 if action_required:
@@ -438,11 +440,10 @@ def run_phase(
                         current_phase=phase,
                         status="action_required",
                         action_required={
-                            "code": phase_result.get(
-                                "block_reason", "manual_intervention"
-                            ),
+                            "code": phase_result.get("block_reason", "action_required"),
                             "summary": result["error"],
                             "steps": ["Check the output above for resolution steps"],
+                            "actor": "agent",
                         },
                         last_error=result["error"],
                     )
@@ -467,6 +468,10 @@ def run_phase(
 def main():
     """CLI entry point."""
     if len(sys.argv) < 3:
+        print(
+            f"Advanced/debug only. Normal workflow: python3 {SCRIPT_DIR / 'run_reachout_loop.py'} --project <project_ref>",
+            file=sys.stderr,
+        )
         print(
             "Usage: python3 run_phase.py <project_ref> <phase> [--dry-run]",
             file=sys.stderr,

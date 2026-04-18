@@ -4,7 +4,7 @@
 Repeatedly runs: status -> check stop conditions -> run one phase -> repeat.
 
 Stop conditions (clean stops):
-    - Browser/manual blockers (persisted action_required)
+    - action_required blockers
     - Human review boundary (review phase)
     - Send boundary (unless --confirm-send flag given)
     - Workflow complete (no more work)
@@ -25,13 +25,14 @@ Usage:
 Exit codes:
     0 - Workflow complete or stopped cleanly at a boundary
     1 - Unexpected error or phase failure
-    2 - Browser/manual intervention required (action_required persisted)
+    2 - action_required blocker present
     3 - Configuration error
 """
 
 from __future__ import annotations
 
 import argparse
+import shlex
 import sys
 import time
 from pathlib import Path
@@ -46,6 +47,34 @@ class LoopConfigError(Exception):
     def __init__(self, message: str):
         super().__init__(message)
         self.exit_code = 3
+
+
+def get_loop_command(project_ref: str) -> str:
+    """Get a path-safe loop command for the given project reference."""
+    script_path = shlex.quote(str(SCRIPT_DIR / "run_reachout_loop.py"))
+    quoted_project_ref = shlex.quote(project_ref)
+    return f"python3 {script_path} --project {quoted_project_ref}"
+
+
+def get_resume_command(project_ref: str) -> str:
+    """Get the best canonical loop command available for a project reference."""
+    if project_ref == "<project>":
+        return get_loop_command(project_ref)
+
+    sys.path.insert(0, str(SCRIPT_DIR))
+    try:
+        from project_ref_utils import resolve_project_ref
+
+        resolution = resolve_project_ref(project_ref)
+        if resolution.get("success") and resolution.get("local_project_id"):
+            return get_loop_command(resolution["local_project_id"])
+    except Exception:
+        pass
+    finally:
+        if str(SCRIPT_DIR) in sys.path:
+            sys.path.remove(str(SCRIPT_DIR))
+
+    return get_loop_command(project_ref)
 
 
 def load_status(project_ref: str) -> dict[str, Any]:
@@ -80,7 +109,7 @@ def check_stop_conditions(
     """Check if the loop should stop based on current status.
 
     Stop conditions:
-        1. Browser/manual blockers (action_required present)
+        1. action_required blockers
         2. Workbook errors (unreadable/missing)
         3. Current phase failed
         4. Current phase still running
@@ -104,7 +133,7 @@ def check_stop_conditions(
     message = status_result.get("message", "")
     workbook_summary = status_result.get("workbook_summary") or {}
 
-    # Stop 1: Browser/manual blocker (action_required present)
+    # Stop 1: action_required blocker
     if action_required is not None:
         code = action_required.get("code", "unknown")
         return (
@@ -211,7 +240,7 @@ def classify_phase_result(phase_result: dict[str, Any]) -> tuple[bool, str, int]
 
     Maps phase results to loop control decisions:
         - Success: continue loop
-        - Browser/manual blocked: stop with exit code 2
+        - action_required blocker: stop with exit code 2
         - Review boundary: stop cleanly (exit code 0)
         - Failure: stop with exit code 1
 
@@ -226,13 +255,13 @@ def classify_phase_result(phase_result: dict[str, Any]) -> tuple[bool, str, int]
     error = phase_result.get("error")
     state_after = phase_result.get("state_after", {})
 
-    # Check for action_required in state_after (browser/manual blocker)
+    # Check for action_required in state_after
     action_required = state_after.get("action_required") if state_after else None
     if action_required:
         code = action_required.get("code", "unknown")
         return (
             False,
-            f"Phase '{phase}' blocked: {action_required.get('summary', 'Manual intervention required')}",
+            f"Phase '{phase}' blocked: {action_required.get('summary', 'Action required before continuing')}",
             2,
         )
 
@@ -255,6 +284,72 @@ def classify_phase_result(phase_result: dict[str, Any]) -> tuple[bool, str, int]
 
     # Success - continue loop
     return (True, f"Phase '{phase}' completed successfully", 0)
+
+
+def format_stop_guidance(
+    status_result: dict[str, Any],
+    reason: str,
+    exit_code: int,
+    confirm_send: bool = False,
+) -> str:
+    """Format clear guidance for what to do after loop stops.
+
+    Args:
+        status_result: Result from status.get_status()
+        reason: Stop reason
+        exit_code: Exit code
+        confirm_send: Whether --confirm-send was used
+
+    Returns:
+        Formatted guidance string
+    """
+    lines = [f"\n⏹️  Stop: {reason}"]
+
+    # Get the loop command from status
+    fallback_loop_cmd = get_loop_command("<project>")
+    loop_cmd = status_result.get("loop_command", fallback_loop_cmd)
+    next_phase = status_result.get("next_phase")
+    action_required = status_result.get("action_required")
+
+    if action_required:
+        # Blocker state - tell user to resolve then loop
+        guidance = status_result.get("loop_resume_guidance", {})
+        resolve_now = guidance.get("resolve_now", "Resolve the blocker")
+        actor_label = (
+            "User must resolve now"
+            if guidance.get("actor") == "user"
+            else "Agent should resolve now"
+        )
+        lines.append(f"\n{actor_label}:")
+        lines.append(f"  {resolve_now}")
+        for step in guidance.get("steps", []):
+            lines.append(f"  - {step}")
+        lines.append(f"\nThen resume with:")
+        lines.append(f"  {loop_cmd}")
+    elif next_phase == "review":
+        # Review boundary
+        lines.append(f"\nNext step:")
+        lines.append(f"  Open workbook and review drafted messages")
+        lines.append(f"\nAfter review, resume with:")
+        lines.append(f"  {loop_cmd}")
+    elif next_phase == "send":
+        # Send boundary
+        if confirm_send:
+            # This shouldn't happen if confirm_send is True, but handle gracefully
+            lines.append(f"\nTo send messages, run:")
+            lines.append(f"  {loop_cmd} --confirm-send")
+        else:
+            lines.append(f"\nTo proceed with sending:")
+            lines.append(f"  {loop_cmd} --confirm-send")
+    elif exit_code == 0 and next_phase is None:
+        # Workflow complete
+        lines.append(f"\nWorkflow complete. No further action needed.")
+    else:
+        # Other stop conditions - always suggest loop
+        lines.append(f"\nTo resume:")
+        lines.append(f"  {loop_cmd}")
+
+    return "\n".join(lines)
 
 
 def run_loop_iteration(
@@ -292,7 +387,8 @@ def run_loop_iteration(
     # Step 2: Check stop conditions
     should_stop, reason, exit_code = check_stop_conditions(status_result, confirm_send)
     if should_stop:
-        print(f"\n⏹️  Stop: {reason}")
+        guidance = format_stop_guidance(status_result, reason, exit_code, confirm_send)
+        print(guidance)
         return (False, reason, exit_code)
 
     print(f"\n▶️  {reason}")
@@ -314,6 +410,16 @@ def run_loop_iteration(
         print(f"✅ Phase completed: {message}")
     else:
         print(f"❌ Phase issue: {message}")
+
+    if not should_continue:
+        try:
+            refreshed_status = load_status(project_ref)
+        except Exception:
+            refreshed_status = {"loop_command": get_resume_command(project_ref)}
+        guidance = format_stop_guidance(
+            refreshed_status, message, result_exit_code, confirm_send
+        )
+        print(guidance)
 
     return (should_continue, message, result_exit_code)
 
@@ -357,11 +463,14 @@ def run_reachout_loop(
             if not should_continue:
                 print(f"\n{'=' * 60}")
                 print(f"Loop stopped: {message}")
+                # Resume guidance was already printed by run_loop_iteration
                 return exit_code
 
             if once:
                 print(f"\n{'=' * 60}")
                 print("Single iteration complete (--once specified)")
+                print(f"\nTo continue, run:")
+                print(f"  {get_resume_command(project_ref)}")
                 return 0
 
             # Brief pause between iterations
@@ -369,13 +478,19 @@ def run_reachout_loop(
 
         except LoopConfigError as e:
             print(f"\n❌ Configuration error: {e}")
+            print(f"\nTo retry, run:")
+            print(f"  {get_resume_command(project_ref)}")
             return e.exit_code
         except Exception as e:
             print(f"\n❌ Unexpected error: {e}")
+            print(f"\nTo retry, run:")
+            print(f"  {get_resume_command(project_ref)}")
             return 1
 
     # Max iterations reached
     print(f"\n⚠️  Max iterations ({max_iterations}) reached - stopping")
+    print(f"\nTo resume, run:")
+    print(f"  {get_resume_command(project_ref)}")
     return 0
 
 
@@ -402,7 +517,7 @@ def main() -> int:
     parser.add_argument(
         "--once",
         action="store_true",
-        help="Run only one iteration (status + one phase)",
+        help="Run only one iteration (debug only)",
     )
     parser.add_argument(
         "--max-iterations",

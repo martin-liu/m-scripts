@@ -49,6 +49,7 @@ class PageState(Enum):
     LOGGED_OUT_OR_WRONG_PRODUCT = "logged_out_or_wrong_product"
     BLOCKED_OR_CAPTCHA = "blocked_or_captcha"
     DIALOG_BLOCKED = "dialog_blocked"
+    CONTRACT_CHOOSER = "contract_chooser"
     UNKNOWN = "unknown"
 
 
@@ -108,6 +109,18 @@ CLASSIFY_PAGE_STATE_JS = """
         bodyText.includes('unusual activity') ||
         document.querySelector('iframe[src*="captcha"], .captcha, #captcha, [data-test-captcha]') !== null
     );
+
+    // Check for contract chooser page (takes precedence over loading)
+    const isContractChooser = (
+        url.includes('/talent/contract-chooser') ||
+        bodyText.includes('choose a contract') ||
+        bodyText.includes('you have multiple contracts') ||
+        document.querySelector('[data-test-contract-chooser]') !== null
+    );
+    const hasCorporateContract = bodyText.includes('corporate');
+    const contractCardCount = document.querySelectorAll(
+        '[data-test-contract-card], .contract-card, button[data-test-select-contract]'
+    ).length;
 
     // Check for loading state
     const loadingIndicators = [
@@ -203,6 +216,9 @@ CLASSIFY_PAGE_STATE_JS = """
         isLoginPage: isLoginPage,
         isWrongProduct: isWrongProduct,
         isBlocked: isBlocked,
+        isContractChooser: isContractChooser,
+        hasCorporateContract: hasCorporateContract,
+        contractCardCount: contractCardCount,
         isLoading: isLoading,
         hasLoadingIndicator: hasLoadingIndicator,
         hasExplicitLoadingText: hasExplicitLoadingText,
@@ -292,6 +308,11 @@ class PageStateProbe:
 
         if details.get("isLoginPage") or details.get("isWrongProduct"):
             return PageState.LOGGED_OUT_OR_WRONG_PRODUCT
+
+        # Contract chooser takes precedence over loading detection
+        # LinkedIn redirects here when user has multiple contracts
+        if details.get("isContractChooser"):
+            return PageState.CONTRACT_CHOOSER
 
         # Overview content takes precedence over loading indicators
         # LinkedIn keeps loading wrapper classes in DOM on loaded pages
@@ -513,7 +534,19 @@ class RecoveryHelper:
                 }
 
             # Attempt recovery action based on state
-            if current_state_value == PageState.BAD_PAGE.value:
+            if current_state_value == PageState.CONTRACT_CHOOSER.value:
+                # Select a contract and wait for navigation
+                action = "select_contract"
+                actions_taken.append(action)
+                selection_success = self._select_contract(current_details)
+                if selection_success:
+                    # Wait longer for navigation after contract selection
+                    time.sleep(self.DEFAULT_RECOVERY_DELAY_SECONDS * 2)
+                else:
+                    # Selection failed - will retry on next attempt
+                    pass
+
+            elif current_state_value == PageState.BAD_PAGE.value:
                 if target_url and attempt == 1:
                     # Navigate to target URL
                     action = f"navigate_to_target: {target_url}"
@@ -624,6 +657,82 @@ class RecoveryHelper:
             # Log error but continue (best effort for recovery)
             pass
         time.sleep(2)  # Wait for reload
+
+    def _select_contract(self, details: dict) -> bool:
+        """Select a contract on the contract chooser page.
+
+        Prefers the corporate contract if present, otherwise selects
+        the first available contract option.
+
+        Args:
+            details: Detection details from classify_state
+
+        Returns:
+            True if a contract was selected, False otherwise
+        """
+        has_corporate = details.get("hasCorporateContract", False)
+
+        # JavaScript to select a contract
+        # Prefer corporate contract, fallback to first available
+        select_contract_js = """
+        (function() {
+            // Try to find corporate contract first
+            const cards = document.querySelectorAll(
+                '[data-test-contract-card], .contract-card, [class*="contract"]'
+            );
+
+            let targetButton = null;
+            let firstButton = null;
+
+            for (const card of cards) {
+                const text = card.innerText.toLowerCase();
+                const button = card.querySelector(
+                    'button[data-test-select-contract], button[class*="select"], button'
+                );
+
+                if (!button) continue;
+
+                if (!firstButton) {
+                    firstButton = button;
+                }
+
+                // Prefer corporate contract
+                if (text.includes('corporate')) {
+                    targetButton = button;
+                    break;
+                }
+            }
+
+            // If no corporate button found, use first available
+            targetButton = targetButton || firstButton;
+
+            if (targetButton) {
+                targetButton.click();
+                return { success: true, selected: targetButton.innerText.substring(0, 50) };
+            }
+
+            // Fallback: try any select button on the page
+            const anySelectButton = document.querySelector(
+                'button[data-test-select-contract], button[class*="select-contract"]'
+            );
+            if (anySelectButton) {
+                anySelectButton.click();
+                return { success: true, selected: anySelectButton.innerText.substring(0, 50) };
+            }
+
+            return { success: false, error: 'No contract selection button found' };
+        })()
+        """
+
+        result = run_browser_command(
+            self.browser_mode, "eval", select_contract_js, timeout=15
+        )
+
+        if result.get("error"):
+            return False
+
+        parsed = result.get("parsed", {})
+        return parsed.get("success", False)
 
     def _write_incident(
         self,

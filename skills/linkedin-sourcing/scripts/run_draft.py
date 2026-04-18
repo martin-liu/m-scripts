@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
-"""Normalized draft phase runner for LinkedIn sourcing.
+"""Draft phase runner for LinkedIn sourcing (internal/advanced use only).
+
+This script is used internally by the reachout loop. For normal workflow,
+use the loop command which handles phase sequencing automatically:
+    python3 scripts/run_reachout_loop.py --project <PROJECT_ID>
 
 Wraps reachout_automation.py draft functionality with a clean interface.
-Does not require callers to know reachout_automation.py subcommands.
-
-Usage:
-    python3 run_draft.py <project_ref>
-    python3 run_draft.py my_project
-    python3 run_draft.py 12345
 
 Returns:
     JSON result with counts and status
@@ -15,6 +13,7 @@ Returns:
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from pathlib import Path
@@ -67,6 +66,7 @@ def run_draft(
     config_path: Path,
     workbook_path: Path,
     template_path: Path | None = None,
+    row_ids: list[int] | None = None,
 ) -> dict[str, Any]:
     """Run the draft phase for a project.
 
@@ -78,6 +78,7 @@ def run_draft(
         config_path: Path to config.sh
         workbook_path: Path to workbook.xlsx
         template_path: Optional explicit template path
+        row_ids: Optional row IDs to draft
 
     Returns:
         Result dict with success status and counts
@@ -153,6 +154,7 @@ def run_draft(
             str(workbook_path),
             str(config_path),
             str(template_path),
+            row_ids=row_ids,
         )
 
         # cmd_draft returns a dict with drafted, skipped
@@ -166,6 +168,7 @@ def run_draft(
             current_phase="draft",
             status="completed",
             last_result_summary=f"Drafted: {result['drafted']}, Skipped: {result['skipped']}",
+            last_error=False,
         )
 
     except Exception as e:
@@ -182,19 +185,34 @@ def run_draft(
 
 def main():
     """CLI entry point."""
+    parser = argparse.ArgumentParser(
+        description="Draft InMails (internal/advanced use only)"
+    )
+    parser.add_argument(
+        "project_ref",
+        help="Project reference: local PROJECT_ID, Recruiter URL, or config.sh path",
+    )
+    parser.add_argument(
+        "template_path",
+        nargs="?",
+        help="Optional explicit template file path",
+    )
+    parser.add_argument(
+        "--row-id",
+        help="Specific row ID(s) to draft (comma-separated for multiple)",
+    )
+
     if len(sys.argv) < 2:
-        print(
-            "Usage: python3 run_draft.py <project_ref> [template_path]", file=sys.stderr
-        )
-        print(
-            "  project_ref: PROJECT_ID, Recruiter URL, or config.sh path",
-            file=sys.stderr,
-        )
-        print("  template_path: Optional explicit template file path", file=sys.stderr)
+        parser.print_help(sys.stderr)
         sys.exit(1)
 
-    project_ref = sys.argv[1]
-    template_path = Path(sys.argv[2]) if len(sys.argv) > 2 else None
+    args = parser.parse_args()
+
+    project_ref = args.project_ref
+    template_path = Path(args.template_path) if args.template_path else None
+    row_ids = None
+    if args.row_id:
+        row_ids = [int(item.strip()) for item in args.row_id.split(",") if item.strip()]
 
     # Resolve project reference
     resolution = resolve_project_ref(project_ref)
@@ -216,7 +234,13 @@ def main():
     project_dir = config_path.parent
     workbook_path = resolution["workbook_path"]
 
-    result = run_draft(project_dir, config_path, workbook_path, template_path)
+    result = run_draft(
+        project_dir,
+        config_path,
+        workbook_path,
+        template_path,
+        row_ids=row_ids,
+    )
 
     print(json.dumps(result, indent=2, default=str))
 

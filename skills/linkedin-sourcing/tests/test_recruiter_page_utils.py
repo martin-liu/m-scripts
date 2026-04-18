@@ -33,6 +33,7 @@ class TestPageStateEnum:
         )
         assert PageState.BLOCKED_OR_CAPTCHA.value == "blocked_or_captcha"
         assert PageState.DIALOG_BLOCKED.value == "dialog_blocked"
+        assert PageState.CONTRACT_CHOOSER.value == "contract_chooser"
         assert PageState.UNKNOWN.value == "unknown"
 
 
@@ -628,6 +629,229 @@ class TestConvenienceFunctions:
         assert result["recovery_result"] is None
 
 
+class TestContractChooserDetection:
+    """Tests for contract chooser page detection and recovery."""
+
+    @patch("recruiter_page_utils.check_dialog_status")
+    @patch("recruiter_page_utils.run_browser_command")
+    def test_contract_chooser_classification_beats_loading(self, mock_run, mock_dialog):
+        """Contract chooser detection should take precedence over loading state.
+
+        Issue: LinkedIn contract chooser page has loading wrappers present,
+        but should be classified as CONTRACT_CHOOSER, not LOADING.
+        """
+        mock_dialog.return_value = {"has_dialog": False}
+        mock_run.return_value = {
+            "parsed": {
+                "url": "https://linkedin.com/talent/contract-chooser?destUrl=%2Ftalent%2Fhome",
+                "title": "Choose a Contract - LinkedIn Recruiter",
+                "is404": False,
+                "isLoginPage": False,
+                "isWrongProduct": False,
+                "isBlocked": False,
+                "isContractChooser": True,
+                "hasCorporateContract": True,
+                "contractCardCount": 2,
+                "isLoading": True,  # Loading wrappers present
+                "hasLoadingIndicator": True,
+                "hasExplicitLoadingText": False,
+                "hasRecruiterContent": False,
+                "hasProjectsListContent": False,
+                "hasOverviewContent": False,
+                "hasSearchResultsContent": False,
+                "readyState": "complete",
+            },
+            "error": None,
+        }
+
+        probe = PageStateProbe("9234")
+        result = probe.classify_state()
+
+        assert result["state"] == "contract_chooser", (
+            f"Expected CONTRACT_CHOOSER for contract chooser page with loading wrappers, "
+            f"got {result['state']}. Details: {result['details']}"
+        )
+
+    @patch("recruiter_page_utils.check_dialog_status")
+    @patch("recruiter_page_utils.run_browser_command")
+    def test_contract_chooser_by_url_path(self, mock_run, mock_dialog):
+        """Should detect contract chooser by URL path."""
+        mock_dialog.return_value = {"has_dialog": False}
+        mock_run.return_value = {
+            "parsed": {
+                "url": "https://linkedin.com/talent/contract-chooser",
+                "is404": False,
+                "isLoginPage": False,
+                "isWrongProduct": False,
+                "isBlocked": False,
+                "isContractChooser": True,
+                "hasCorporateContract": False,
+                "contractCardCount": 1,
+                "isLoading": False,
+                "hasRecruiterContent": False,
+            },
+            "error": None,
+        }
+
+        probe = PageStateProbe("9234")
+        result = probe.classify_state()
+
+        assert result["state"] == "contract_chooser"
+
+    @patch("recruiter_page_utils.check_dialog_status")
+    @patch("recruiter_page_utils.run_browser_command")
+    def test_contract_chooser_by_body_text(self, mock_run, mock_dialog):
+        """Should detect contract chooser by body text heuristics."""
+        mock_dialog.return_value = {"has_dialog": False}
+        mock_run.return_value = {
+            "parsed": {
+                "url": "https://linkedin.com/talent/contract-chooser",
+                "is404": False,
+                "isLoginPage": False,
+                "isWrongProduct": False,
+                "isBlocked": False,
+                "isContractChooser": True,  # Detected via "choose a contract" text
+                "hasCorporateContract": False,
+                "contractCardCount": 3,
+                "isLoading": False,
+                "hasRecruiterContent": False,
+            },
+            "error": None,
+        }
+
+        probe = PageStateProbe("9234")
+        result = probe.classify_state()
+
+        assert result["state"] == "contract_chooser"
+
+    @patch("recruiter_page_utils.check_dialog_status")
+    @patch("recruiter_page_utils.run_browser_command")
+    @patch("recruiter_page_utils.time.sleep")
+    def test_recovery_prefers_corporate_contract(
+        self, mock_sleep, mock_run, mock_dialog
+    ):
+        """Recovery should prefer corporate contract when available."""
+        mock_dialog.return_value = {"has_dialog": False}
+        mock_sleep.return_value = None
+
+        contract_chooser_state = {
+            "parsed": {
+                "url": "https://linkedin.com/talent/contract-chooser",
+                "is404": False,
+                "isLoginPage": False,
+                "isWrongProduct": False,
+                "isBlocked": False,
+                "isContractChooser": True,
+                "hasCorporateContract": True,
+                "contractCardCount": 2,
+                "isLoading": False,
+                "hasRecruiterContent": False,
+            },
+            "error": None,
+        }
+
+        ready_state = {
+            "parsed": {
+                "url": "https://linkedin.com/talent/home",
+                "is404": False,
+                "isLoginPage": False,
+                "isWrongProduct": False,
+                "isBlocked": False,
+                "isContractChooser": False,
+                "isLoading": False,
+                "hasRecruiterContent": True,
+            },
+            "error": None,
+        }
+
+        # Recovery flow with max_attempts=2:
+        # 1. Initial classify_state (before loop)
+        # 2. Loop attempt 1: classify_state (contract chooser)
+        # 3. _select_contract JS execution
+        # 4. Loop attempt 1: classify_state (check after selection - now ready)
+        # 5. Final classify_state (after loop)
+        mock_run.side_effect = [
+            contract_chooser_state,  # Initial check
+            contract_chooser_state,  # Loop check (attempt 1)
+            {
+                "parsed": {"success": True, "selected": "Corporate Contract"},
+                "error": None,
+            },  # Select
+            ready_state,  # Check after selection - now ready
+            ready_state,  # Final check
+        ]
+
+        helper = RecoveryHelper("9234", max_attempts=2)
+        result = helper.attempt_recovery()
+
+        assert result["success"] is True
+        assert result["final_state"] == "ready"
+        assert any("select_contract" in a for a in result["actions_taken"])
+
+    @patch("recruiter_page_utils.check_dialog_status")
+    @patch("recruiter_page_utils.run_browser_command")
+    @patch("recruiter_page_utils.time.sleep")
+    def test_recovery_fallback_to_first_contract(
+        self, mock_sleep, mock_run, mock_dialog
+    ):
+        """Recovery should fallback to first contract when no corporate option."""
+        mock_dialog.return_value = {"has_dialog": False}
+        mock_sleep.return_value = None
+
+        contract_chooser_state = {
+            "parsed": {
+                "url": "https://linkedin.com/talent/contract-chooser",
+                "is404": False,
+                "isLoginPage": False,
+                "isWrongProduct": False,
+                "isBlocked": False,
+                "isContractChooser": True,
+                "hasCorporateContract": False,  # No corporate option
+                "contractCardCount": 2,
+                "isLoading": False,
+                "hasRecruiterContent": False,
+            },
+            "error": None,
+        }
+
+        ready_state = {
+            "parsed": {
+                "url": "https://linkedin.com/talent/home",
+                "is404": False,
+                "isLoginPage": False,
+                "isWrongProduct": False,
+                "isBlocked": False,
+                "isContractChooser": False,
+                "isLoading": False,
+                "hasRecruiterContent": True,
+            },
+            "error": None,
+        }
+
+        # Recovery flow with max_attempts=2:
+        # 1. Initial classify_state (before loop)
+        # 2. Loop attempt 1: classify_state (contract chooser)
+        # 3. _select_contract JS execution
+        # 4. Loop attempt 1: classify_state (check after selection - now ready)
+        # 5. Final classify_state (after loop)
+        mock_run.side_effect = [
+            contract_chooser_state,  # Initial check
+            contract_chooser_state,  # Loop check (attempt 1)
+            {
+                "parsed": {"success": True, "selected": "Professional Contract"},
+                "error": None,
+            },  # Select
+            ready_state,  # Check after selection - now ready
+            ready_state,  # Final check
+        ]
+
+        helper = RecoveryHelper("9234", max_attempts=2)
+        result = helper.attempt_recovery()
+
+        assert result["success"] is True
+        assert result["final_state"] == "ready"
+
+
 class TestJavaScriptProbe:
     """Tests for the JavaScript probe code."""
 
@@ -689,6 +913,28 @@ class TestJavaScriptProbe:
         js = rpu.CLASSIFY_PAGE_STATE_JS
         assert "hasOverviewContent" in js
         assert "data-test-project-name-name" in js or "data-test-project-overview" in js
+
+    def test_classify_js_includes_contract_chooser_detection(self):
+        """JS should include contract chooser detection."""
+        js = rpu.CLASSIFY_PAGE_STATE_JS
+        assert "isContractChooser" in js
+        assert "contract-chooser" in js
+        assert (
+            "choose a contract" in js.lower()
+            or "you have multiple contracts" in js.lower()
+        )
+
+    def test_classify_js_includes_corporate_contract_detection(self):
+        """JS should detect corporate contract option."""
+        js = rpu.CLASSIFY_PAGE_STATE_JS
+        assert "hasCorporateContract" in js
+        assert "corporate" in js.lower()
+
+    def test_classify_js_includes_contract_card_count(self):
+        """JS should count contract cards."""
+        js = rpu.CLASSIFY_PAGE_STATE_JS
+        assert "contractCardCount" in js
+        assert "data-test-contract-card" in js or "contract-card" in js
 
     def test_classify_js_includes_live_overview_selectors(self):
         """JS should include live DOM selectors observed on real overview pages.

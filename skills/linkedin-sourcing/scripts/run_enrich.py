@@ -1,34 +1,25 @@
 #!/usr/bin/env python3
-"""Canonical enrichment phase runner for LinkedIn sourcing.
+"""Enrichment phase runner for LinkedIn sourcing (internal/advanced use only).
+
+This script is used internally by the reachout loop. For normal workflow,
+use the loop command which handles phase sequencing automatically:
+    python3 scripts/run_reachout_loop.py --project <PROJECT_ID>
 
 Processes rows with next_action=enrich, extracts compact profile enrichment,
-and updates workbook on success. Fails closed on structured browser/manual
+and updates workbook on success. Fails closed on structured action_required
 failures with actionable guidance.
-
-Usage:
-    # Enrich all rows with next_action=enrich
-    python3 run_enrich.py --project "{PROJECT_ID}"
-
-    # Enrich specific rows
-    python3 run_enrich.py --project "{PROJECT_ID}" --row-id 5,6,7
-
-    # With custom CDP port
-    python3 run_enrich.py --project "{PROJECT_ID}" --cdp-port 9231
-
-    # Dry run (show what would be enriched)
-    python3 run_enrich.py --project "{PROJECT_ID}" --dry-run
 
 Exit codes:
     0 - All enrichments completed successfully
     1 - One or more enrichments failed (check output for details)
-    2 - Browser/manual intervention required (structured action_required provided)
+    2 - action_required blocker present (structured action_required provided)
     3 - Configuration error
 """
 
 from __future__ import annotations
 
 import argparse
-import json
+import shlex
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -207,7 +198,7 @@ def enrich_single_row(
     row_id = row.get("row_id")
 
     if not profile_url:
-        # Data validation failure - NOT a browser/manual intervention issue
+        # Data validation failure - not an action_required browser issue
         # Return as normal row failure (will result in exit code 1, not 2)
         return (
             False,
@@ -217,6 +208,7 @@ def enrich_single_row(
                 "summary": f"Row {row_id} has no profile_url",
                 "steps": ["Add profile_url to candidate row", "Retry enrichment"],
                 "can_retry": False,  # Data issue, not transient browser issue
+                "actor": "agent",
             },
         )
 
@@ -331,7 +323,7 @@ def run_enrich_phase(
                     print(f"  Issue: {action_required.get('summary', 'Unknown')}")
                     print(f"  Code: {action_required.get('code', 'unknown')}")
 
-                    # Check if this is a browser/manual intervention case (exit 2)
+                    # Check if this is an action_required browser case (exit 2)
                     # vs a data validation failure (exit 1)
                     failure_code = action_required.get("code", "unknown")
 
@@ -368,6 +360,11 @@ def run_enrich_phase(
         print(f"Successful: {success_count}")
         print(f"Failed: {len(failed_rows)}")
 
+        loop_command = (
+            f"python3 {shlex.quote(str(SCRIPT_DIR / 'run_reachout_loop.py'))} "
+            f"--project {shlex.quote(project_ref)}"
+        )
+
         # Update project state based on results
         sys.path.insert(0, str(SCRIPT_DIR))
         try:
@@ -382,10 +379,10 @@ def run_enrich_phase(
                         "code": "browser_intervention",
                         "summary": f"Browser intervention required for {len(browser_intervention_required)} row(s)",
                         "steps": [
-                            "Resolve browser issues",
-                            f"Retry with: python3 run_enrich.py --project '{project_ref}' --row-id {','.join(str(r[0]) for r in browser_intervention_required)}",
+                            "Resolve browser issues in the Chrome window",
                         ],
                         "can_retry": True,
+                        "actor": "agent",
                     },
                     last_result_summary=f"Enrichment: {success_count} succeeded, {len(failed_rows)} failed, {len(browser_intervention_required)} need intervention",
                 )
@@ -425,10 +422,8 @@ def run_enrich_phase(
                 if action.get("context"):
                     print(f"  Context: {action['context']}")
             print()
-            print("After resolving the issues, retry with:")
-            print(
-                f"  python3 run_enrich.py --project '{project_ref}' --row-id {','.join(str(r[0]) for r in browser_intervention_required)}"
-            )
+            print("After resolving the issues, rerun the loop:")
+            print(f"  {loop_command}")
             return 2
 
         if failed_rows:
@@ -453,7 +448,7 @@ def run_enrich_phase(
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Enrich candidate profiles for workbook rows with next_action=enrich"
+        description="Enrich candidate profiles (internal/advanced use only)"
     )
     parser.add_argument(
         "--project",

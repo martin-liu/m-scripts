@@ -15,5 +15,6 @@
     "ask": [],
     "defaultMode": "acceptEdits"
   },
-  "effortLevel": "medium"
+  "effortLevel": "medium",
+  "skipAutoPermissionPrompt": true
 }

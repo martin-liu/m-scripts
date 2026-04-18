@@ -1,21 +1,12 @@
 #!/usr/bin/env python3
-"""Canonical operator-facing extraction macro for LinkedIn Recruiter.
+"""Extraction phase runner for LinkedIn Recruiter (internal/advanced use only).
 
-Runs from the canonical skill scripts and performs page-by-page extraction
-into the workbook with deduplication and resumability.
+This script is used internally by the reachout loop. For normal workflow,
+use the loop command which handles phase sequencing automatically:
+    python3 scripts/run_reachout_loop.py --project <PROJECT_ID>
 
-Usage:
-    # From the canonical skill scripts (config-driven)
-    python3 run_extraction.py --config $WORK_DIR/projects/{PROJECT_ID}/config.sh
-
-    # With explicit workbook path
-    python3 run_extraction.py --config config.sh --workbook /path/to/workbook.xlsx
-
-    # Dry run (extract without writing to workbook)
-    python3 run_extraction.py --config config.sh --dry-run
-
-    # Resume from specific page
-    python3 run_extraction.py --config config.sh --start-page 3
+Performs page-by-page extraction into the workbook with deduplication
+and resumability.
 
 Features:
     - Config-driven invocation from config.sh
@@ -37,6 +28,7 @@ import argparse
 import hashlib
 import json
 import os
+import shlex
 import sys
 import time
 from pathlib import Path
@@ -154,30 +146,35 @@ def _nav_result(
 
 def parse_args() -> argparse.Namespace:
     """Parse command line arguments."""
+    loop_script = SCRIPT_DIR / "run_reachout_loop.py"
     parser = argparse.ArgumentParser(
         description="Extract candidates from LinkedIn Recruiter to workbook",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-    # Config-driven extraction
-    python3 run_extraction.py --config $WORK_DIR/projects/123/config.sh
+        epilog=f"""
+Normal workflow:
+    python3 {loop_script} --project <PROJECT_ID>
 
+Advanced/debug only:
+Examples:
     # Project reference (local PROJECT_ID, Recruiter URL, or numeric ID)
     python3 run_extraction.py --project my_project
     python3 run_extraction.py --project https://linkedin.com/talent/hire/12345/...
     python3 run_extraction.py --project 12345
 
-    # With explicit workbook
-    python3 run_extraction.py --config config.sh --workbook /path/to/123.xlsx
+    # Config path (legacy/debug only)
+    python3 run_extraction.py --config /path/to/config.sh
+
+    # With explicit workbook override
+    python3 run_extraction.py --project my_project --workbook /path/to/workbook.xlsx
 
     # Dry run (extract without writing)
-    python3 run_extraction.py --config config.sh --dry-run
+    python3 run_extraction.py --project my_project --dry-run
 
     # Resume from page 3
-    python3 run_extraction.py --config config.sh --start-page 3
+    python3 run_extraction.py --project my_project --start-page 3
 
     # Resume from persisted state
-    python3 run_extraction.py --config config.sh --resume
+    python3 run_extraction.py --project my_project --resume
         """,
     )
 
@@ -193,7 +190,7 @@ Examples:
     )
     parser.add_argument(
         "--workbook",
-        help="Path to workbook (default: $WORK_DIR/projects/{PROJECT_ID}.xlsx)",
+        help="Path to workbook (default: resolved from the project)",
     )
     parser.add_argument(
         "--cdp-port",
@@ -896,6 +893,7 @@ def resolve_fresh_search_context(
                     "current_url": current_url,
                     "project_id": project_id,
                 },
+                "actor": "agent",
             },
         }
 
@@ -2680,9 +2678,14 @@ def main() -> int:
             return result.get("exit_code", 1)
 
     except KeyboardInterrupt:
+        project_ref = args.project or "<PROJECT_ID>"
+        loop_command = (
+            f"python3 {shlex.quote(str(SCRIPT_DIR / 'run_reachout_loop.py'))} "
+            f"--project {shlex.quote(project_ref)}"
+        )
         print("\n\nExtraction interrupted by user", file=sys.stderr)
         print(
-            "You can resume by running the same command with --resume",
+            f"Rerun the loop to resume: {loop_command}",
             file=sys.stderr,
         )
         return 130

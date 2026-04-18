@@ -66,6 +66,7 @@ import json
 import os
 import re
 import shlex
+import subprocess
 import sys
 import time
 import urllib.request
@@ -829,6 +830,13 @@ def build_config(
     elif existing.get("RECRUITER_PROJECT_URL"):
         config["RECRUITER_PROJECT_URL"] = existing["RECRUITER_PROJECT_URL"]
 
+    # Add JD URL for deduplication (persisted for future exact URL matching)
+    jd_url = overrides.get("jd_url")
+    if jd_url:
+        config["JD_URL"] = jd_url
+    elif existing.get("JD_URL"):
+        config["JD_URL"] = existing["JD_URL"]
+
     return config
 
 
@@ -870,6 +878,15 @@ def write_config(config: dict[str, str], config_path: Path) -> None:
                 "",
                 "# LinkedIn Recruiter project URL (auto-configured from project identity)",
                 f"RECRUITER_PROJECT_URL={shell_escape(config['RECRUITER_PROJECT_URL'])}",
+            ]
+        )
+
+    if "JD_URL" in config:
+        lines.extend(
+            [
+                "",
+                "# JD source URL (for deduplication)",
+                f"JD_URL={shell_escape(config['JD_URL'])}",
             ]
         )
 
@@ -1081,14 +1098,255 @@ def find_project_by_project_id(work_dir: Path, project_id: str) -> Path | None:
     return None
 
 
+def find_projects_by_jd_url(work_dir: Path, jd_url: str) -> list[Path]:
+    """Find project directories that match the given JD source URL.
+
+    Matches by exact canonical JD URL stored in project config.
+
+    Args:
+        work_dir: The working directory
+        jd_url: The JD source URL to match
+
+    Returns:
+        List of project directory paths with matching JD_URL
+    """
+    projects_dir = work_dir / "projects"
+    if not projects_dir.exists():
+        return []
+
+    matches: list[Path] = []
+    for project_dir in projects_dir.iterdir():
+        if not project_dir.is_dir():
+            continue
+
+        config_path = project_dir / "config.sh"
+        if not config_path.exists():
+            continue
+
+        try:
+            config = parse_existing_config(config_path)
+            if config.get("JD_URL") == jd_url:
+                matches.append(project_dir)
+        except (OSError, IOError):
+            continue
+
+    return matches
+
+
+def compute_jd_fingerprint(jd_content: str) -> str:
+    """Compute a normalized fingerprint for JD content matching.
+
+    Normalizes whitespace and lowercases content for exact matching.
+    This is a simple fingerprint - not a hash, but a normalized form.
+
+    Args:
+        jd_content: Raw JD content (plain text)
+
+    Returns:
+        Normalized fingerprint string
+    """
+    if not jd_content:
+        return ""
+    # Normalize: lowercase, collapse whitespace, strip
+    normalized = re.sub(r"\s+", " ", jd_content.lower()).strip()
+    return normalized
+
+
+def find_projects_by_jd_content(work_dir: Path, jd_content: str) -> list[Path]:
+    """Find project directories that match the given JD content.
+
+    Matches by exact normalized JD text fingerprint.
+
+    Args:
+        work_dir: The working directory
+        jd_content: The JD content to match
+
+    Returns:
+        List of project directory paths with matching JD content
+    """
+    projects_dir = work_dir / "projects"
+    if not projects_dir.exists():
+        return []
+
+    target_fingerprint = compute_jd_fingerprint(jd_content)
+    if not target_fingerprint:
+        return []
+
+    matches: list[Path] = []
+    for project_dir in projects_dir.iterdir():
+        if not project_dir.is_dir():
+            continue
+
+        jd_path = project_dir / "job_description.txt"
+        if not jd_path.exists():
+            continue
+
+        try:
+            existing_jd = jd_path.read_text(encoding="utf-8")
+            existing_fingerprint = compute_jd_fingerprint(existing_jd)
+            if existing_fingerprint == target_fingerprint:
+                matches.append(project_dir)
+        except (OSError, IOError):
+            continue
+
+    return matches
+
+
+class AmbiguousProjectError(Exception):
+    """Raised when multiple projects match the search criteria.
+
+    Contains actionable information for the caller to specify project_id.
+    """
+
+    def __init__(self, message: str, candidates: list[dict[str, str]]):
+        super().__init__(message)
+        self.candidates = candidates
+
+
+def gather_project_candidates(
+    work_dir: Path,
+    project_id: str | None = None,
+    jd_url: str | None = None,
+    jd_content: str | None = None,
+) -> dict[str, list[Path]]:
+    """Gather all potential project matches based on available criteria.
+
+    Args:
+        work_dir: The working directory
+        project_id: Optional explicit project ID to match
+        jd_url: Optional JD source URL to match
+        jd_content: Optional JD content to match
+
+    Returns:
+        Dict mapping match type to list of matching project paths
+    """
+    candidates: dict[str, list[Path]] = {
+        "by_project_id": [],
+        "by_jd_url": [],
+        "by_jd_content": [],
+    }
+
+    if project_id:
+        by_id = find_project_by_project_id(work_dir, project_id)
+        if by_id:
+            candidates["by_project_id"].append(by_id)
+
+    if jd_url:
+        candidates["by_jd_url"] = find_projects_by_jd_url(work_dir, jd_url)
+
+    if jd_content:
+        candidates["by_jd_content"] = find_projects_by_jd_content(work_dir, jd_content)
+
+    return candidates
+
+
+def resolve_project_reuse(
+    work_dir: Path,
+    explicit_project_id: str | None = None,
+    jd_url: str | None = None,
+    jd_content: str | None = None,
+) -> tuple[Path | None, dict[str, Any]]:
+    """Determine if an existing project should be reused.
+
+    Implements the deduplication logic:
+    1. Explicit project_id takes precedence - if provided and exists, reuse it
+    2. If explicit project_id provided but not found, fail clearly
+    3. Otherwise match by exact JD URL or exact JD content fingerprint
+    4. Exactly one exact match => auto-reuse
+    5. Multiple matches => raise AmbiguousProjectError with candidates
+    6. No matches => return None (create new project)
+
+    Args:
+        work_dir: The working directory
+        explicit_project_id: User-provided --project-id (optional)
+        jd_url: JD source URL if available
+        jd_content: JD content if available
+
+    Returns:
+        Tuple of (project_dir or None, metadata dict with match info)
+
+    Raises:
+        ValueError: If explicit project_id not found
+        AmbiguousProjectError: If multiple projects match ambiguously
+    """
+    # Case 1: Explicit project_id provided
+    if explicit_project_id:
+        existing = find_project_by_project_id(work_dir, explicit_project_id)
+        if existing:
+            return existing, {
+                "match_type": "explicit_project_id",
+                "project_id": explicit_project_id,
+            }
+        else:
+            raise ValueError(
+                f"Explicit project_id '{explicit_project_id}' not found. "
+                f"Use an existing project_id or omit --project-id to create a new project."
+            )
+
+    # Gather all potential matches
+    candidates = gather_project_candidates(work_dir, None, jd_url, jd_content)
+
+    # Collect unique matches with their match types
+    all_matches: dict[Path, list[str]] = {}
+    for match_type, paths in candidates.items():
+        for path in paths:
+            if path not in all_matches:
+                all_matches[path] = []
+            all_matches[path].append(match_type)
+
+    # Case 2: No matches - create new project
+    if not all_matches:
+        return None, {"match_type": "none", "candidates": []}
+
+    # Case 3: Exactly one match - auto-reuse
+    if len(all_matches) == 1:
+        project_dir = list(all_matches.keys())[0]
+        match_types = all_matches[project_dir]
+        # Determine primary match type
+        if "by_jd_url" in match_types:
+            match_type = "jd_url"
+        elif "by_jd_content" in match_types:
+            match_type = "jd_content"
+        else:
+            match_type = "other"
+        return project_dir, {"match_type": match_type, "project_id": None}
+
+    # Case 4: Multiple matches - raise ambiguity error
+    candidate_info: list[dict[str, str]] = []
+    for project_dir, match_types in all_matches.items():
+        config_path = project_dir / "config.sh"
+        project_id = "unknown"
+        position_title = "unknown"
+        try:
+            config = parse_existing_config(config_path)
+            project_id = config.get("PROJECT_ID", "unknown")
+            position_title = config.get("POSITION_TITLE", "unknown")
+        except (OSError, IOError):
+            pass
+
+        candidate_info.append(
+            {
+                "project_id": project_id,
+                "project_dir": str(project_dir.name),
+                "position_title": position_title,
+                "match_types": match_types,
+            }
+        )
+
+    raise AmbiguousProjectError(
+        f"Multiple existing projects match the criteria. Specify --project-id to choose one.",
+        candidates=candidate_info,
+    )
+
+
 def bootstrap_project(args: argparse.Namespace) -> dict[str, Any]:
     """Main bootstrap logic with Recruiter-derived PROJECT_ID.
 
     Canonical flow:
     1. Gather JD content and extract metadata
-    2. Determine PROJECT_ID from Recruiter identity (URL or ensure_project)
-    3. Check for existing project conflicts by scanning config.sh files
-    4. Create local project files in new canonical layout
+    2. Check for existing project to reuse (by explicit ID, JD URL, or JD content)
+    3. Determine PROJECT_ID from Recruiter identity (URL or ensure_project)
+    4. Create local project files in new canonical layout (if not reusing)
     5. Fail closed if Recruiter identity cannot be resolved
 
     New layout:
@@ -1109,6 +1367,8 @@ def bootstrap_project(args: argparse.Namespace) -> dict[str, Any]:
         "recruiter_url": None,
         "inferred": {},
         "next_steps": [],
+        "reused": False,
+        "match_type": None,
     }
 
     # Step 1: Gather JD content and metadata
@@ -1117,7 +1377,7 @@ def bootstrap_project(args: argparse.Namespace) -> dict[str, Any]:
 
     if args.jd_url:
         # Fetch URL
-        status, content = fetch_url(args.jd_url)
+        status, content = fetch_jd_url(args.jd_url)
 
         if status == 200:
             jd_content = content
@@ -1153,136 +1413,167 @@ def bootstrap_project(args: argparse.Namespace) -> dict[str, Any]:
         if extracted_title:
             inferred["position_title"] = extracted_title
 
-    # Step 2: Determine PROJECT_ID from Recruiter identity
+    # Step 2: Check for existing project to reuse (deduplication logic)
+    # Normalize JD content for matching
+    normalized_jd = normalize_to_plain_text(jd_content) if jd_content else ""
+
+    # Check for existing project before determining PROJECT_ID
+    # This allows explicit project_id to take precedence and fail if not found
+    # Always pass jd_content for matching to support legacy projects without JD_URL
+    try:
+        existing_project_dir, reuse_metadata = resolve_project_reuse(
+            work_dir=work_dir,
+            explicit_project_id=args.project_id,
+            jd_url=args.jd_url,
+            jd_content=normalized_jd,
+        )
+        result["match_type"] = reuse_metadata.get("match_type")
+        result["reused"] = existing_project_dir is not None
+    except AmbiguousProjectError as e:
+        # Multiple matches - return actionable error
+        candidate_list = "\n".join(
+            f"  - {c['project_id']} ({c['project_dir']}): {c['position_title']}"
+            for c in e.candidates
+        )
+        raise ValueError(
+            f"{e}\n\nMatching projects:\n{candidate_list}\n\n"
+            f"Specify --project-id with one of the above project IDs to proceed."
+        )
+
+    # Step 3: Determine PROJECT_ID from Recruiter identity
     project_id: str | None = None
     recruiter_url: str | None = None
     recruiter_project_id: str | None = None
 
-    # Validate recruiter URL first if provided (fail closed before any file operations)
-    if args.recruiter_url:
-        recruiter_project_id = extract_recruiter_id_from_url(args.recruiter_url)
-        if not recruiter_project_id:
-            raise ValueError(
-                f"Could not extract project ID from Recruiter URL: {args.recruiter_url}. "
-                "Expected format: https://linkedin.com/talent/hire/{numeric_id}/..."
-            )
-        recruiter_url = args.recruiter_url
-
-    if args.project_id:
-        # Explicit override (advanced use only)
-        project_id = args.project_id
-        # recruiter_project_id already validated above if URL was provided
-    elif recruiter_project_id:
-        # Use the validated recruiter ID as project ID
-        project_id = recruiter_project_id
+    if existing_project_dir:
+        # Reusing existing project - read its PROJECT_ID and recruiter URL
+        existing_config_path = existing_project_dir / "config.sh"
+        existing_config = parse_existing_config(existing_config_path)
+        project_id = existing_config.get("PROJECT_ID")
+        recruiter_url = existing_config.get("RECRUITER_PROJECT_URL")
+        if recruiter_url:
+            recruiter_project_id = extract_recruiter_id_from_url(recruiter_url)
     else:
-        # Create/ensure Recruiter project and derive PROJECT_ID
-        # First ensure browser is available and authenticated
-        browser_check = ensure_browser_auth(work_dir, args.cdp_port)
-        if not browser_check["success"]:
-            # Include structured fallback in error for agent handling
-            error_msg = (
-                f"Browser authentication required but failed: {browser_check.get('error', 'Unknown error')}. "
-                "Please provide --recruiter-url or ensure Chrome is running with CDP."
+        # No existing project - determine PROJECT_ID from Recruiter identity
+        # Validate recruiter URL first if provided (fail closed before any file operations)
+        if args.recruiter_url:
+            recruiter_project_id = extract_recruiter_id_from_url(args.recruiter_url)
+            if not recruiter_project_id:
+                raise ValueError(
+                    f"Could not extract project ID from Recruiter URL: {args.recruiter_url}. "
+                    "Expected format: https://linkedin.com/talent/hire/{numeric_id}/..."
+                )
+            recruiter_url = args.recruiter_url
+
+        if args.project_id:
+            # Explicit override (advanced use only) - already checked it exists above
+            project_id = args.project_id
+            # recruiter_project_id already validated above if URL was provided
+        elif recruiter_project_id:
+            # Use the validated recruiter ID as project ID
+            project_id = recruiter_project_id
+        else:
+            # Create/ensure Recruiter project and derive PROJECT_ID
+            # First ensure browser is available and authenticated
+            browser_check = ensure_browser_auth(work_dir, args.cdp_port)
+            if not browser_check["success"]:
+                # Include structured fallback in error for agent handling
+                error_msg = (
+                    f"Browser authentication required but failed: {browser_check.get('error', 'Unknown error')}. "
+                    "Please provide --recruiter-url or ensure Chrome is running with CDP."
+                )
+                # Re-raise with structured context if available
+                if browser_check.get("action_required"):
+                    raise RuntimeError(
+                        f"{error_msg} [action_required: {browser_check['action_required']}]"
+                    )
+                raise RuntimeError(error_msg)
+
+            # Use the browser mode returned from auth bootstrap (CDP or agent-browser)
+            browser_mode = browser_check.get("mode")
+            if browser_mode is None:
+                # Fallback to CDP mode with provided port for backward compatibility
+                from browser_utils import BrowserMode
+
+                browser_mode = BrowserMode(mode="cdp", cdp_port=args.cdp_port)
+
+            # Use position title as project name, or placeholder if not available
+            position_title_for_name = inferred.get("position_title", "")
+            # Avoid using placeholder for Recruiter project name
+            if position_title_for_name == "[EXTRACT FROM JD]":
+                position_title_for_name = ""
+            project_name = (
+                args.position_title or position_title_for_name or "New Sourcing Project"
             )
-            # Re-raise with structured context if available
-            if browser_check.get("action_required"):
+            description = inferred.get("core_function", "")
+
+            ensure_result = ensure_recruiter_project_and_get_id(
+                project_name=project_name,
+                description=description,
+                browser_mode=browser_mode,
+                work_dir=work_dir,
+            )
+
+            if not ensure_result["success"]:
+                # Preserve structured failure info for agent manual guidance
+                failure_code = ensure_result.get("failure_code")
+                action_required = ensure_result.get("action_required")
+                message = ensure_result.get("message", "Unknown error")
+
+                # Build error message with structured guidance if available
+                if action_required:
+                    steps = "\n".join(
+                        f"  - {step}" for step in action_required.get("steps", [])
+                    )
+                    error_msg = (
+                        f"Failed to ensure Recruiter project: {message}\n"
+                        f"Failure code: {failure_code}\n"
+                        f"Action required: {action_required.get('summary', 'Manual intervention needed')}\n"
+                        f"Steps:\n{steps}"
+                    )
+                else:
+                    error_msg = (
+                        f"Failed to ensure Recruiter project: {message}. "
+                        "Please provide --recruiter-url or ensure Chrome with CDP is running."
+                    )
+
+                raise RuntimeError(error_msg)
+
+            project_id = ensure_result["project_id"]
+            if not project_id:
                 raise RuntimeError(
-                    f"{error_msg} [action_required: {browser_check['action_required']}]"
-                )
-            raise RuntimeError(error_msg)
-
-        # Use the browser mode returned from auth bootstrap (CDP or agent-browser)
-        browser_mode = browser_check.get("mode")
-        if browser_mode is None:
-            # Fallback to CDP mode with provided port for backward compatibility
-            from browser_utils import BrowserMode
-
-            browser_mode = BrowserMode(mode="cdp", cdp_port=args.cdp_port)
-
-        # Use position title as project name, or placeholder if not available
-        position_title_for_name = inferred.get("position_title", "")
-        # Avoid using placeholder for Recruiter project name
-        if position_title_for_name == "[EXTRACT FROM JD]":
-            position_title_for_name = ""
-        project_name = (
-            args.position_title or position_title_for_name or "New Sourcing Project"
-        )
-        description = inferred.get("core_function", "")
-
-        ensure_result = ensure_recruiter_project_and_get_id(
-            project_name=project_name,
-            description=description,
-            browser_mode=browser_mode,
-            work_dir=work_dir,
-        )
-
-        if not ensure_result["success"]:
-            # Preserve structured failure info for agent manual guidance
-            failure_code = ensure_result.get("failure_code")
-            action_required = ensure_result.get("action_required")
-            message = ensure_result.get("message", "Unknown error")
-
-            # Build error message with structured guidance if available
-            if action_required:
-                steps = "\n".join(
-                    f"  - {step}" for step in action_required.get("steps", [])
-                )
-                error_msg = (
-                    f"Failed to ensure Recruiter project: {message}\n"
-                    f"Failure code: {failure_code}\n"
-                    f"Action required: {action_required.get('summary', 'Manual intervention needed')}\n"
-                    f"Steps:\n{steps}"
-                )
-            else:
-                error_msg = (
-                    f"Failed to ensure Recruiter project: {message}. "
-                    "Please provide --recruiter-url or ensure Chrome with CDP is running."
+                    "Recruiter project was created but no project ID was returned. "
+                    "This is unexpected - please check the browser state."
                 )
 
-            raise RuntimeError(error_msg)
+            recruiter_url = ensure_result["url"]
+            recruiter_project_id = project_id
 
-        project_id = ensure_result["project_id"]
-        if not project_id:
-            raise RuntimeError(
-                "Recruiter project was created but no project ID was returned. "
-                "This is unexpected - please check the browser state."
-            )
-
-        recruiter_url = ensure_result["url"]
-        recruiter_project_id = project_id
-
-    # Step 3: Check for existing project conflicts
-    # First check by PROJECT_ID (authoritative) - scans all config.sh files
-    existing_project_dir = find_project_by_project_id(work_dir, project_id)
-
-    # Also check by recruiter ID for backward compatibility
-    existing_config_path: Path | None = None
-    if recruiter_project_id:
-        existing_config = check_existing_project_by_recruiter_id(
-            work_dir, recruiter_project_id
-        )
-        if existing_config:
-            existing_config_path = existing_config
-            # Use the existing project directory if found by recruiter ID
-            if not existing_project_dir:
-                existing_project_dir = existing_config.parent
-                # Read the actual PROJECT_ID from the existing config
-                existing_config_data = parse_existing_config(existing_config)
-                project_id = existing_config_data.get("PROJECT_ID", project_id)
-
-    # Step 4: Create project directory and files
-    # Use existing project directory if found, otherwise create new with canonical layout
+    # Step 4: Create or reuse project directory and files
     if existing_project_dir:
         project_dir = existing_project_dir
+        existing_config_path = project_dir / "config.sh"
     else:
         # New canonical layout: <PROJECT_ID>_<title_slug>
         title_slug = slugify_title(
             args.position_title or inferred.get("position_title", "")
         )
-        folder_name = f"{project_id}_{title_slug}"
-        project_dir = work_dir / "projects" / folder_name
+        base_folder_name = f"{project_id}_{title_slug}"
+        project_dir = work_dir / "projects" / base_folder_name
+
+        # If directory exists and we're not reusing, generate a unique name
+        # to avoid overwriting an existing non-matching project
+        if project_dir.exists():
+            counter = 1
+            while True:
+                folder_name = f"{project_id}_{title_slug}_{counter}"
+                project_dir = work_dir / "projects" / folder_name
+                if not project_dir.exists():
+                    break
+                counter += 1
+
         project_dir.mkdir(parents=True, exist_ok=True)
+        existing_config_path = None
 
     result["project_id"] = project_id
     result["project_dir"] = str(project_dir)
@@ -1303,7 +1594,9 @@ def bootstrap_project(args: argparse.Namespace) -> dict[str, Any]:
         workflow_mode="reachout",
         current_phase="bootstrap",
         status="completed",
+        action_required=False,
         last_result_summary=f"Project bootstrapped with JD from {'URL' if args.jd_url else 'text input'}",
+        last_error=False,
     )
 
     # Build overrides dict
@@ -1317,6 +1610,7 @@ def bootstrap_project(args: argparse.Namespace) -> dict[str, Any]:
         "companies": args.companies,
         "exclude_titles": args.exclude_titles,
         "recruiter_url": recruiter_url,
+        "jd_url": args.jd_url,  # Persist JD URL for future deduplication
     }
 
     # Parse existing config when reusing a project to preserve curated values
@@ -1344,6 +1638,27 @@ def bootstrap_project(args: argparse.Namespace) -> dict[str, Any]:
             create(workbook_path)
     result["workbook_path"] = str(workbook_path)
 
+    search_ready_at_bootstrap = False
+    if recruiter_url and "discover/recruiterSearch" in recruiter_url:
+        try:
+            from run_create_search import inspect_search_state
+
+            inspection = inspect_search_state(args.cdp_port, recruiter_url)
+            if inspection.get("success"):
+                search_ready_at_bootstrap = True
+                update_project_state(
+                    project_dir=project_dir,
+                    project_id=project_id,
+                    workflow_mode="reachout",
+                    current_phase="create_search",
+                    status="completed",
+                    action_required=False,
+                    last_result_summary="Recruiter search already configured at bootstrap",
+                    last_error=False,
+                )
+        except Exception:
+            pass
+
     # Build inferred output
     result["inferred"] = {
         "position_title": config["POSITION_TITLE"],
@@ -1360,9 +1675,14 @@ def bootstrap_project(args: argparse.Namespace) -> dict[str, Any]:
 
     if recruiter_url:
         if "discover/recruiterSearch" in recruiter_url:
-            next_steps.append(
-                "3. Open the Recruiter project search page and create/review the candidate search before extraction"
-            )
+            if search_ready_at_bootstrap:
+                next_steps.append(
+                    f"3. Recruiter search already shows candidates; continue from current state with: python3 {SCRIPT_DIR / 'status.py'} {project_id} --pretty"
+                )
+            else:
+                next_steps.append(
+                    "3. Open the Recruiter project search page and create/review the candidate search before extraction"
+                )
         else:
             next_steps.append(
                 "3. Recruiter project configured - run ensure_recruiter_project.py to get the project search page URL"
@@ -1375,7 +1695,11 @@ def bootstrap_project(args: argparse.Namespace) -> dict[str, Any]:
     next_steps.extend(
         [
             f"4. Workbook ready at: {workbook_path}",
-            "5. After the search shows candidates in Recruiter, run extraction: see SKILL.md for workflow",
+            (
+                f"5. Resume with the loop: python3 {SCRIPT_DIR / 'run_reachout_loop.py'} --project {project_id}"
+                if search_ready_at_bootstrap
+                else "5. After the search shows candidates in Recruiter, run extraction: see SKILL.md for workflow"
+            ),
         ]
     )
 
@@ -1420,6 +1744,77 @@ def main():
 
         traceback.print_exc(file=sys.stderr)
         return 1
+
+
+def _parse_agent_browser_json(output: str) -> dict[str, Any] | None:
+    """Parse agent-browser JSON output, including double-encoded payloads."""
+    if not output.strip():
+        return None
+
+    try:
+        parsed = json.loads(output.strip())
+        if isinstance(parsed, str):
+            parsed = json.loads(parsed)
+        if isinstance(parsed, dict):
+            return parsed
+    except json.JSONDecodeError:
+        pass
+    return None
+
+
+def fetch_url_via_agent_browser(
+    url: str,
+    timeout: int = 45,
+    session_name: str | None = None,
+) -> tuple[int, str]:
+    """Fetch dynamic page HTML via agent-browser in a managed session."""
+    effective_session = session_name or f"linkedin-sourcing-jd-fetch-{os.getpid()}"
+    try:
+        open_result = subprocess.run(
+            ["agent-browser", "--session", effective_session, "open", url],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        if open_result.returncode != 0:
+            return 0, open_result.stderr.strip() or "agent-browser open failed"
+
+        eval_result = subprocess.run(
+            [
+                "agent-browser",
+                "--session",
+                effective_session,
+                "eval",
+                "(() => ({ html: document.documentElement.outerHTML, title: document.title, url: window.location.href }))()",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        if eval_result.returncode != 0:
+            return 0, eval_result.stderr.strip() or "agent-browser eval failed"
+
+        parsed = _parse_agent_browser_json(eval_result.stdout)
+        html_content = parsed.get("html") if parsed else None
+        if html_content:
+            return 200, html_content
+        return 0, "agent-browser did not return page HTML"
+    except subprocess.TimeoutExpired:
+        return 0, f"agent-browser timed out after {timeout}s"
+    except FileNotFoundError:
+        return 0, "agent-browser not found in PATH"
+    except Exception as e:
+        return 0, f"agent-browser fetch failed: {e}"
+
+
+def fetch_jd_url(url: str, timeout: int = 30) -> tuple[int, str]:
+    """Fetch JD content, preferring agent-browser for dynamic job pages."""
+    lowered = url.lower()
+    if "lifeattiktok.com" in lowered or "tiktok.com" in lowered:
+        status, content = fetch_url_via_agent_browser(url, timeout=max(timeout, 45))
+        if status == 200:
+            return status, content
+    return fetch_url(url, timeout=timeout)
 
 
 if __name__ == "__main__":

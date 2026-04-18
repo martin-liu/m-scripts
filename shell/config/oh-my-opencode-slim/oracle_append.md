@@ -7,7 +7,7 @@
 
 ## Verdict
 
-End every review with a verdict section. Be decisive — choose either PASS or FAIL.
+End every review with a verdict section. Be decisive — choose either PASS or FAIL. Always include a **Simplify:** block listing what can be cut or simplified without losing function — use "nothing" if nothing applies.
 
 **PASS** — requirements or contract met, no critical issues.
 **FAIL** — critical issues exist, each specific and testable.
@@ -19,6 +19,9 @@ Example FAIL output:
 **Issues:**
 1. [critical] Cart total ignores discount code — src/components/Cart.tsx:42 — expected: discounted price shown, actual: full price displayed
 2. [critical] Pagination resets filters on page change — src/views/ProductList.tsx:87 — expected: filters preserved, actual: filters cleared
+
+**Simplify:**
+- CartItem renders a duplicate subtotal label that's never shown — remove it
 
 **Minor observations:**
 - Consider debouncing the search input
@@ -36,4 +39,3 @@ Example FAIL output:
 
 - Thorough by default — check edge cases, not just happy path
 - Test interactively where possible — run code, exercise API, click through UI
-- Always ask two questions: "what can be cut without losing function?" and "what is missing?"

@@ -868,7 +868,7 @@ def bootstrap_auth_session(
     3. Check if preferred CDP port is available and authenticated
     4. If yes, return success with that port
     5. If no, launch Chrome with configured profile for manual login
-       (only with explicit allow_browser_launch=True AND interactive session)
+       (only with explicit allow_browser_launch=True)
     6. After user completes login, save CDP mode metadata
     7. Keep Chrome running for subsequent operations (CDP-persistent mode)
 
@@ -877,7 +877,6 @@ def bootstrap_auth_session(
         preferred_cdp_port: Preferred CDP port (default "9234")
         chrome_profile: Path to Chrome profile directory (default: $WORK_DIR/chrome-profile)
         allow_browser_launch: Explicit opt-in required for ANY browser launch.
-            Must be True AND running in interactive session to launch browsers.
             Default False ensures tests/CI cannot accidentally launch Chrome.
 
     Returns:
@@ -966,17 +965,13 @@ def bootstrap_auth_session(
         )
         return result
 
-    # Step 4: Check for interactive session before manual login
     if not is_interactive_session():
-        result["error"] = "Manual login requires an interactive terminal session"
-        result["message"] = (
-            "Cannot launch Chrome for manual login in non-interactive environment. "
-            "Please run from an interactive terminal, or provide a pre-authenticated "
-            "CDP browser on the preferred port, or a valid auth file."
+        print(
+            "Non-interactive session detected; launching headed Chrome anyway because browser launch was explicitly requested.",
+            file=sys.stderr,
         )
-        return result
 
-    # Step 5: Launch Chrome with configured profile for manual login
+    # Step 4: Launch Chrome with configured profile for manual login
     chrome_path = find_system_chrome()
     if chrome_path is None:
         result["error"] = "Could not find system Chrome installation"

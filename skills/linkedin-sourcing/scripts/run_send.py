@@ -1,19 +1,12 @@
 #!/usr/bin/env python3
-"""Canonical send macro for LinkedIn InMail workbook rows.
+"""Send phase runner for LinkedIn InMail workbook rows (internal/advanced use only).
+
+This script is used internally by the reachout loop. For normal workflow,
+use the loop command which handles phase sequencing automatically:
+    python3 scripts/run_reachout_loop.py --project <PROJECT_ID> --confirm-send
 
 Resolves scripts from canonical skill paths with optional WORK_DIR overrides.
 Handles send outcomes and updates workbook with proper reconciliation.
-
-Usage:
-    # Send all rows with next_action=send
-    python3 run_send.py --project <PROJECT_ID>
-
-    # Verify-only mode for one or more rows
-    python3 run_send.py --project <PROJECT_ID> --verify-only --row-id 5
-    python3 run_send.py --project <PROJECT_ID> --verify-only --row-id 5,6,7
-
-    # With custom CDP port
-    python3 run_send.py --project <PROJECT_ID> --cdp-port 9231
 
 Exit codes:
     0 - All sends completed successfully (or verify-only passed)
@@ -350,7 +343,7 @@ def update_row_after_send(
 
     Raises:
         SendError: If update fails or result requires failure.
-        BrowserStateError: If browser state is not clean or manual intervention required.
+        BrowserStateError: If browser state is not clean or a follow-up action is required.
     """
     row_id = row.get("row_id")
     status = send_result.get("status", "FAILED")
@@ -369,9 +362,9 @@ def update_row_after_send(
         )
 
     # Check for structured action_required in FAILED status - raise BrowserStateError
-    # for browser/manual-intervention lane failures
+    # for browser-blocked failures
     if status == "FAILED" and action_required:
-        # Browser/manual intervention required - exit code 2
+        # action_required blocker - exit code 2
         error_msg = f"Send failed for row {row_id}: {reason}"
         if failure_code:
             error_msg += f" (code: {failure_code})"
@@ -613,8 +606,9 @@ def run_send_macro(
                                 "steps": [
                                     "Check the browser and resolve the visible issue before retrying"
                                 ],
+                                "actor": "agent",
                             },
-                            last_result_summary="Send blocked by browser/manual intervention",
+                            last_result_summary="Send blocked by browser action_required",
                             last_error=str(e),
                         )
                     finally:
@@ -682,7 +676,7 @@ def run_send_macro(
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Send InMails for workbook rows with next_action=send"
+        description="Send InMails (internal/advanced use only)"
     )
     parser.add_argument(
         "--project",

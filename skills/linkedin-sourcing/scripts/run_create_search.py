@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""Manual-first Create Search phase runner for LinkedIn sourcing.
+"""Create Search phase runner for LinkedIn sourcing (internal/advanced use only).
 
-This phase does not fully automate LinkedIn Recruiter search creation yet.
-Instead, it produces a compact search brief from project config + JD, opens the
+This script is used internally by the reachout loop. For normal workflow,
+use the loop command which handles phase sequencing automatically:
+    python3 scripts/run_reachout_loop.py --project <PROJECT_ID>
+
+This phase produces a compact search brief from project config + JD, opens the
 Recruiter project, and verifies whether the project is still on the search
 creation screen or already has visible candidates.
-
-Agents should use the normal command path first. Preview mode is debug-only.
 
 Exit codes:
     0 - Search is already configured or brief-only preview succeeded
@@ -159,7 +160,7 @@ def build_search_brief(config: dict[str, str], jd_text: str) -> str:
 
     if not lines:
         lines.append(
-            "Search for candidates relevant to this project, then review titles, companies, locations, and exclusions manually"
+            "Search for candidates relevant to this project, then review titles, companies, locations, and exclusions in Recruiter"
         )
 
     return "\n".join(lines)
@@ -168,7 +169,7 @@ def build_search_brief(config: dict[str, str], jd_text: str) -> str:
 def build_action_required(
     recruiter_url: str, search_brief: str, current_url: str | None = None
 ) -> dict[str, Any]:
-    """Build manual search-creation fallback instructions."""
+    """Build agent-actionable search-creation instructions."""
     context = {
         "recruiter_url": recruiter_url,
         "search_brief": search_brief,
@@ -178,17 +179,19 @@ def build_action_required(
 
     return {
         "code": "search_not_configured",
-        "summary": "Recruiter project still needs a reviewed candidate search",
+        "summary": "The Recruiter project needs a candidate search configured",
+        "message": "Open the Recruiter project in Chrome and create the candidate search using the provided search brief",
         "steps": [
             "Open the Recruiter project search page in Chrome",
-            "If Recruiter shows Start a search, choose job description, Boolean search, or profile",
-            "Paste the generated search brief from the command output",
-            "Review and fix titles, companies, locations, and exclusions",
+            "If Recruiter shows 'Start a search', choose job description, Boolean search, or profile",
+            "Use the search brief provided in context.search_brief",
+            "Review and adjust titles, companies, locations, and exclusions",
             "Confirm candidate cards or a real results count are visible",
-            "Re-run run_create_search.py to verify the search is ready",
+            "After the search is ready, Re-run the loop to continue",
         ],
         "can_retry": True,
         "context": context,
+        "actor": "agent",
     }
 
 
@@ -354,7 +357,7 @@ def inspect_search_state(cdp_port: str, recruiter_url: str) -> dict[str, Any]:
 def run_create_search_phase(
     project_ref: str, cdp_port: str | None = None, brief_only: bool = False
 ) -> dict[str, Any]:
-    """Run the manual-first Create Search phase."""
+    """Run the browser-driven Create Search phase."""
     ctx = load_runtime_context()
     if cdp_port is None:
         cdp_port = ctx.get("profile", {}).get("CDP_PORT", "9234")
@@ -469,14 +472,16 @@ def run_create_search_phase(
         current_url=inspection.get("current_url"),
     )
     result["message"] = (
-        "Recruiter search is not configured yet; review filters and ensure candidates are visible"
+        "Open the Recruiter project and create the candidate search using the provided search brief"
     )
     return result
 
 
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments."""
-    parser = argparse.ArgumentParser(description="Create or verify a Recruiter search")
+    parser = argparse.ArgumentParser(
+        description="Create or verify a Recruiter search (internal/advanced use only)"
+    )
     parser.add_argument(
         "--project",
         required=True,
