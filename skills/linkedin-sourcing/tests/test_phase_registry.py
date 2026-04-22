@@ -24,6 +24,7 @@ class TestGetPhaseOrder:
         # bootstrap is a pre-loop entrypoint, not a runnable loop phase
         assert phases == [
             "create_search",
+            "confirm_search",
             "extract",
             "filter",
             "enrich",
@@ -54,7 +55,8 @@ class TestGetNextPhase:
     def test_returns_next_phase_in_reachout_sequence(self):
         """Should return the next phase in reachout workflow."""
         # bootstrap is not in the loop phases - it's a pre-loop entrypoint
-        assert pr.get_next_phase("create_search", "reachout") == "extract"
+        assert pr.get_next_phase("create_search", "reachout") == "confirm_search"
+        assert pr.get_next_phase("confirm_search", "reachout") == "extract"
         assert pr.get_next_phase("extract", "reachout") == "filter"
         assert pr.get_next_phase("filter", "reachout") == "enrich"
         assert pr.get_next_phase("enrich", "reachout") == "draft"
@@ -108,6 +110,13 @@ class TestGetPhaseMetadata:
         meta = pr.get_phase_metadata("review")
 
         assert meta["is_automated"] is False
+
+    def test_confirm_search_is_human_stop_boundary(self):
+        """Confirm_search phase should not be automated."""
+        meta = pr.get_phase_metadata("confirm_search")
+
+        assert meta["is_automated"] is False
+        assert meta["requires_browser"] is False
 
     def test_send_requires_browser(self):
         """Send phase should require browser."""
@@ -166,6 +175,7 @@ class TestPhaseConstants:
         # bootstrap is a pre-loop entrypoint, not a runnable loop phase
         expected = [
             "create_search",
+            "confirm_search",
             "extract",
             "filter",
             "enrich",

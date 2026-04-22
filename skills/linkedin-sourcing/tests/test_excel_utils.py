@@ -15,6 +15,42 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 import excel_utils as eu
 
 
+def create_legacy_approved_workbook(tmp_path):
+    """Create a workbook with the legacy extra approved column."""
+    headers = [
+        "row_id",
+        "name",
+        "company",
+        "title",
+        "profile_url",
+        "est_yoe",
+        "highest_degree",
+        "school",
+        "status",
+        "next_action",
+        "draft_subject",
+        "draft_body",
+        "date_sent",
+        "attempts",
+        "last_contact",
+        "reply_type",
+        "reply_summary",
+        "approved",
+        "notes",
+        "headline",
+        "location",
+        "enrichment_notes",
+        "enriched_at",
+    ]
+    wb_path = tmp_path / "legacy-approved.xlsx"
+    wb = eu.get_openpyxl().Workbook()
+    ws = wb.active
+    ws.title = "Candidates"
+    ws.append(headers)
+    wb.save(wb_path)
+    return wb_path
+
+
 class TestColumns:
     """Tests for the canonical column schema."""
 
@@ -311,6 +347,33 @@ class TestAppend:
         assert rows[1]["name"] == "Jane"
         assert rows[1]["headline"] == "PyTorch"
 
+    def test_append_respects_legacy_approved_column(self, tmp_path):
+        """Append should align values to actual sheet headers when approved exists."""
+        wb_path = create_legacy_approved_workbook(tmp_path)
+
+        eu.append(
+            wb_path,
+            {
+                "name": "Jane",
+                "draft_subject": "Correct subject",
+                "draft_body": "Correct body",
+                "notes": "Correct notes",
+                "headline": "Correct headline",
+            },
+        )
+
+        wb = eu.get_openpyxl().load_workbook(wb_path)
+        ws = wb["Candidates"]
+        headers = [cell.value for cell in ws[1]]
+        row = [cell.value for cell in ws[2]]
+        values = dict(zip(headers, row, strict=False))
+
+        assert values["draft_subject"] == "Correct subject"
+        assert values["draft_body"] == "Correct body"
+        assert values["approved"] is None
+        assert values["notes"] == "Correct notes"
+        assert values["headline"] == "Correct headline"
+
 
 class TestUpdate:
     """Tests for update function."""
@@ -351,6 +414,32 @@ class TestUpdate:
         rows = eu.read(wb_path)
         assert rows[0]["headline"] == "Updated headline"
         assert rows[0]["location"] == "Remote"
+
+    def test_update_respects_legacy_approved_column(self, tmp_path):
+        """Update should target actual headers when approved exists."""
+        wb_path = create_legacy_approved_workbook(tmp_path)
+        eu.append(wb_path, {"name": "Jane"})
+
+        eu.update(
+            wb_path,
+            1,
+            {
+                "notes": "Updated notes",
+                "headline": "Updated headline",
+                "location": "Remote",
+            },
+        )
+
+        wb = eu.get_openpyxl().load_workbook(wb_path)
+        ws = wb["Candidates"]
+        headers = [cell.value for cell in ws[1]]
+        row = [cell.value for cell in ws[2]]
+        values = dict(zip(headers, row, strict=False))
+
+        assert values["approved"] is None
+        assert values["notes"] == "Updated notes"
+        assert values["headline"] == "Updated headline"
+        assert values["location"] == "Remote"
 
 
 class TestCount:

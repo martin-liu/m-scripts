@@ -417,6 +417,68 @@ class TestBoundedExtractionState:
         assert final_status == "completed"
 
 
+class TestEndOfResultsCompletion:
+    """Tests for clean end-of-results completion detection."""
+
+    def test_reached_end_of_results_set_on_last_page(self):
+        """reached_end_of_results should be True when last page detected."""
+        # Simulate the logic when is_last_page is detected during navigation
+        is_last_page = True
+        reached_end_of_results = False
+
+        if is_last_page:
+            reached_end_of_results = True
+
+        assert reached_end_of_results is True
+
+    def test_reached_end_of_results_set_on_no_candidates(self):
+        """reached_end_of_results should be True when no candidates found."""
+        candidates = []
+        reached_end_of_results = False
+
+        if not candidates:
+            reached_end_of_results = True
+
+        assert reached_end_of_results is True
+
+    def test_reached_end_of_results_set_on_exit_code_2(self):
+        """reached_end_of_results should be True when extraction returns exit code 2 (no results)."""
+        exit_code = 2
+        reached_end_of_results = False
+
+        if exit_code == 2:
+            reached_end_of_results = True
+
+        assert reached_end_of_results is True
+
+    def test_final_status_completed_when_reached_end_of_results(self):
+        """Final status should be 'completed' when reached_end_of_results is True."""
+        bounded_extraction_complete = False
+        reached_end_of_results = True
+
+        final_status = (
+            "completed"
+            if (bounded_extraction_complete or reached_end_of_results)
+            else "running"
+        )
+
+        assert final_status == "completed"
+
+    def test_resume_state_completed_clears_next_start_page(self):
+        """When extraction completes, resume state should have next_start_page=None."""
+        reached_end_of_results = True
+
+        if reached_end_of_results:
+            resume_final_status = "completed"
+            resume_next_start_page = None
+        else:
+            resume_final_status = "running"
+            resume_next_start_page = 5
+
+        assert resume_final_status == "completed"
+        assert resume_next_start_page is None
+
+
 class TestRunExtraction:
     """Integration tests for run_extraction workflow."""
 

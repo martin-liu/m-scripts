@@ -279,36 +279,6 @@ class TestSendInmail:
         assert result["clean_state"] is True
 
     @patch("run_send.subprocess.run")
-    def test_verify_only_mode(self, mock_run, tmp_path):
-        mock_run.return_value = MagicMock(
-            stdout=json.dumps(
-                {
-                    "status": "VERIFIED",
-                    "reason": "verify_only_completed",
-                    "clean_state": True,
-                    "verify_only": True,
-                }
-            ),
-            returncode=0,
-        )
-
-        send_script = tmp_path / "send_inmail.sh"
-        result = run_send.send_inmail(
-            send_script,
-            "9234",
-            None,
-            "http://test.com",
-            "Subject",
-            "Body",
-            verify_only=True,
-        )
-
-        assert result["status"] == "VERIFIED"
-        # Verify verify_only flag was passed to subprocess via environment
-        call_kwargs = mock_run.call_args[1]
-        assert call_kwargs.get("env", {}).get("CDP_PORT") == "9234"
-
-    @patch("run_send.subprocess.run")
     def test_preserves_parent_environment(self, mock_run, tmp_path):
         """Subprocess should inherit HOME/PATH and only override CDP_PORT."""
         import os
@@ -479,33 +449,6 @@ class TestUpdateRowAfterSend:
         assert "[Already contacted: recent_activity_inmail]" in updates["notes"]
         assert "Existing note" in updates["notes"]
 
-    @patch("run_send.subprocess.run")
-    def test_verified_keeps_sendable(self, mock_run, tmp_path):
-        mock_run.return_value = MagicMock(returncode=0)
-
-        excel_utils = tmp_path / "excel_utils.py"
-        workbook = tmp_path / "test.xlsx"
-        row = {"row_id": 1, "notes": ""}
-        send_result = {
-            "status": "VERIFIED",
-            "reason": "verify_only_completed",
-            "clean_state": True,
-            "verify_only": True,
-        }
-
-        run_send.update_row_after_send(
-            excel_utils, workbook, row, send_result, "2026-04-11"
-        )
-
-        call_args = mock_run.call_args
-        cmd = call_args[0][0]
-        updates_json = cmd[-1]
-        updates = json.loads(updates_json)
-
-        # Should NOT change next_action - keeps row sendable
-        assert "next_action" not in updates
-        assert "[verify-only passed 2026-04-11]" in updates["notes"]
-
     def test_unclean_browser_state_raises_browser_state_error(self, tmp_path):
         excel_utils = tmp_path / "excel_utils.py"
         workbook = tmp_path / "test.xlsx"
@@ -522,7 +465,7 @@ class TestUpdateRowAfterSend:
             )
 
         assert exc_info.value.row_id == 5
-        assert "Browser state not clean" in str(exc_info.value)
+        assert "unclean state" in str(exc_info.value)
 
     def test_failed_status_raises_send_error(self, tmp_path):
         excel_utils = tmp_path / "excel_utils.py"
@@ -541,53 +484,6 @@ class TestUpdateRowAfterSend:
 
         assert exc_info.value.row_id == 3
         assert "Send failed" in str(exc_info.value)
-
-    def test_verify_only_rejects_sent_status_as_error(self, tmp_path):
-        """Verify-only mode must fail-closed if child returns SENT."""
-        excel_utils = tmp_path / "excel_utils.py"
-        workbook = tmp_path / "test.xlsx"
-        row = {"row_id": 5}
-        send_result = {
-            "status": "SENT",
-            "reason": "message_sent_successfully",
-            "clean_state": True,
-            "verify_only": True,  # Verify-only mode
-        }
-
-        with pytest.raises(run_send.SendError) as exc_info:
-            run_send.update_row_after_send(
-                excel_utils, workbook, row, send_result, "2026-04-11"
-            )
-
-        assert exc_info.value.row_id == 5
-        assert "Verify-only mode returned SENT" in str(exc_info.value)
-
-    @patch("run_send.subprocess.run")
-    def test_send_inmail_preserves_parent_verify_only_flag(self, mock_run, tmp_path):
-        """Parent verify-only mode must survive child JSON that omits verify_only."""
-        mock_run.return_value = MagicMock(
-            stdout=json.dumps(
-                {
-                    "status": "SENT",
-                    "reason": "message_sent_successfully",
-                    "clean_state": True,
-                }
-            ),
-            returncode=0,
-        )
-
-        send_script = tmp_path / "send_inmail.sh"
-        result = run_send.send_inmail(
-            send_script,
-            "9234",
-            None,
-            "http://test.com",
-            "Subject",
-            "Body",
-            verify_only=True,
-        )
-
-        assert result["verify_only"] is True
 
     def test_attempts_incremented_correctly(self, tmp_path):
         excel_utils = tmp_path / "excel_utils.py"
@@ -669,6 +565,158 @@ class TestRunSendMacro:
     @patch("run_send.resolve_excel_utils")
     @patch("run_send.get_workbook_path")
     @patch("run_send.read_sendable_rows")
+    @patch("run_send.send_inmail")
+    @patch("run_send.update_row_after_send")
+    def test_forwards_draft_subject_unchanged(
+        self,
+        mock_update,
+        mock_send,
+        mock_read,
+        mock_workbook,
+        mock_excel,
+        mock_script,
+        mock_ctx,
+    ):
+        """run_send_macro must forward exact workbook draft_subject to send_inmail."""
+        mock_ctx.return_value = {
+            "work_dir": "/test",
+            "current_link": "/test/current",
+            "profile": {"CDP_PORT": "9234"},
+        }
+        mock_script.return_value = Path("/test/send_inmail.sh")
+        mock_excel.return_value = Path("/test/excel_utils.py")
+        mock_workbook.return_value = Path("/test/project.xlsx")
+        expected_subject = "Custom Subject Line With Special Chars: 你好"
+        mock_read.return_value = [
+            {
+                "row_id": 1,
+                "name": "Test User",
+                "profile_url": "http://linkedin.com/in/test",
+                "draft_subject": expected_subject,
+                "draft_body": "Test Body",
+                "attempts": 0,
+            }
+        ]
+        mock_send.return_value = {
+            "status": "SENT",
+            "reason": "message_sent_successfully",
+            "clean_state": True,
+        }
+
+        run_send.run_send_macro("test_project")
+
+        call_kwargs = mock_send.call_args[1]
+        assert call_kwargs["draft_subject"] == expected_subject
+        assert call_kwargs["draft_subject"] != "Test Body"
+
+    @patch("run_send.load_runtime_context")
+    @patch("run_send.resolve_send_script")
+    @patch("run_send.resolve_excel_utils")
+    @patch("run_send.get_workbook_path")
+    @patch("run_send.read_sendable_rows")
+    @patch("run_send.send_inmail")
+    @patch("run_send.update_row_after_send")
+    def test_forwards_draft_body_unchanged(
+        self,
+        mock_update,
+        mock_send,
+        mock_read,
+        mock_workbook,
+        mock_excel,
+        mock_script,
+        mock_ctx,
+    ):
+        """run_send_macro must forward exact workbook draft_body to send_inmail."""
+        mock_ctx.return_value = {
+            "work_dir": "/test",
+            "current_link": "/test/current",
+            "profile": {"CDP_PORT": "9234"},
+        }
+        mock_script.return_value = Path("/test/send_inmail.sh")
+        mock_excel.return_value = Path("/test/excel_utils.py")
+        mock_workbook.return_value = Path("/test/project.xlsx")
+        expected_body = "Line 1\nLine 2 with unicode: 🚀\n\nRegards"
+        mock_read.return_value = [
+            {
+                "row_id": 1,
+                "name": "Test User",
+                "profile_url": "http://linkedin.com/in/test",
+                "draft_subject": "Test Subject",
+                "draft_body": expected_body,
+                "attempts": 0,
+            }
+        ]
+        mock_send.return_value = {
+            "status": "SENT",
+            "reason": "message_sent_successfully",
+            "clean_state": True,
+        }
+
+        run_send.run_send_macro("test_project")
+
+        call_kwargs = mock_send.call_args[1]
+        assert call_kwargs["draft_body"] == expected_body
+        assert call_kwargs["draft_body"] != "Test Subject"
+
+    @patch("run_send.load_runtime_context")
+    @patch("run_send.resolve_send_script")
+    @patch("run_send.resolve_excel_utils")
+    @patch("run_send.get_workbook_path")
+    @patch("run_send.read_sendable_rows")
+    @patch("run_send.send_inmail")
+    @patch("run_send.update_row_after_send")
+    def test_draft_content_not_regenerated(
+        self,
+        mock_update,
+        mock_send,
+        mock_read,
+        mock_workbook,
+        mock_excel,
+        mock_script,
+        mock_ctx,
+    ):
+        """Send phase must use workbook draft content as-is without regeneration."""
+        mock_ctx.return_value = {
+            "work_dir": "/test",
+            "current_link": "/test/current",
+            "profile": {"CDP_PORT": "9234"},
+        }
+        mock_script.return_value = Path("/test/send_inmail.sh")
+        mock_excel.return_value = Path("/test/excel_utils.py")
+        mock_workbook.return_value = Path("/test/project.xlsx")
+        original_subject = "Original Draft Subject"
+        original_body = "Original Draft Body Content"
+        mock_read.return_value = [
+            {
+                "row_id": 1,
+                "name": "Test User",
+                "profile_url": "http://linkedin.com/in/test",
+                "draft_subject": original_subject,
+                "draft_body": original_body,
+                "attempts": 0,
+            }
+        ]
+        mock_send.return_value = {
+            "status": "SENT",
+            "reason": "message_sent_successfully",
+            "clean_state": True,
+        }
+
+        run_send.run_send_macro("test_project")
+
+        # Verify exact workbook values are passed through unchanged
+        call_kwargs = mock_send.call_args[1]
+        assert call_kwargs["draft_subject"] == original_subject
+        assert call_kwargs["draft_body"] == original_body
+        # Verify no transformation occurred
+        assert "transformed" not in str(call_kwargs).lower()
+        assert "generated" not in str(call_kwargs).lower()
+
+    @patch("run_send.load_runtime_context")
+    @patch("run_send.resolve_send_script")
+    @patch("run_send.resolve_excel_utils")
+    @patch("run_send.get_workbook_path")
+    @patch("run_send.read_sendable_rows")
     def test_no_sendable_rows_returns_success(
         self, mock_read, mock_workbook, mock_excel, mock_script, mock_ctx
     ):
@@ -721,55 +769,6 @@ class TestRunSendMacro:
         result = run_send.run_send_macro("test_project")
 
         assert result == 2  # BrowserStateError exit code
-
-    @patch("run_send.load_runtime_context")
-    @patch("run_send.resolve_send_script")
-    @patch("run_send.resolve_excel_utils")
-    @patch("run_send.get_workbook_path")
-    @patch("run_send.read_sendable_rows")
-    @patch("run_send.send_inmail")
-    @patch("run_send.update_row_after_send")
-    def test_verify_only_mode(
-        self,
-        mock_update,
-        mock_send,
-        mock_read,
-        mock_workbook,
-        mock_excel,
-        mock_script,
-        mock_ctx,
-    ):
-        mock_ctx.return_value = {
-            "work_dir": "/test",
-            "current_link": "/test/current",
-            "profile": {"CDP_PORT": "9234"},
-        }
-        mock_script.return_value = Path("/test/send_inmail.sh")
-        mock_excel.return_value = Path("/test/excel_utils.py")
-        mock_workbook.return_value = Path("/test/project.xlsx")
-        mock_read.return_value = [
-            {
-                "row_id": 5,
-                "name": "Test User",
-                "profile_url": "http://linkedin.com/in/test",
-                "draft_subject": "Test Subject",
-                "draft_body": "Test Body",
-            }
-        ]
-        mock_send.return_value = {
-            "status": "VERIFIED",
-            "reason": "verify_only_completed",
-            "clean_state": True,
-            "verify_only": True,
-        }
-
-        result = run_send.run_send_macro("test_project", verify_only=True)
-
-        assert result == 0
-        mock_send.assert_called_once()
-        # Verify verify_only was passed
-        call_kwargs = mock_send.call_args.kwargs
-        assert call_kwargs.get("verify_only") is True
 
     @patch("run_send.load_runtime_context")
     @patch("run_send.resolve_send_script")
@@ -1171,6 +1170,133 @@ class TestRunSendMacroWithActionRequired:
 
         # Should return exit code 2 (BrowserStateError)
         assert result == 2
+
+    @patch("run_send.load_runtime_context")
+    @patch("run_send.resolve_send_script")
+    @patch("run_send.resolve_excel_utils")
+    @patch("run_send.get_workbook_path")
+    @patch("run_send.read_sendable_rows")
+    @patch("run_send.send_inmail")
+    def test_manual_send_guidance_prints_rerun_command(
+        self,
+        mock_send,
+        mock_read,
+        mock_workbook,
+        mock_excel,
+        mock_script,
+        mock_ctx,
+        capsys,
+    ):
+        """Manual send fallbacks should tell the agent how to reconcile the row."""
+        mock_ctx.return_value = {
+            "work_dir": "/test",
+            "current_link": "/test/current",
+            "profile": {"CDP_PORT": "9234"},
+        }
+        mock_script.return_value = Path("/test/send_inmail.sh")
+        mock_excel.return_value = Path("/test/excel_utils.py")
+        mock_workbook.return_value = Path("/test/project.xlsx")
+        mock_read.return_value = [
+            {
+                "row_id": 4,
+                "name": "Test User",
+                "profile_url": "http://linkedin.com/in/test",
+                "draft_subject": "Test Subject",
+                "draft_body": "Test Body",
+            }
+        ]
+        mock_send.return_value = {
+            "status": "FAILED",
+            "reason": "manual_send_required_after_retry",
+            "failure_code": "verification_failed",
+            "action_required": {
+                "code": "verification_failed",
+                "summary": "Automation could not finish the final send step",
+                "steps": [
+                    "Read draft_subject and draft_body from the workbook row via excel_utils.py read (do NOT rewrite/regenerate content)",
+                    "Compare the open composer subject/body against the exact workbook values; if different, clear and fill with workbook values",
+                    "Use agent-browser on the current browser session to click the visible 'Send this message' button exactly once",
+                    "If agent-browser still cannot complete the click, ask the user to send it manually in Chrome to unblock",
+                    "Rerun run_send for the same row to reconcile the outcome",
+                ],
+                "can_retry": True,
+                "context": {
+                    "manual_send_required": True,
+                    "button_text": "Send this message",
+                    "draft_source": "workbook_only",
+                    "draft_rule": "Use workbook draft_subject and draft_body exactly as-is; do NOT rewrite or regenerate InMail content",
+                },
+            },
+            "clean_state": False,
+        }
+
+        result = run_send.run_send_macro("1691575116", row_ids=[4])
+        captured = capsys.readouterr()
+
+        assert result == 2
+        assert "After the send is completed (by agent-browser or user), rerun to reconcile:" in captured.out
+        assert "--project 1691575116 --row-id 4" in captured.out
+
+    @patch("run_send.load_runtime_context")
+    @patch("run_send.resolve_send_script")
+    @patch("run_send.resolve_excel_utils")
+    @patch("run_send.get_workbook_path")
+    @patch("run_send.read_sendable_rows")
+    @patch("run_send.send_inmail")
+    def test_manual_send_fallback_prints_draft_rule(
+        self,
+        mock_send,
+        mock_read,
+        mock_workbook,
+        mock_excel,
+        mock_script,
+        mock_ctx,
+        capsys,
+    ):
+        """Manual send fallback must print the workbook draft rule when present."""
+        mock_ctx.return_value = {
+            "work_dir": "/test",
+            "current_link": "/test/current",
+            "profile": {"CDP_PORT": "9234"},
+        }
+        mock_script.return_value = Path("/test/send_inmail.sh")
+        mock_excel.return_value = Path("/test/excel_utils.py")
+        mock_workbook.return_value = Path("/test/project.xlsx")
+        mock_read.return_value = [
+            {
+                "row_id": 4,
+                "name": "Test User",
+                "profile_url": "http://linkedin.com/in/test",
+                "draft_subject": "Test Subject",
+                "draft_body": "Test Body",
+            }
+        ]
+        mock_send.return_value = {
+            "status": "FAILED",
+            "reason": "manual_send_required_after_retry",
+            "failure_code": "verification_failed",
+            "action_required": {
+                "code": "verification_failed",
+                "summary": "Automation could not finish the final send step",
+                "steps": [
+                    "Read draft_subject and draft_body from the workbook row via excel_utils.py read (do NOT rewrite/regenerate content)",
+                ],
+                "can_retry": True,
+                "context": {
+                    "manual_send_required": True,
+                    "draft_rule": "Use workbook draft_subject and draft_body exactly as-is; do NOT rewrite or regenerate InMail content",
+                },
+            },
+            "clean_state": False,
+        }
+
+        result = run_send.run_send_macro("test_project", row_ids=[4])
+        captured = capsys.readouterr()
+
+        assert result == 2
+        assert "IMPORTANT:" in captured.out
+        assert "do NOT rewrite" in captured.out
+        assert "workbook draft_subject" in captured.out
 
 
 if __name__ == "__main__":

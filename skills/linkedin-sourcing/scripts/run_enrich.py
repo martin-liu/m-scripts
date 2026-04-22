@@ -113,12 +113,16 @@ def resolve_project_and_workbook(project_ref: str) -> tuple[Path, Path]:
 def read_enrichable_rows(
     workbook_path: Path,
     row_ids: list[int] | None = None,
+    resume_from_row_id: int | None = None,
+    limit: int | None = None,
 ) -> list[dict[str, Any]]:
     """Read rows with next_action=enrich from workbook.
 
     Args:
         workbook_path: Path to workbook file
         row_ids: Optional list of specific row IDs to process
+        resume_from_row_id: Optional inclusive row_id lower bound
+        limit: Optional maximum number of rows to return
 
     Returns:
         List of row dicts with next_action=enrich
@@ -126,6 +130,9 @@ def read_enrichable_rows(
     Raises:
         EnrichError: If read fails
     """
+    if limit is not None and limit < 0:
+        raise EnrichError("limit must be >= 0")
+
     sys.path.insert(0, str(SCRIPT_DIR))
     try:
         from excel_utils import read
@@ -135,6 +142,17 @@ def read_enrichable_rows(
         # Filter to specific row IDs if provided
         if row_ids:
             rows = [r for r in rows if r.get("row_id") in row_ids]
+
+        if resume_from_row_id is not None:
+            rows = [
+                r
+                for r in rows
+                if isinstance(r.get("row_id"), int)
+                and r.get("row_id") >= resume_from_row_id
+            ]
+
+        if limit is not None:
+            rows = rows[:limit]
 
         return rows
     except Exception as e:
@@ -243,6 +261,8 @@ def run_enrich_phase(
     cdp_port: str | None = None,
     dry_run: bool = False,
     row_ids: list[int] | None = None,
+    resume_from_row_id: int | None = None,
+    limit: int | None = None,
 ) -> int:
     """Run the enrichment phase for workbook rows.
 
@@ -276,7 +296,12 @@ def run_enrich_phase(
         print()
 
         # Read enrichable rows
-        rows = read_enrichable_rows(workbook_path, row_ids)
+        rows = read_enrichable_rows(
+            workbook_path,
+            row_ids=row_ids,
+            resume_from_row_id=resume_from_row_id,
+            limit=limit,
+        )
 
         if not rows:
             print("No enrichable rows found (next_action=enrich)")
@@ -468,6 +493,16 @@ def main() -> int:
         "--row-id",
         help="Specific row ID(s) to process (comma-separated for multiple)",
     )
+    parser.add_argument(
+        "--resume-from-row-id",
+        type=int,
+        help="Only process enrich rows with row_id >= this value",
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        help="Maximum number of enrich rows to process in this run",
+    )
 
     args = parser.parse_args()
 
@@ -485,6 +520,8 @@ def main() -> int:
         cdp_port=args.cdp_port,
         dry_run=args.dry_run,
         row_ids=row_ids,
+        resume_from_row_id=args.resume_from_row_id,
+        limit=args.limit,
     )
 
 

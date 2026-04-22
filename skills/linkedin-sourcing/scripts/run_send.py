@@ -9,9 +9,9 @@ Resolves scripts from canonical skill paths with optional WORK_DIR overrides.
 Handles send outcomes and updates workbook with proper reconciliation.
 
 Exit codes:
-    0 - All sends completed successfully (or verify-only passed)
+    0 - All sends completed successfully
     1 - One or more sends failed (check output for details)
-    2 - Browser state not clean (fatal - operator intervention required)
+    2 - Send is blocked and needs operator intervention
     3 - Configuration or setup error
 """
 
@@ -24,7 +24,7 @@ import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 SKILL_DIR = SCRIPT_DIR.parent
@@ -40,7 +40,7 @@ class SendError(Exception):
 
 
 class BrowserStateError(SendError):
-    """Raised when browser state is not clean - requires operator intervention."""
+    """Raised when send is blocked and requires operator intervention."""
 
     def __init__(
         self,
@@ -248,21 +248,21 @@ def send_inmail(
     cdp_port: str,
     work_dir: str | None,
     profile_url: str,
-    subject: str,
-    body: str,
-    verify_only: bool = False,
+    draft_subject: str,
+    draft_body: str,
 ) -> dict[str, Any]:
     """Execute send_inmail.sh and return structured result.
+
+    Send phase uses existing workbook draft content only. Draft generation
+    happens in the draft phase (reachout_automation.py), not here.
 
     Args:
         send_script: Path to send_inmail.sh.
         cdp_port: Chrome DevTools Protocol port.
         work_dir: Runtime work directory for browser mode resolution.
         profile_url: LinkedIn profile URL.
-        subject: Message subject.
-        body: Message body.
-        verify_only: If True, only verify without sending.
-
+        draft_subject: Message subject from workbook draft_subject column.
+        draft_body: Message body from workbook draft_body column.
     Returns:
         Dict with status, reason, clean_state, etc.
 
@@ -274,9 +274,7 @@ def send_inmail(
         str(send_script),
         "--json",
     ]
-    if verify_only:
-        cmd.append("--verify-only")
-    cmd.extend([profile_url, subject, body])
+    cmd.extend([profile_url, draft_subject, draft_body])
 
     # Set CDP_PORT environment variable while preserving parent environment
     env = {**os.environ, "CDP_PORT": cdp_port}
@@ -292,14 +290,12 @@ def send_inmail(
             "status": "FAILED",
             "reason": "send_timeout",
             "clean_state": False,
-            "verify_only": verify_only,
         }
     except Exception as e:
         return {
             "status": "FAILED",
             "reason": f"send_exception: {e}",
             "clean_state": False,
-            "verify_only": verify_only,
         }
 
     # Parse JSON output - strict JSON-only, no mixed stdout tolerated
@@ -312,10 +308,8 @@ def send_inmail(
             "status": "FAILED",
             "reason": "invalid_json_output",
             "clean_state": False,
-            "verify_only": verify_only,
         }
 
-    send_result["verify_only"] = verify_only
     return send_result
 
 
@@ -331,7 +325,6 @@ def update_row_after_send(
     Handles reconciliation per acceptance criteria:
     - SENT -> status=Sent, next_action=done, date_sent=today, last_contact=today, attempts=max(1, attempts+1)
     - ALREADY_CONTACTED -> status=AlreadyContacted, next_action=done, last_contact=today, append note
-    - VERIFIED -> keep row sendable, append note like "verify-only passed YYYY-MM-DD"
     - FAILED or clean_state=false -> raise SendError
 
     Args:
@@ -349,14 +342,13 @@ def update_row_after_send(
     status = send_result.get("status", "FAILED")
     clean_state = send_result.get("clean_state", False)
     reason = send_result.get("reason", "")
-    verify_only = send_result.get("verify_only", False)
     action_required = send_result.get("action_required")
     failure_code = send_result.get("failure_code")
 
     # Check for unclean browser state - this is fatal
     if not clean_state:
         raise BrowserStateError(
-            f"Browser state not clean after send: {reason}",
+            f"Send left the browser in an unclean state: {reason}",
             row_id=row_id,
             action_required=action_required,
         )
@@ -365,21 +357,13 @@ def update_row_after_send(
     # for browser-blocked failures
     if status == "FAILED" and action_required:
         # action_required blocker - exit code 2
-        error_msg = f"Send failed for row {row_id}: {reason}"
+        error_msg = f"Send blocked for row {row_id}: {reason}"
         if failure_code:
             error_msg += f" (code: {failure_code})"
         raise BrowserStateError(
             error_msg,
             row_id=row_id,
             action_required=action_required,
-        )
-
-    # Fail-closed: verify-only mode must not accept real-send statuses
-    if verify_only and status == "SENT":
-        raise SendError(
-            f"Verify-only mode returned SENT for row {row_id}: possible script error",
-            exit_code=1,
-            row_id=row_id,
         )
 
     # Get current attempts
@@ -416,19 +400,6 @@ def update_row_after_send(
             "last_contact": today,
             "notes": new_notes,
         }
-    elif status == "VERIFIED":
-        # Keep row sendable, append verification note
-        existing_notes = row.get("notes") or ""
-        note_addition = f"[verify-only passed {today}]"
-        new_notes = (
-            f"{existing_notes} {note_addition}".strip()
-            if existing_notes
-            else note_addition
-        )
-        updates = {
-            "notes": new_notes,
-            # Keep next_action=send so row remains sendable
-        }
     elif status == "FAILED":
         raise SendError(
             f"Send failed for row {row_id}: {reason}",
@@ -463,7 +434,6 @@ def update_row_after_send(
 def run_send_macro(
     project_ref: str,
     cdp_port: str | None = None,
-    verify_only: bool = False,
     row_ids: list[int] | None = None,
 ) -> int:
     """Run the send macro for workbook rows.
@@ -471,7 +441,6 @@ def run_send_macro(
     Args:
         project_ref: Project reference (local ID, Recruiter URL, or numeric ID).
         cdp_port: Optional CDP port (defaults to profile value or 9234).
-        verify_only: If True, only verify without sending.
         row_ids: Optional list of specific row IDs to process.
 
     Returns:
@@ -504,12 +473,11 @@ def run_send_macro(
                 sys.path.remove(str(SCRIPT_DIR))
 
         # Get CDP port from context if not provided
-        if cdp_port is None:
-            cdp_port = ctx.get("profile", {}).get("CDP_PORT", "9234")
+        resolved_cdp_port = cdp_port or ctx.get("profile", {}).get("CDP_PORT", "9234")
 
         print(f"Workbook: {workbook_path}")
-        print(f"CDP Port: {cdp_port}")
-        print(f"Mode: {'verify-only' if verify_only else 'send'}")
+        print(f"CDP Port: {resolved_cdp_port}")
+        print("Mode: send")
         print()
 
         # Read sendable rows
@@ -528,34 +496,37 @@ def run_send_macro(
 
         for i, row in enumerate(rows, 1):
             row_id = row.get("row_id")
+            row_id_value = row_id if isinstance(row_id, int) else -1
             name = row.get("name", "Unknown")
             profile_url = row.get("profile_url", "")
-            subject = row.get("draft_subject", "")
-            body = row.get("draft_body", "")
+            # Send phase uses existing workbook draft content only.
+            # Draft generation happens in the draft phase, not here.
+            draft_subject = row.get("draft_subject", "")
+            draft_body = row.get("draft_body", "")
 
             print(f"[{i}/{len(rows)}] Row {row_id}: {name}")
             print(f"  URL: {profile_url}")
 
             if not profile_url:
                 print(f"  ERROR: No profile_url, skipping")
-                failed_rows.append((row_id, "missing profile_url"))
+                failed_rows.append((row_id_value, "missing profile_url"))
                 continue
 
-            if not subject or not body:
+            if not draft_subject or not draft_body:
                 print(f"  ERROR: Missing draft_subject or draft_body, skipping")
-                failed_rows.append((row_id, "missing draft content"))
+                failed_rows.append((row_id_value, "missing draft content"))
                 continue
 
             try:
-                # Execute send
+                # Execute send using existing workbook draft content.
+                # Draft generation happens in the draft phase, not here.
                 result = send_inmail(
                     send_script=send_script,
-                    cdp_port=cdp_port,
+                    cdp_port=resolved_cdp_port,
                     work_dir=ctx.get("work_dir"),
                     profile_url=profile_url,
-                    subject=subject,
-                    body=body,
-                    verify_only=verify_only,
+                    draft_subject=draft_subject,
+                    draft_body=draft_body,
                 )
 
                 # Update workbook based on result
@@ -564,15 +535,15 @@ def run_send_macro(
                 status = result.get("status", "FAILED")
                 print(f"  Result: {status}")
 
-                if status in ("SENT", "VERIFIED", "ALREADY_CONTACTED"):
+                if status in ("SENT", "ALREADY_CONTACTED"):
                     success_count += 1
                 else:
-                    failed_rows.append((row_id, result.get("reason", "unknown")))
+                    failed_rows.append((row_id_value, str(result.get("reason", "unknown"))))
 
             except BrowserStateError as e:
                 print(f"  FATAL: {e}")
                 print()
-                print("Browser state is not clean. Operator intervention required.")
+                print("Send is blocked. Operator intervention required.")
                 print()
                 # Surface structured action_required if available
                 if e.action_required:
@@ -586,6 +557,16 @@ def run_send_macro(
                     print()
                     if ar.get("context"):
                         print(f"Context: {ar['context']}")
+                        # Reinforce workbook draft rule for manual send fallbacks
+                        if ar["context"].get("draft_rule"):
+                            print()
+                            print(f"IMPORTANT: {ar['context']['draft_rule']}")
+                        if ar["context"].get("manual_send_required") and row_id is not None:
+                            print()
+                            print("After the send is completed (by agent-browser or user), rerun to reconcile:")
+                            print(
+                                f"  python3 {Path(__file__).resolve()} --project {project_ref} --row-id {row_id}"
+                            )
                 else:
                     print(
                         "Please check the browser and resolve any open dialogs or composers."
@@ -617,7 +598,7 @@ def run_send_macro(
                 return e.exit_code
             except SendError as e:
                 print(f"  ERROR: {e}")
-                failed_rows.append((row_id, str(e)))
+                failed_rows.append((row_id_value, str(e)))
 
             print()
 
@@ -646,9 +627,9 @@ def run_send_macro(
                         project_dir=project_dir,
                         current_phase="send",
                         status="completed",
-                        action_required=False,
+                        action_required=cast(Any, False),
                         last_result_summary=f"Send complete: {success_count} row(s) processed",
-                        last_error=False,
+                        last_error=cast(Any, False),
                     )
             finally:
                 if str(SCRIPT_DIR) in sys.path:
@@ -689,11 +670,6 @@ def main() -> int:
         help="Chrome DevTools Protocol port (default: from profile or 9234)",
     )
     parser.add_argument(
-        "--verify-only",
-        action="store_true",
-        help="Verify the flow without actually sending",
-    )
-    parser.add_argument(
         "--row-id",
         help="Specific row ID(s) to process (comma-separated for multiple)",
     )
@@ -716,7 +692,6 @@ def main() -> int:
     return run_send_macro(
         project_ref=project_ref,
         cdp_port=args.cdp_port,
-        verify_only=args.verify_only,
         row_ids=row_ids,
     )
 

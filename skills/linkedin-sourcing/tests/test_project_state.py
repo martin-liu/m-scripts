@@ -274,6 +274,19 @@ class TestUpdateProjectState:
 
         assert result["last_error"] is None
 
+    def test_clears_create_search_summary_with_false(self, tmp_path):
+        """Should clear create_search_summary when passed False."""
+        initial_state = ps.create_initial_state("12345")
+        initial_state["create_search_summary"] = {"filter_analysis": {"missing_companies": ["meta"]}}
+        ps.save_project_state(tmp_path, initial_state)
+
+        result = ps.update_project_state(
+            tmp_path,
+            create_search_summary=False,
+        )
+
+        assert result["create_search_summary"] is None
+
     def test_sets_action_required_dict(self, tmp_path):
         """Should set action_required to provided dict."""
         action_req = {

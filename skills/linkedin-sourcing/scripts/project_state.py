@@ -14,6 +14,7 @@ Simplified state (Sprint 2):
     - updated_at: ISO timestamp
     - last_result_summary: Summary of last operation
     - last_error: Last error message or None
+    - create_search_summary: Structured create_search handoff data or None
 
 Usage:
     from project_state import load_project_state, save_project_state, update_project_state
@@ -80,6 +81,7 @@ def create_initial_state(
         "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "last_result_summary": None,
         "last_error": None,
+        "create_search_summary": None,
     }
 
 
@@ -182,6 +184,7 @@ def update_project_state(
     last_result_summary: str | None = None,
     last_error: str | None = None,
     workflow_mode: str | None = None,
+    create_search_summary: dict[str, Any] | bool | None = None,
 ) -> dict[str, Any]:
     """Update project state with new values.
 
@@ -197,6 +200,8 @@ def update_project_state(
         last_result_summary: Summary of last operation result (optional)
         last_error: Last error message (optional)
         workflow_mode: Workflow mode (optional, only used when creating new state)
+        create_search_summary: Structured create_search results for confirm_search handoff,
+            False to clear, or None to leave unchanged
 
     Returns:
         Updated state dictionary
@@ -236,6 +241,11 @@ def update_project_state(
         state["last_error"] = None
     elif last_error is not None:
         state["last_error"] = last_error
+
+    if create_search_summary is False:
+        state["create_search_summary"] = None
+    elif create_search_summary is not None:
+        state["create_search_summary"] = create_search_summary
 
     # Save updated state
     save_project_state(project_dir, state)

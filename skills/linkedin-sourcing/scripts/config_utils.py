@@ -67,3 +67,18 @@ def parse_config_file(config_path: Union[str, Path]) -> dict[str, str]:
                 config[key] = parsed_value
 
     return config
+
+
+def is_placeholder_value(value: str | None) -> bool:
+    """Return whether a config value is an unresolved bootstrap placeholder."""
+    if value is None:
+        return False
+
+    stripped = value.strip()
+    return stripped.startswith("[") and stripped.endswith("]")
+
+
+def get_unresolved_project_messaging_fields(config: dict[str, str]) -> list[str]:
+    """Return required project-level messaging fields still using placeholders."""
+    required_fields = ["CORE_FUNCTION", "BUSINESS_IMPACT"]
+    return [field for field in required_fields if is_placeholder_value(config.get(field))]

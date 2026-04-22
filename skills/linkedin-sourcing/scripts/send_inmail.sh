@@ -1,8 +1,8 @@
 #!/bin/bash
 # Send one InMail via browser automation.
-# Usage: send_inmail.sh [--verify-only] [--json] <profile_url> <subject> <body>
-# Prints SENT on successful send, VERIFIED on verify-only success,
-# ALREADY_CONTACTED when prior contact is detected, FAILED on failure.
+# Usage: send_inmail.sh [--json] <profile_url> <subject> <body>
+# Prints SENT on successful send, ALREADY_CONTACTED when prior contact is detected,
+# FAILED on failure.
 # Use --json for structured output with cleanup state and failure reasons.
 set -uo pipefail
 
@@ -51,14 +51,22 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "$URL" || -z "$SUBJECT" || -z "$BODY" ]]; then
-    echo "Usage: send_inmail.sh [--verify-only] [--json] <profile_url> <subject> <body>" >&2
+    echo "Usage: send_inmail.sh [--json] <profile_url> <subject> <body>" >&2
     exit 1
+fi
+
+if [[ -n "$VERIFY_ONLY" ]]; then
+    if [[ -n "$JSON_OUTPUT" ]]; then
+        printf '%s\n' '{"status":"FAILED","reason":"verify_only_disabled","failure_code":"verify_only_disabled","clean_state":true,"verify_only":true}'
+    else
+        echo "verify-only mode is disabled because LinkedIn discard dialogs make it unreliable" >&2
+    fi
+    exit 3
 fi
 
 # Delegate to Python helper for robust automation
 python3 "$SCRIPT_DIR/inmail_sender.py" \
     --cdp-port "$CDP_PORT" \
-    $VERIFY_ONLY \
     $JSON_OUTPUT \
     "$URL" \
     "$SUBJECT" \

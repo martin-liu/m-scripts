@@ -55,6 +55,8 @@ def run_filter(
         "filtered": 0,
         "skipped": 0,
         "target_phase": "enrich" if use_enrichment else "draft",
+        "exclude_titles": [],
+        "filtered_details": [],
         "error": None,
     }
 
@@ -94,14 +96,28 @@ def run_filter(
         result["filtered"] = filter_result.get("filtered", 0)
         result["skipped"] = filter_result.get("skipped", 0)
         result["target_phase"] = filter_result.get("target_phase", "enrich")
+        result["exclude_titles"] = filter_result.get("exclude_titles", [])
+        result["filtered_details"] = filter_result.get("filtered_details", [])
         result["success"] = True
+
+        filtered_preview_entries = []
+        for entry in result["filtered_details"][:3]:
+            matched_rules = ", ".join(entry.get("matched_exclusion_rules", []))
+            entry_label = entry.get("name") or f"row {entry.get('row_id')}"
+            filtered_preview_entries.append(f"{entry_label} ({matched_rules})")
+
+        summary = f"Kept: {result['kept']}, Filtered: {result['filtered']}"
+        if result["exclude_titles"]:
+            summary += f"; Rules: {', '.join(result['exclude_titles'])}"
+        if filtered_preview_entries:
+            summary += f"; Filtered rows: {', '.join(filtered_preview_entries)}"
 
         # Update project state
         update_project_state(
             project_dir,
             current_phase="filter",
             status="completed",
-            last_result_summary=f"Kept: {result['kept']}, Filtered: {result['filtered']}",
+            last_result_summary=summary,
         )
 
     except Exception as e:

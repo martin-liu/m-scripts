@@ -95,6 +95,43 @@ class TestGetLoopResumeGuidance:
         guidance = status.get_loop_resume_guidance(action_required, "my_project")
         assert "Resolve the blocker" in guidance["resolve_now"]
 
+    def test_project_messaging_incomplete_guidance(self):
+        """Should provide specific guidance for unresolved project messaging fields."""
+        action_required = {
+            "code": "project_messaging_incomplete",
+            "summary": "Project messaging fields must be finalized before drafting",
+            "context": {"fields": ["CORE_FUNCTION", "BUSINESS_IMPACT"]},
+        }
+        guidance = status.get_loop_resume_guidance(action_required, "my_project")
+        assert "CORE_FUNCTION" in guidance["resolve_now"]
+        assert "BUSINESS_IMPACT" in guidance["resolve_now"]
+
+    def test_browser_unavailable_guidance_with_recovery_command(self):
+        """Should provide specific guidance with recovery command for browser_unavailable."""
+        action_required = {
+            "code": "browser_unavailable",
+            "summary": "Chrome browser is not available",
+            "context": {
+                "recovery_command": 'bash "/path/to/connect_browser.sh"',
+                "cdp_port": "9234",
+            },
+        }
+        guidance = status.get_loop_resume_guidance(action_required, "my_project")
+        assert "Chrome/CDP is not connected" in guidance["resolve_now"]
+        assert "connect_browser.sh" in guidance["resolve_now"]
+        assert "bash" in guidance["resolve_now"]
+
+    def test_browser_unavailable_guidance_without_recovery_command(self):
+        """Should provide generic guidance when recovery_command not in context."""
+        action_required = {
+            "code": "browser_unavailable",
+            "summary": "Chrome browser is not available",
+            "context": {"cdp_port": "9234"},
+        }
+        guidance = status.get_loop_resume_guidance(action_required, "my_project")
+        assert "Chrome/CDP is not connected" in guidance["resolve_now"]
+        assert "connect_browser.sh" in guidance["resolve_now"]
+
     def test_includes_steps_from_action_required(self):
         """Should include steps from action_required in guidance."""
         action_required = {
@@ -280,8 +317,8 @@ class TestDetermineNextPhase:
         assert "running" in message.lower()
         assert ready is False
 
-    def test_follows_phase_order_when_no_workbook_work(self):
-        """Should follow phase order when no specific workbook work found."""
+    def test_routes_to_confirm_search_after_create_search_completed(self):
+        """Should route to confirm_search when create_search completes and no workbook rows."""
         workbook_summary = {
             "total_rows": 0,
             "by_next_action": {},
@@ -291,7 +328,22 @@ class TestDetermineNextPhase:
             "create_search", "completed", workbook_summary, "reachout"
         )
 
-        assert next_phase == "extract"
+        assert next_phase == "confirm_search"
+        assert "confirm filters" in message.lower()
+
+    def test_follows_phase_order_when_no_workbook_work(self):
+        """Should follow phase order when no specific workbook work found."""
+        workbook_summary = {
+            "total_rows": 0,
+            "by_next_action": {},
+        }
+
+        # For phases other than create_search, should follow normal phase order
+        next_phase, message, ready = status.determine_next_phase(
+            "filter", "completed", workbook_summary, "reachout"
+        )
+
+        assert next_phase == "enrich"
 
     def test_review_is_stop_boundary(self):
         """Review should be identified as a stop boundary."""
@@ -438,6 +490,317 @@ class TestGetWorkbookSummary:
         assert summary["by_next_action"].get("enrich") == 1
 
 
+class TestConfirmSearchFilterSummary:
+    """Tests for confirm_search filter analysis summary in status."""
+
+    def test_status_includes_last_result_summary(self, tmp_path):
+        """Status should include last_result_summary from project state."""
+        project_dir = tmp_path / "projects" / "test_project"
+        project_dir.mkdir(parents=True)
+        config_file = project_dir / "config.sh"
+        config_file.write_text('PROJECT_ID="test_project"\n')
+
+        from project_state import save_project_state, create_initial_state
+
+        state = create_initial_state(
+            "test_project", current_phase="create_search", status="completed"
+        )
+        state["last_result_summary"] = "Recruiter search verified; Issue: Missing companies: amazon; Malformed titles: EngineerManager"
+        save_project_state(project_dir, state)
+
+        result = status.get_status("test_project", tmp_path)
+
+        assert result["last_result_summary"] is not None
+        assert "Missing companies: amazon" in result["last_result_summary"]
+
+    def test_confirm_search_loop_command_includes_flag(self):
+        """Loop command for confirm_search should include --confirm-search flag."""
+        cmd = status.get_loop_command("my_project", confirm_search=True)
+        assert "--confirm-search" in cmd
+        assert "--confirm-send" not in cmd
+
+    def test_confirm_search_summary_exposed_at_boundary(self, tmp_path):
+        """Status should expose confirm_search_summary when at confirm_search boundary."""
+        project_dir = tmp_path / "projects" / "test_project"
+        project_dir.mkdir(parents=True)
+        config_file = project_dir / "config.sh"
+        config_file.write_text('PROJECT_ID="test_project"\n')
+
+        # Create empty workbook (extraction hasn't run yet)
+        workbook_path = project_dir / "workbook.xlsx"
+        from excel_utils import create
+
+        create(str(workbook_path))
+
+        from project_state import save_project_state, create_initial_state
+
+        state = create_initial_state(
+            "test_project", current_phase="create_search", status="completed"
+        )
+        state["last_result_summary"] = "Recruiter search verified; Issue: Missing companies: amazon; Malformed titles: EngineerManager"
+        save_project_state(project_dir, state)
+
+        result = status.get_status("test_project", tmp_path)
+
+        # Should be at confirm_search boundary
+        assert result["next_phase"] == "confirm_search"
+        # Should expose confirm_search_summary derived from last_result_summary
+        assert result.get("confirm_search_summary") is not None
+        assert "Missing companies: amazon" in result["confirm_search_summary"]
+        assert "Malformed titles: EngineerManager" in result["confirm_search_summary"]
+
+    def test_confirm_search_summary_not_exposed_when_not_at_boundary(self, tmp_path):
+        """Status should not expose confirm_search_summary when not at confirm_search boundary."""
+        project_dir = tmp_path / "projects" / "test_project"
+        project_dir.mkdir(parents=True)
+        config_file = project_dir / "config.sh"
+        config_file.write_text('PROJECT_ID="test_project"\n')
+
+        # Create workbook with rows to move past confirm_search
+        workbook_path = project_dir / "workbook.xlsx"
+        from excel_utils import create, append
+
+        create(str(workbook_path))
+        append(
+            str(workbook_path),
+            {"name": "John", "next_action": "filter", "status": "Extracted"},
+        )
+
+        from project_state import save_project_state, create_initial_state
+
+        state = create_initial_state(
+            "test_project", current_phase="extract", status="completed"
+        )
+        state["last_result_summary"] = "Extraction complete: 1 candidates"
+        save_project_state(project_dir, state)
+
+        result = status.get_status("test_project", tmp_path)
+
+        # Should NOT be at confirm_search boundary
+        assert result["next_phase"] != "confirm_search"
+        # Should NOT expose confirm_search_summary
+        assert result.get("confirm_search_summary") is None
+
+    def test_confirm_search_summary_includes_reconciliation_results(self, tmp_path):
+        """Status should include reconciliation results in confirm_search_summary."""
+        project_dir = tmp_path / "projects" / "test_project"
+        project_dir.mkdir(parents=True)
+        config_file = project_dir / "config.sh"
+        config_file.write_text('PROJECT_ID="test_project"\n')
+
+        # Create empty workbook (extraction hasn't run yet)
+        workbook_path = project_dir / "workbook.xlsx"
+        from excel_utils import create
+
+        create(str(workbook_path))
+
+        from project_state import save_project_state, create_initial_state
+
+        state = create_initial_state(
+            "test_project", current_phase="create_search", status="completed"
+        )
+        # Summary with reconciliation results
+        state["last_result_summary"] = (
+            "Recruiter search verified with visible candidates; "
+            "Auto-added companies: Amazon; "
+            "Failed to add companies: Netflix; "
+            "Auto-removed malformed titles: EngineerManager; "
+            "Missing companies: netflix; "
+            "Malformed titles: DeveloperEngineer"
+        )
+        save_project_state(project_dir, state)
+
+        result = status.get_status("test_project", tmp_path)
+
+        # Should be at confirm_search boundary
+        assert result["next_phase"] == "confirm_search"
+        # Should expose confirm_search_summary with reconciliation results
+        assert result.get("confirm_search_summary") is not None
+        assert "Auto-added companies: Amazon" in result["confirm_search_summary"]
+        assert "Failed to add companies: Netflix" in result["confirm_search_summary"]
+        assert "Auto-removed malformed titles: EngineerManager" in result["confirm_search_summary"]
+
+    def test_confirm_search_summary_uses_structured_data_when_available(self, tmp_path):
+        """Status should prefer structured create_search_summary over legacy string."""
+        project_dir = tmp_path / "projects" / "test_project"
+        project_dir.mkdir(parents=True)
+        config_file = project_dir / "config.sh"
+        config_file.write_text('PROJECT_ID="test_project"\n')
+
+        # Create empty workbook (extraction hasn't run yet)
+        workbook_path = project_dir / "workbook.xlsx"
+        from excel_utils import create
+
+        create(str(workbook_path))
+
+        from project_state import save_project_state, create_initial_state
+
+        state = create_initial_state(
+            "test_project", current_phase="create_search", status="completed"
+        )
+        # Set both structured and legacy summary
+        state["create_search_summary"] = {
+            "filter_analysis": {
+                "expected_companies": ["google", "meta"],
+                "observed_companies": ["google"],
+                "missing_companies": ["meta"],
+                "malformed_titles": ["BadTitle"],
+            },
+            "reconciliation": {
+                "attempted": True,
+                "companies_added": ["Meta"],
+                "companies_failed": ["NonExistent"],
+                "titles_removed": ["BadTitle"],
+            },
+        }
+        state["last_result_summary"] = "Legacy string summary"
+        save_project_state(project_dir, state)
+
+        result = status.get_status("test_project", tmp_path)
+
+        # Should be at confirm_search boundary
+        assert result["next_phase"] == "confirm_search"
+        # Should build summary from structured data, not use legacy string
+        confirm_summary = result.get("confirm_search_summary", "")
+        assert "Auto-added companies: Meta" in confirm_summary
+        assert "Failed to add companies: NonExistent" in confirm_summary
+        assert "Auto-removed malformed titles: BadTitle" in confirm_summary
+        assert "Missing companies: meta" in confirm_summary
+        # Should NOT contain legacy summary
+        assert "Legacy string summary" not in confirm_summary
+        # Should expose normalized entries for pretty rendering
+        entries = result.get("confirm_search_entries") or []
+        assert ("success", "Auto-added companies: Meta") in entries
+        assert any(kind == "warning" and "Missing companies: meta" in text for kind, text in entries)
+
+    def test_confirm_search_summary_includes_keyword_results(self, tmp_path):
+        """Structured confirm-search summary should include keyword add/missing details."""
+        project_dir = tmp_path / "projects" / "test_project"
+        project_dir.mkdir(parents=True)
+        config_file = project_dir / "config.sh"
+        config_file.write_text('PROJECT_ID="test_project"\n')
+
+        from excel_utils import create
+        workbook_path = project_dir / "workbook.xlsx"
+        create(str(workbook_path))
+
+        from project_state import save_project_state, create_initial_state
+
+        state = create_initial_state(
+            "test_project", current_phase="create_search", status="completed"
+        )
+        state["create_search_summary"] = {
+            "filter_analysis": {
+                "missing_keywords": ["python"],
+                "observed_keywords": ["kubernetes"],
+            },
+            "reconciliation": {
+                "attempted": True,
+                "keywords_added": ["Kubernetes"],
+                "keywords_failed": ["Python"],
+            },
+        }
+        save_project_state(project_dir, state)
+
+        result = status.get_status("test_project", tmp_path)
+
+        confirm_summary = result.get("confirm_search_summary", "")
+        assert "Auto-added keywords: Kubernetes" in confirm_summary
+        assert "Failed to add keywords: Python" in confirm_summary
+        assert "Missing keywords: python" in confirm_summary
+        assert "Observed keywords: kubernetes" in confirm_summary
+
+
+class TestCreateSearchToConfirmSearchRouting:
+    """REGRESSION TESTS: create_search->confirm_search routing with missing workbook."""
+
+    def test_routes_to_confirm_search_when_workbook_missing(self, tmp_path):
+        """Missing workbook should not block valid post-create_search handoff to confirm_search."""
+        project_dir = tmp_path / "projects" / "test_project"
+        project_dir.mkdir(parents=True)
+        config_file = project_dir / "config.sh"
+        config_file.write_text('PROJECT_ID="test_project"\n')
+
+        # NO workbook created - extraction hasn't run yet
+
+        from project_state import save_project_state, create_initial_state
+
+        state = create_initial_state(
+            "test_project", current_phase="create_search", status="completed"
+        )
+        save_project_state(project_dir, state)
+
+        result = status.get_status("test_project", tmp_path)
+
+        # Should route to confirm_search even without workbook
+        assert result["next_phase"] == "confirm_search"
+        assert result["ready"] is True
+        assert "confirm filters" in result["message"].lower()
+        assert "error" not in result["workbook_summary"], "Workbook summary should be normalized for confirm_search handoff"
+
+    def test_blocks_on_missing_workbook_for_other_phases(self, tmp_path):
+        """Missing workbook should still block phases other than create_search->confirm_search."""
+        project_dir = tmp_path / "projects" / "test_project"
+        project_dir.mkdir(parents=True)
+        config_file = project_dir / "config.sh"
+        config_file.write_text('PROJECT_ID="test_project"\n')
+
+        # NO workbook created
+
+        from project_state import save_project_state, create_initial_state
+
+        state = create_initial_state(
+            "test_project", current_phase="extract", status="completed"
+        )
+        save_project_state(project_dir, state)
+
+        result = status.get_status("test_project", tmp_path)
+
+        # Should block with workbook error for extract phase
+        assert result["next_phase"] is None
+        assert result["ready"] is False
+        assert "Workbook unreadable" in result["message"]
+
+    def test_structured_confirm_search_summary_keeps_issue_and_error_details(self, tmp_path):
+        """Structured confirm-search summary should keep operator-facing issue details."""
+        project_dir = tmp_path / "projects" / "test_project"
+        project_dir.mkdir(parents=True)
+        config_file = project_dir / "config.sh"
+        config_file.write_text('PROJECT_ID="test_project"\n')
+
+        from excel_utils import create
+        workbook_path = project_dir / "workbook.xlsx"
+        create(str(workbook_path))
+
+        from project_state import save_project_state, create_initial_state
+
+        state = create_initial_state(
+            "test_project", current_phase="create_search", status="completed"
+        )
+        state["create_search_summary"] = {
+            "filter_analysis": {
+                "issues": ["Missing expected companies: meta"],
+                "missing_companies": ["meta"],
+                "observed_companies": ["google"],
+            },
+            "reconciliation": {
+                "attempted": True,
+                "companies_failed": ["meta"],
+                "titles_failed": ["BadTitle"],
+                "errors": ["Could not open Companies filter"],
+            },
+        }
+        save_project_state(project_dir, state)
+
+        result = status.get_status("test_project", tmp_path)
+
+        entries = result.get("confirm_search_entries") or []
+        assert ("info", "Issues: 1") in entries
+        assert ("warning", "Missing expected companies: meta") in entries
+        assert ("warning", "Failed to remove titles: BadTitle") in entries
+        assert ("warning", "Reconciliation errors: Could not open Companies filter") in entries
+
+
 class TestGetStatus:
     """Tests for get_status function."""
 
@@ -568,6 +931,43 @@ class TestGetStatus:
         assert result.get("next_command") is not None
         assert result["next_command"] == result["loop_command"]
         assert "run_reachout_loop.py" in result["next_command"]
+
+    def test_blocks_draft_when_project_messaging_is_unresolved(self, tmp_path):
+        """Draft should be blocked until project-level messaging placeholders are resolved."""
+        project_dir = tmp_path / "projects" / "test_project"
+        project_dir.mkdir(parents=True)
+        config_file = project_dir / "config.sh"
+        config_file.write_text(
+            'PROJECT_ID="test_project"\nCORE_FUNCTION="[CORE FUNCTION - PLEASE UPDATE]"\nBUSINESS_IMPACT="[BUSINESS IMPACT - PLEASE UPDATE]"\n'
+        )
+
+        workbook_path = project_dir / "workbook.xlsx"
+        from excel_utils import create, append
+
+        create(str(workbook_path))
+        append(
+            str(workbook_path),
+            {"name": "John", "next_action": "draft", "status": "Enriched"},
+        )
+
+        from project_state import save_project_state, create_initial_state
+
+        state = create_initial_state(
+            "test_project", current_phase="enrich", status="completed"
+        )
+        save_project_state(project_dir, state)
+
+        result = status.get_status("test_project", tmp_path)
+
+        assert result["next_phase"] is None
+        assert result["ready"] is False
+        assert result["action_required"] is not None
+        assert result["action_required"]["code"] == "project_messaging_incomplete"
+        assert result["unresolved_project_messaging_fields"] == [
+            "CORE_FUNCTION",
+            "BUSINESS_IMPACT",
+        ]
+        assert "before drafting" in result["message"].lower()
 
 
 class TestStatusIntegration:

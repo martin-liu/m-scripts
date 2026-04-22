@@ -162,6 +162,24 @@ class TestCheckStopConditions:
         assert "failed" in reason.lower()
         assert exit_code == 1
 
+    def test_retries_failed_phase_when_flag_is_set(self):
+        """Should continue when retry_failed is enabled."""
+        status_result = {
+            "action_required": None,
+            "next_phase": "create_search",
+            "current_phase": "create_search",
+            "status": "failed",
+        }
+
+        should_stop, reason, exit_code = loop.check_stop_conditions(
+            status_result,
+            retry_failed=True,
+        )
+
+        assert should_stop is False
+        assert "retrying failed phase" in reason.lower()
+        assert exit_code == 0
+
     def test_stops_when_phase_running(self):
         """Should stop when current phase is running."""
         status_result = {
@@ -239,6 +257,56 @@ class TestCheckStopConditions:
 
             assert should_stop is False, f"Should continue for phase {phase}"
             assert phase in reason.lower()
+
+    def test_stops_at_confirm_search_boundary(self):
+        """Should stop at confirm_search boundary for human filter verification."""
+        status_result = {
+            "action_required": None,
+            "next_phase": "confirm_search",
+            "current_phase": "create_search",
+            "status": "completed",
+        }
+
+        should_stop, reason, exit_code = loop.check_stop_conditions(status_result)
+
+        assert should_stop is True
+        assert "confirm_search" in reason.lower()
+        assert "verify" in reason.lower() or "filter" in reason.lower()
+        assert exit_code == 0
+
+    def test_continues_at_confirm_search_boundary_with_confirm_flag(self):
+        """Should continue past confirm_search boundary when --confirm-search flag is used."""
+        status_result = {
+            "action_required": None,
+            "next_phase": "confirm_search",
+            "current_phase": "create_search",
+            "status": "completed",
+        }
+
+        should_stop, reason, exit_code = loop.check_stop_conditions(
+            status_result, confirm_search=True
+        )
+
+        assert should_stop is False
+        assert "confirm_search" in reason.lower()
+        assert exit_code == 0
+
+    def test_confirm_search_flag_does_not_affect_other_boundaries(self):
+        """--confirm-search flag should only affect confirm_search boundary."""
+        # Should still stop at send boundary without --confirm-send
+        status_result = {
+            "action_required": None,
+            "next_phase": "send",
+            "current_phase": "review",
+            "status": "completed",
+        }
+
+        should_stop, reason, exit_code = loop.check_stop_conditions(
+            status_result, confirm_search=True, confirm_send=False
+        )
+
+        assert should_stop is True
+        assert "send" in reason.lower()
 
 
 class TestClassifyPhaseResult:
@@ -329,6 +397,75 @@ class TestClassifyPhaseResult:
         assert exit_code == 2
 
 
+class TestFormatStopGuidance:
+    """Tests for format_stop_guidance function."""
+
+    def test_confirm_search_guidance_includes_filter_summary(self):
+        """Confirm search guidance should include filter analysis summary if available."""
+        status_result = {
+            "next_phase": "confirm_search",
+            "loop_command": "python3 run_reachout_loop.py --project test",
+            "confirm_search_summary": "Recruiter search verified; Issue: Missing companies: amazon; Issue: Malformed titles: EngineerManager",
+        }
+
+        guidance = loop.format_stop_guidance(status_result, "Stopped at boundary", 0)
+
+        assert "--confirm-search" in guidance
+        assert "Missing companies: amazon" in guidance
+        assert "Malformed titles: EngineerManager" in guidance
+
+    def test_confirm_search_guidance_without_filter_summary(self):
+        """Confirm search guidance should work even without filter summary."""
+        status_result = {
+            "next_phase": "confirm_search",
+            "loop_command": "python3 run_reachout_loop.py --project test",
+        }
+
+        guidance = loop.format_stop_guidance(status_result, "Stopped at boundary", 0)
+
+        assert "--confirm-search" in guidance
+        assert "Verify search filters" in guidance
+
+    def test_confirm_search_guidance_emphasizes_user_confirmation(self):
+        """Confirm search guidance must emphasize USER confirmation, not agent self-approval."""
+        status_result = {
+            "next_phase": "confirm_search",
+            "loop_command": "python3 run_reachout_loop.py --project test",
+            "confirm_search_summary": "Recruiter search verified; Auto-added companies: Amazon; Missing companies: netflix",
+        }
+
+        guidance = loop.format_stop_guidance(status_result, "Stopped at boundary", 0)
+
+        # Should emphasize USER confirmation
+        assert "USER" in guidance
+        assert "USER CONFIRMATION REQUIRED" in guidance
+        assert "USER must review" in guidance or "USER has verified" in guidance
+        # Should warn about using --confirm-search only after user verification
+        assert "Only use --confirm-search after the USER has verified" in guidance
+
+    def test_confirm_search_guidance_shows_reconciliation_results(self):
+        """Confirm search guidance should show auto-added companies and failed additions."""
+        status_result = {
+            "next_phase": "confirm_search",
+            "loop_command": "python3 run_reachout_loop.py --project test",
+            "confirm_search_summary": (
+                "Recruiter search verified; "
+                "Auto-added companies: Amazon, Meta; "
+                "Failed to add companies: Netflix; "
+                "Auto-removed malformed titles: EngineerManager"
+            ),
+        }
+
+        guidance = loop.format_stop_guidance(status_result, "Stopped at boundary", 0)
+
+        # Should show reconciliation results
+        assert "Auto-added companies:" in guidance
+        assert "Failed to add companies:" in guidance
+        assert "Auto-removed malformed titles:" in guidance
+        # Should indicate user must handle failed additions
+        assert "USER must add these manually" in guidance
+
+
 class TestRunLoopIteration:
     """Tests for run_loop_iteration function."""
 
@@ -379,6 +516,35 @@ class TestRunLoopIteration:
 
                 mock_run.assert_called_once_with(
                     "test_project", "filter", dry_run=False
+                )
+                assert should_continue is True
+                assert exit_code == 0
+
+    def test_runs_failed_phase_when_retry_flag_is_set(self):
+        """Retry flag should let the loop rerun the failed phase."""
+        with patch.object(loop, "load_status") as mock_load:
+            with patch.object(loop, "run_single_phase") as mock_run:
+                mock_load.return_value = {
+                    "current_phase": "create_search",
+                    "status": "failed",
+                    "next_phase": "create_search",
+                    "action_required": None,
+                    "workbook_summary": {"total_rows": 0, "by_next_action": {}},
+                }
+                mock_run.return_value = {
+                    "success": True,
+                    "phase": "create_search",
+                }
+
+                should_continue, message, exit_code = loop.run_loop_iteration(
+                    "test_project",
+                    confirm_send=False,
+                    dry_run=False,
+                    retry_failed=True,
+                )
+
+                mock_run.assert_called_once_with(
+                    "test_project", "create_search", dry_run=False
                 )
                 assert should_continue is True
                 assert exit_code == 0

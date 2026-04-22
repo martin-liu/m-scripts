@@ -317,6 +317,7 @@ import auth_bootstrap
 from runtime_manager import RuntimeManager
 
 CONNECT_BROWSER_SCRIPT = Path(__file__).resolve().with_name("connect_browser.sh")
+AUTO_ACCEPTABLE_DIALOG_TYPES = {"alert"}
 
 # Agent-oriented guidance with runnable bash command for automatic auth bootstrap
 CONNECT_BROWSER_GUIDANCE = (
@@ -684,7 +685,10 @@ def check_browser_available(mode: BrowserMode) -> bool:
     return False
 
 
-def check_dialog_status(mode: BrowserMode | str) -> dict[str, Any]:
+def check_dialog_status(
+    mode: BrowserMode | str,
+    skip_availability_check: bool = False,
+) -> dict[str, Any]:
     """Check if a browser dialog/alert is currently open.
 
     Args:
@@ -700,8 +704,9 @@ def check_dialog_status(mode: BrowserMode | str) -> dict[str, Any]:
     # Normalize string cdp_port to BrowserMode for backward compatibility
     if isinstance(mode, str):
         mode = BrowserMode(mode="cdp", cdp_port=mode)
-    # Fail closed if browser is not available
-    if not check_browser_available(mode):
+    # Fail closed if browser is not available, unless we're explicitly probing
+    # after a timeout where a blocking dialog may itself prevent normal checks.
+    if not skip_availability_check and not check_browser_available(mode):
         return {
             "has_dialog": False,
             "dialog_type": None,
@@ -791,11 +796,71 @@ def check_dialog_status(mode: BrowserMode | str) -> dict[str, Any]:
         }
 
 
+def attempt_timeout_dialog_recovery(
+    mode: BrowserMode | str,
+    auto_accept_dialog_types: set[str] | None = None,
+) -> dict[str, Any]:
+    """Check for a blocking dialog after timeout and auto-accept safe alerts.
+
+    Returns structured metadata describing whether a dialog was found, whether
+    auto-accept was attempted, and whether recovery appears to have succeeded.
+    """
+    # Normalize string cdp_port to BrowserMode for backward compatibility
+    if isinstance(mode, str):
+        mode = BrowserMode(mode="cdp", cdp_port=mode)
+
+    dialog_info = check_dialog_status(mode, skip_availability_check=True)
+    recovery = {
+        "dialog_info": dialog_info,
+        "detected_dialog_info": dialog_info,
+        "post_recovery_dialog_info": None,
+        "attempted_auto_accept": False,
+        "auto_accept_succeeded": False,
+        "recovered": False,
+        "error": dialog_info.get("error"),
+    }
+
+    if not dialog_info.get("has_dialog"):
+        return recovery
+
+    allowed_types = auto_accept_dialog_types or AUTO_ACCEPTABLE_DIALOG_TYPES
+    dialog_type = (dialog_info.get("dialog_type") or "").lower()
+    if dialog_type not in allowed_types:
+        return recovery
+
+    recovery["attempted_auto_accept"] = True
+    cmd = ["agent-browser"] + mode.build_agent_browser_args() + ["dialog", "accept"]
+
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+    except subprocess.TimeoutExpired:
+        recovery["error"] = "Dialog accept timed out"
+        return recovery
+    except FileNotFoundError:
+        recovery["error"] = "agent-browser not found"
+        return recovery
+    except Exception as e:
+        recovery["error"] = f"Dialog accept failed: {e}"
+        return recovery
+
+    if result.returncode != 0:
+        recovery["error"] = result.stderr or "dialog accept command failed"
+        return recovery
+
+    recovery["auto_accept_succeeded"] = True
+    post_dialog_info = check_dialog_status(mode, skip_availability_check=True)
+    recovery["post_recovery_dialog_info"] = post_dialog_info
+    recovery["recovered"] = not post_dialog_info.get("has_dialog", False)
+    recovery["error"] = post_dialog_info.get("error")
+    return recovery
+
+
 def run_browser_command(
     mode: BrowserMode | str,
     *args: str,
     timeout: float = 30.0,
     check_dialog_on_timeout: bool = True,
+    retry_after_alert_recovery: bool = False,
 ) -> dict[str, Any]:
     """Run an agent-browser command with timeout and optional dialog detection.
 
@@ -820,6 +885,7 @@ def run_browser_command(
         - parsed: Any - parsed JSON output if valid JSON, else None
         - error: str | None - error message if command failed
         - dialog_info: dict | None - dialog status if timeout occurred and checked
+        - dialog_recovery: dict | None - dialog recovery metadata after timeout
         - timed_out: bool - whether the command timed out
     """
     # Normalize string cdp_port to BrowserMode for backward compatibility
@@ -853,14 +919,33 @@ def run_browser_command(
             if result.returncode == 0
             else (result.stderr or "Command failed"),
             "dialog_info": None,
+            "dialog_recovery": None,
             "timed_out": False,
         }
 
     except subprocess.TimeoutExpired as e:
         # Command timed out - check for blocking dialog if enabled
         dialog_info = None
+        dialog_recovery = None
         if check_dialog_on_timeout:
-            dialog_info = check_dialog_status(mode)
+            dialog_recovery = attempt_timeout_dialog_recovery(mode)
+            dialog_info = dialog_recovery.get("dialog_info")
+
+        if (
+            retry_after_alert_recovery
+            and dialog_recovery
+            and dialog_recovery.get("recovered")
+        ):
+            retry_result = run_browser_command(
+                mode,
+                *args,
+                timeout=timeout,
+                check_dialog_on_timeout=False,
+                retry_after_alert_recovery=False,
+            )
+            retry_result["dialog_recovery"] = dialog_recovery
+            retry_result["dialog_info"] = dialog_recovery.get("detected_dialog_info")
+            return retry_result
 
         error_msg = f"Command timed out after {timeout}s"
         if dialog_info and dialog_info.get("has_dialog"):
@@ -870,6 +955,10 @@ def run_browser_command(
                 f"; blocking {dialog_type} dialog detected"
                 f"{f': {dialog_msg}' if dialog_msg else ''}"
             )
+            if dialog_recovery and dialog_recovery.get("auto_accept_succeeded"):
+                error_msg += "; auto-accepted it"
+        elif dialog_recovery and dialog_recovery.get("auto_accept_succeeded"):
+            error_msg += "; auto-accepted blocking alert dialog"
         elif dialog_info and dialog_info.get("error"):
             # Dialog check itself failed - mention this
             error_msg += f"; dialog status check failed: {dialog_info['error']}"
@@ -881,6 +970,7 @@ def run_browser_command(
             "parsed": None,
             "error": error_msg,
             "dialog_info": dialog_info,
+            "dialog_recovery": dialog_recovery,
             "timed_out": True,
         }
 
@@ -892,6 +982,7 @@ def run_browser_command(
             "parsed": None,
             "error": "agent-browser not found in PATH",
             "dialog_info": None,
+            "dialog_recovery": None,
             "timed_out": False,
         }
 
@@ -903,8 +994,29 @@ def run_browser_command(
             "parsed": None,
             "error": f"Unexpected error: {e}",
             "dialog_info": None,
+            "dialog_recovery": None,
             "timed_out": False,
         }
+
+
+def run_browser_probe(
+    mode: BrowserMode | str,
+    *args: str,
+    timeout: float = 30.0,
+    check_dialog_on_timeout: bool = True,
+) -> dict[str, Any]:
+    """Run a read-only/idempotent browser command with alert recovery retry.
+
+    Use this helper only for browser reads like URL probes, snapshots, and state
+    inspection where retrying once after clearing a blocking alert is safe.
+    """
+    return run_browser_command(
+        mode,
+        *args,
+        timeout=timeout,
+        check_dialog_on_timeout=check_dialog_on_timeout,
+        retry_after_alert_recovery=True,
+    )
 
 
 def format_timeout_error(

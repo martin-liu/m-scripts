@@ -52,6 +52,11 @@ from recruiter_url_utils import (
 )
 
 
+def run_browser_probe(*args: Any, **kwargs: Any) -> dict[str, Any]:
+    """Run a read-only browser probe with alert recovery retry enabled."""
+    return run_browser_command(*args, **kwargs, retry_after_alert_recovery=True)
+
+
 def _copy_action_required_fields(
     result: dict[str, Any],
     source: dict[str, Any] | None,
@@ -604,10 +609,14 @@ def check_current_page_ready_for_extraction(
             - state: str - page state classification
     """
     from recruiter_page_utils import PageStateProbe
-    from browser_utils import run_browser_command, safe_get_parsed
+    from browser_utils import run_browser_probe as shared_run_browser_probe, safe_get_parsed
 
     # Get current URL
-    result = run_browser_command(cdp_port, "eval", "({ url: window.location.href })")
+    result = shared_run_browser_probe(
+        cdp_port,
+        "eval",
+        "({ url: window.location.href })",
+    )
     # Use safe_get_parsed to avoid AttributeError when parsed is None or not a dict
     current_url = safe_get_parsed(result, default={}).get("url", "")
 
@@ -831,7 +840,7 @@ def resolve_fresh_search_context(
             elapsed = time.time() - start_time
 
             # Check if context has appeared on current page
-            result = run_browser_command(
+            result = run_browser_probe(
                 cdp_port, "eval", "({ url: window.location.href })"
             )
             # Use safe_get_parsed to avoid AttributeError when parsed is None
@@ -1275,7 +1284,7 @@ def click_next_page_pagination(
 
     if not parsed.get("clicked"):
         pagination_state = safe_get_parsed(
-            run_browser_command(cdp_port, "eval", pagination_state_js),
+            run_browser_probe(cdp_port, "eval", pagination_state_js),
             default={},
         )
         if pagination_state.get("isLastPage"):
@@ -1308,7 +1317,7 @@ def click_next_page_pagination(
     start_time = time.time()
 
     while time.time() - start_time < max_wait_seconds:
-        url_result = run_browser_command(
+        url_result = run_browser_probe(
             cdp_port, "eval", "({ url: window.location.href })"
         )
         url_parsed = safe_get_parsed(url_result, default={})
@@ -1344,7 +1353,7 @@ def click_next_page_pagination(
 
     if expected_start_param and current_url == previous_url:
         pagination_state = safe_get_parsed(
-            run_browser_command(cdp_port, "eval", pagination_state_js),
+            run_browser_probe(cdp_port, "eval", pagination_state_js),
             default={},
         )
         if pagination_state.get("isLastPage"):
@@ -1506,7 +1515,7 @@ def get_current_page_from_browser(cdp_port: str, project_id: str) -> dict[str, A
 
     from browser_utils import safe_get_parsed, FailureCode, ActionRequired
 
-    result = run_browser_command(cdp_port, "eval", "({ url: window.location.href })")
+    result = run_browser_probe(cdp_port, "eval", "({ url: window.location.href })")
     if result.get("error"):
         return _err_result(
             error=f"Failed to read current URL from browser: {result['error']}",
@@ -2356,6 +2365,7 @@ def run_extraction(args: argparse.Namespace) -> dict[str, Any]:
     pages_processed_count = 0
     total_stats = {"total": 0, "new": 0, "updated": 0, "skipped": 0}
     max_pages_reached = False
+    reached_end_of_results = False  # Track clean completion
 
     print(f"Starting extraction from page {current_page}")
     print(f"Target URL: {target_url}")
@@ -2405,6 +2415,7 @@ def run_extraction(args: argparse.Namespace) -> dict[str, Any]:
                     print(
                         f"  Reached last page after page {current_page - 1}. Extraction complete."
                     )
+                    reached_end_of_results = True
                     break
 
                 if not nav_result["success"]:
@@ -2450,6 +2461,7 @@ def run_extraction(args: argparse.Namespace) -> dict[str, Any]:
                 exit_code = extraction_result.get("exit_code", 1)
                 if exit_code == 2:  # No results - this is expected on final page
                     print(f"No results on page {current_page}. Extraction complete.")
+                    reached_end_of_results = True
                     break
                 else:
                     state_saved = _persist_state(
@@ -2478,6 +2490,7 @@ def run_extraction(args: argparse.Namespace) -> dict[str, Any]:
                 print(
                     f"No candidates found on page {current_page}. Extraction complete."
                 )
+                reached_end_of_results = True
                 break
 
             print(f"  Extracted {len(candidates)} candidates")
@@ -2559,7 +2572,6 @@ def run_extraction(args: argparse.Namespace) -> dict[str, Any]:
     bounded_extraction_complete = (
         args.max_pages > 0 and pages_processed_count >= args.max_pages
     )
-    reached_end_of_results = not max_pages_reached
 
     if bounded_extraction_complete:
         # Resume state stays running/resumable; project state shows clean completion

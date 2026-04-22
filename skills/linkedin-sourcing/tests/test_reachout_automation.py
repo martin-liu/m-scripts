@@ -759,6 +759,64 @@ class TestFallbackPersonalization:
         assert "PyTorch" in body
 
 
+class TestWorkbookHeaderAlignment:
+    """Tests for workbook writes when legacy extra columns are present."""
+
+    def test_update_row_respects_legacy_approved_column(self, tmp_path):
+        headers = [
+            "row_id",
+            "name",
+            "company",
+            "title",
+            "profile_url",
+            "est_yoe",
+            "highest_degree",
+            "school",
+            "status",
+            "next_action",
+            "draft_subject",
+            "draft_body",
+            "date_sent",
+            "attempts",
+            "last_contact",
+            "reply_type",
+            "reply_summary",
+            "approved",
+            "notes",
+            "headline",
+            "location",
+            "enrichment_notes",
+            "enriched_at",
+        ]
+        wb_path = tmp_path / "legacy-approved.xlsx"
+        wb = ra.get_openpyxl().Workbook()
+        ws = wb.active
+        ws.title = "Candidates"
+        ws.append(headers)
+        ws.append([1, "Jane"] + [None] * (len(headers) - 2))
+        wb.save(wb_path)
+
+        wb = ra.load_workbook(wb_path, migrate_schema=False)
+        assert ra.update_row(
+            wb,
+            1,
+            {
+                "notes": "Updated notes",
+                "headline": "Updated headline",
+                "location": "Remote",
+            },
+        )
+
+        ws = wb["Candidates"]
+        row = [cell.value for cell in ws[2]]
+        values = dict(zip(headers, row, strict=False))
+
+        assert values["approved"] is None
+        assert values["notes"] == "Updated notes"
+        assert values["headline"] == "Updated headline"
+        assert values["location"] == "Remote"
+
+
 class TestIntegrationWithExcel:
     """Integration tests using actual Excel files."""
 
@@ -823,6 +881,11 @@ class TestIntegrationWithExcel:
         assert result["kept"] == 1
         assert result["filtered"] == 3
         assert result["target_phase"] == "enrich"
+        assert result["exclude_titles"] == ["Manager", "Director", "VP"]
+        assert len(result["filtered_details"]) == 3
+
+        jane_detail = next(d for d in result["filtered_details"] if d["name"] == "Jane")
+        assert jane_detail["matched_exclusion_rules"] == ["Manager"]
 
         wb = ra.load_workbook(wb_path)
         updated_rows = ra.read_all_rows(wb)
@@ -1086,6 +1149,32 @@ Team""")
         assert jane_row["next_action"] == "draft"
         assert john_row["status"] == "Drafted"
         assert john_row["next_action"] == "review"
+
+    def test_draft_rejects_placeholder_config_values(self, tmp_path):
+        """Draft command should fail fast when critical config fields are placeholders."""
+        template_file = tmp_path / "template.txt"
+        template_file.write_text("Subject: Test\n\nBody for {FirstName}")
+
+        config_file = tmp_path / "config.sh"
+        config_file.write_text(
+            'POSITION_TITLE="Engineer"\nTEAM_NAME="AI"\nLOCATION="SF"\nCORE_FUNCTION="[CORE FUNCTION - PLEASE UPDATE]"\nBUSINESS_IMPACT="[BUSINESS IMPACT - PLEASE UPDATE]"\nUSER_EMAIL="test@test.com"'
+        )
+
+        rows = [
+            {
+                "name": "Jane",
+                "title": "Engineer",
+                "company": "Meta",
+                "status": "Extracted",
+                "next_action": "draft",
+            },
+        ]
+
+        wb_path = self.create_test_workbook(tmp_path, rows)
+        result = ra.cmd_draft(wb_path, str(config_file), str(template_file))
+
+        assert result["drafted"] == 0
+        assert "placeholder values" in result["error"]
 
     def test_approve_command(self, tmp_path):
         """Test the approve command updates drafted rows."""

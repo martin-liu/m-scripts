@@ -65,6 +65,9 @@ class TestRunFilter:
         assert result["kept"] == 1
         assert result["filtered"] == 2
         assert result["target_phase"] == "enrich"
+        assert result["exclude_titles"] == ["Manager", "Director"]
+        assert len(result["filtered_details"]) == 2
+        assert result["filtered_details"][0]["matched_exclusion_rules"]
 
     def test_routes_to_draft_when_no_enrichment(self, tmp_path):
         """Should route to draft when use_enrichment=False."""
@@ -146,6 +149,7 @@ class TestRunFilter:
         updated_state = load_project_state(tmp_path)
         assert updated_state["current_phase"] == "filter"
         assert updated_state["status"] == "completed"
+        assert "Rules:" in (updated_state["last_result_summary"] or "")
 
     def test_updates_project_state_on_failure(self, tmp_path):
         """Should update project state after failed filter."""

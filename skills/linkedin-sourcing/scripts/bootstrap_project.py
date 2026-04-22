@@ -600,27 +600,8 @@ def extract_tiktok_metadata(html: str) -> dict[str, str]:
         if impact_match:
             metadata["business_impact"] = normalize_text(impact_match.group(1))
 
-    keyword_patterns = [
-        (r"verilog|systemverilog", ["Verilog", "SystemVerilog"]),
-        (r"\bsoc\b", ["SoC Design"]),
-        (r"rtl", ["RTL Design"]),
-        (r"fpga|asic", ["FPGA", "ASIC"]),
-        (r"video codec|encoding|codec", ["Video Codec"]),
-        (r"clock domain crossing|\bcdc\b", ["CDC"]),
-        (r"reset domain crossing|\brdc\b", ["RDC"]),
-        (r"low-power|power gating|clock gating|\bupf\b", ["Low Power Design"]),
-        (r"npu|ai hardware acceleration", ["AI Hardware Acceleration"]),
-        (
-            r"synthesis|design compiler|primetime|sta",
-            ["Synthesis", "Static Timing Analysis"],
-        ),
-    ]
-    keywords = []
-    for pattern, values in keyword_patterns:
-        if re.search(pattern, html_text, re.IGNORECASE):
-            for value in values:
-                if value not in keywords:
-                    keywords.append(value)
+    # Use shared keyword extraction for consistent results
+    keywords = extract_keywords_from_text(html_text)
     metadata["keywords"] = ", ".join(keywords)
 
     # Extract description (first substantial paragraph)
@@ -643,6 +624,95 @@ def extract_tiktok_metadata(html: str) -> dict[str, str]:
                 break
 
     return metadata
+
+
+# Shared keyword rule table for conservative keyword extraction
+# Each rule: (pattern, [keywords_to_add])
+# Patterns are matched case-insensitively with word boundaries where appropriate
+KEYWORD_RULES: list[tuple[str, list[str]]] = [
+    # Programming languages
+    (r"\bpython\b", ["Python"]),
+    (r"\bjava\b", ["Java"]),
+    (r"\bgolang\b|\bgo\b(?=\s+(developer|engineer|programming|language|backend|services?|microservices?))", ["Go"]),
+    (r"\brust\b", ["Rust"]),
+    (r"\bc\+\+|\bcpp\b", ["C++"]),
+    (r"\bjavascript\b|\bjs\b", ["JavaScript"]),
+    (r"\btypescript\b|\bts\b", ["TypeScript"]),
+
+    # ML/AI frameworks
+    (r"\bpytorch\b", ["PyTorch", "Deep Learning"]),
+    (r"\btensorflow\b|\btf\b", ["TensorFlow", "Keras"]),
+    (r"\bkeras\b", ["Keras"]),
+    (r"\bneural\b|\bdeep learning\b", ["Deep Learning", "Neural Networks"]),
+    (r"\bcuda\b", ["CUDA", "GPU Optimization"]),
+    (r"\bgpu\b", ["GPU Optimization"]),
+    (r"\bkernel\b", ["Kernel Development"]),
+    (r"\bdistributed\b|\blarge[- ]?scale\b", ["Distributed Training", "Large-Scale Systems"]),
+    (r"\bmachine learning\b|\bml\b", ["Machine Learning", "ML Systems"]),
+
+    # Infrastructure/DevOps
+    (r"\bkubernetes\b|\bk8s\b", ["Kubernetes", "Container Orchestration"]),
+    (r"\bdocker\b", ["Docker", "Containerization"]),
+    (r"\bterraform\b", ["Terraform", "Infrastructure as Code"]),
+    (r"\baws\b|\bamazon web services\b", ["AWS", "Cloud Infrastructure"]),
+    (r"\bgcp\b|\bgoogle cloud\b", ["GCP", "Cloud Infrastructure"]),
+    (r"\bazure\b", ["Azure", "Cloud Infrastructure"]),
+    (r"\bcdn\b", ["CDN", "Content Delivery"]),
+    (r"\binfrastructure\b|\bplatform\b", ["Infrastructure", "Platform Engineering"]),
+    (r"\bdistributed systems\b", ["Distributed Systems"]),
+    (r"\bcloud infrastructure\b", ["Cloud Infrastructure"]),
+    (r"\btraffic management\b", ["Traffic Management"]),
+    (r"\bload balancing\b", ["Load Balancing"]),
+    (r"\bedge computing\b", ["Edge Computing"]),
+
+    # Hardware/Embedded
+    (r"\bverilog\b|\bsystemverilog\b", ["Verilog", "SystemVerilog"]),
+    (r"\bsoc\b", ["SoC Design"]),
+    (r"\brtl\b", ["RTL Design"]),
+    (r"\bfpga\b", ["FPGA"]),
+    (r"\basic\b", ["ASIC"]),
+    (r"\bvideo codec\b|\bencoding\b", ["Video Codec"]),
+    (r"\bcdc\b|\bclock domain crossing\b", ["CDC"]),
+    (r"\brdc\b|\breset domain crossing\b", ["RDC"]),
+    (r"\blow[- ]?power\b|\bpower gating\b|\bclock gating\b", ["Low Power Design"]),
+    (r"\bnpu\b|\bai hardware\b", ["AI Hardware Acceleration"]),
+    (r"\bsynthesis\b|\bsta\b|\bstatic timing\b", ["Synthesis", "Static Timing Analysis"]),
+]
+
+
+def extract_keywords_from_text(text: str, jd_text: str | None = None) -> list[str]:
+    """Extract keywords from text using shared rule table.
+
+    Applies conservative keyword rules with whole-word matching.
+    Results are deduplicated while preserving order of first match.
+
+    Args:
+        text: Primary text to search (e.g., position title, HTML content)
+        jd_text: Optional additional JD text for fallback inference
+
+    Returns:
+        List of extracted keywords in order of first match
+    """
+    if not text:
+        text = ""
+
+    # Combine text sources if jd_text provided
+    search_text = text
+    if jd_text:
+        search_text = f"{text} {jd_text}"
+
+    text_lower = search_text.lower()
+    keywords: list[str] = []
+    seen: set[str] = set()
+
+    for pattern, keywords_to_add in KEYWORD_RULES:
+        if re.search(pattern, text_lower, re.IGNORECASE):
+            for kw in keywords_to_add:
+                if kw.lower() not in seen:
+                    keywords.append(kw)
+                    seen.add(kw.lower())
+
+    return keywords
 
 
 def infer_team_name(position_title: str) -> str:
@@ -683,27 +753,20 @@ def infer_team_name(position_title: str) -> str:
     return "Engineering"
 
 
-def infer_keywords(position_title: str) -> str:
-    """Infer keywords from position title."""
-    if not position_title:
-        return ""
+def infer_keywords(position_title: str, jd_text: str | None = None) -> str:
+    """Infer keywords from position title and optional JD text.
 
-    title_lower = position_title.lower()
-    keywords = []
+    Uses the shared keyword rule table for conservative extraction.
+    Precedence: explicit title keywords > JD fallback keywords
 
-    if any(kw in title_lower for kw in ["pytorch", "deep learning", "neural"]):
-        keywords.extend(["PyTorch", "Deep Learning", "Neural Networks"])
-    if any(kw in title_lower for kw in ["tensorflow", "tf ", "keras"]):
-        keywords.extend(["TensorFlow", "Keras"])
-    if any(kw in title_lower for kw in ["cuda", "gpu", "kernel"]):
-        keywords.extend(["CUDA", "GPU Optimization", "Kernel Development"])
-    if any(kw in title_lower for kw in ["distributed", "training", "large scale"]):
-        keywords.extend(["Distributed Training", "Large-Scale Systems"])
-    if any(kw in title_lower for kw in ["infrastructure", "platform"]):
-        keywords.extend(["Infrastructure", "Platform Engineering"])
-    if any(kw in title_lower for kw in ["ml", "machine learning"]):
-        keywords.extend(["Machine Learning", "ML Systems"])
+    Args:
+        position_title: Position title to infer from
+        jd_text: Optional JD text for additional keyword inference
 
+    Returns:
+        Comma-separated string of inferred keywords
+    """
+    keywords = extract_keywords_from_text(position_title, jd_text)
     return ", ".join(keywords) if keywords else ""
 
 
@@ -715,19 +778,6 @@ def get_default_companies() -> str:
 def get_default_exclude_titles() -> str:
     """Return default excluded titles."""
     return "Manager, Director, VP, Head of, Product Manager, Data Scientist, QA Engineer, Recruiter, HR"
-
-
-def parse_existing_config(config_path: Path) -> dict[str, str]:
-    """Parse an existing config file to extract current values.
-
-    Args:
-        config_path: Path to existing config.sh file
-
-    Returns:
-        Dict of existing config key-value pairs
-    """
-    # Use shared implementation
-    return parse_config_file(config_path)
 
 
 def build_config(
@@ -754,6 +804,14 @@ def build_config(
         Complete configuration dict
     """
     existing = existing or {}
+    fallback_keyword_text = " ".join(
+        part for part in [
+            inferred.get("description", ""),
+            inferred.get("core_function", ""),
+            inferred.get("business_impact", ""),
+            inferred.get("team_name", ""),
+        ] if part
+    )
 
     # Helper to get value with proper precedence: override > existing > inferred > default
     def get_value(
@@ -812,7 +870,17 @@ def build_config(
             "BUSINESS_IMPACT",
             "[BUSINESS IMPACT - PLEASE UPDATE]",
         ),
-        "KEYWORDS": get_value("keywords", "keywords", "KEYWORDS", "", infer_keywords),
+        "KEYWORDS": (
+            overrides.get("keywords")
+            or (
+                existing.get("KEYWORDS", "")
+                if existing.get("KEYWORDS", "") and not existing.get("KEYWORDS", "").startswith("[")
+                else ""
+            )
+            or inferred.get("keywords", "")
+            or infer_keywords(inferred.get("position_title", ""), fallback_keyword_text)
+            or ""
+        ),
         "COMPANIES": overrides.get("companies")
         or existing.get("COMPANIES", "")
         or get_default_companies(),
@@ -1089,7 +1157,7 @@ def find_project_by_project_id(work_dir: Path, project_id: str) -> Path | None:
             continue
 
         try:
-            config = parse_existing_config(config_path)
+            config = parse_config_file(config_path)
             if config.get("PROJECT_ID") == project_id:
                 return project_dir
         except (OSError, IOError):
@@ -1124,7 +1192,7 @@ def find_projects_by_jd_url(work_dir: Path, jd_url: str) -> list[Path]:
             continue
 
         try:
-            config = parse_existing_config(config_path)
+            config = parse_config_file(config_path)
             if config.get("JD_URL") == jd_url:
                 matches.append(project_dir)
         except (OSError, IOError):
@@ -1318,7 +1386,7 @@ def resolve_project_reuse(
         project_id = "unknown"
         position_title = "unknown"
         try:
-            config = parse_existing_config(config_path)
+            config = parse_config_file(config_path)
             project_id = config.get("PROJECT_ID", "unknown")
             position_title = config.get("POSITION_TITLE", "unknown")
         except (OSError, IOError):
@@ -1448,7 +1516,7 @@ def bootstrap_project(args: argparse.Namespace) -> dict[str, Any]:
     if existing_project_dir:
         # Reusing existing project - read its PROJECT_ID and recruiter URL
         existing_config_path = existing_project_dir / "config.sh"
-        existing_config = parse_existing_config(existing_config_path)
+        existing_config = parse_config_file(existing_config_path)
         project_id = existing_config.get("PROJECT_ID")
         recruiter_url = existing_config.get("RECRUITER_PROJECT_URL")
         if recruiter_url:
@@ -1616,13 +1684,18 @@ def bootstrap_project(args: argparse.Namespace) -> dict[str, Any]:
     # Parse existing config when reusing a project to preserve curated values
     existing_config: dict[str, str] = {}
     if existing_config_path:
-        existing_config = parse_existing_config(existing_config_path)
+        existing_config = parse_config_file(existing_config_path)
 
     # Build and write config (preserving existing values when reusing)
     config = build_config(project_id, inferred, overrides, existing_config)
     config_path = project_dir / "config.sh"
     write_config(config, config_path)
     result["config_path"] = str(config_path)
+
+    from config_utils import get_unresolved_project_messaging_fields
+
+    unresolved_project_fields = get_unresolved_project_messaging_fields(config)
+    result["unresolved_project_messaging_fields"] = unresolved_project_fields
 
     # Create workbook in project directory (new canonical layout)
     # For legacy projects, also check for root-level workbook
@@ -1673,32 +1746,38 @@ def bootstrap_project(args: argparse.Namespace) -> dict[str, Any]:
         f"2. Review saved JD: {jd_path}",
     ]
 
+    if unresolved_project_fields:
+        next_steps.append(
+            "3. Finalize project messaging fields before drafting: "
+            f"{', '.join(unresolved_project_fields)}"
+        )
+
     if recruiter_url:
         if "discover/recruiterSearch" in recruiter_url:
             if search_ready_at_bootstrap:
                 next_steps.append(
-                    f"3. Recruiter search already shows candidates; continue from current state with: python3 {SCRIPT_DIR / 'status.py'} {project_id} --pretty"
+                    f"{len(next_steps) + 1}. Recruiter search already shows candidates; continue from current state with: python3 {SCRIPT_DIR / 'status.py'} {project_id} --pretty"
                 )
             else:
                 next_steps.append(
-                    "3. Open the Recruiter project search page and create/review the candidate search before extraction"
+                    f"{len(next_steps) + 1}. Open the Recruiter project search page and create/review the candidate search before extraction"
                 )
         else:
             next_steps.append(
-                "3. Recruiter project configured - run ensure_recruiter_project.py to get the project search page URL"
+                f"{len(next_steps) + 1}. Recruiter project configured - run ensure_recruiter_project.py to get the project search page URL"
             )
     else:
         next_steps.append(
-            "3. WARNING: No Recruiter URL configured - extraction will not work"
+            f"{len(next_steps) + 1}. WARNING: No Recruiter URL configured - extraction will not work"
         )
 
     next_steps.extend(
         [
-            f"4. Workbook ready at: {workbook_path}",
+            f"{len(next_steps) + 1}. Workbook ready at: {workbook_path}",
             (
-                f"5. Resume with the loop: python3 {SCRIPT_DIR / 'run_reachout_loop.py'} --project {project_id}"
+                f"{len(next_steps) + 2}. Resume with the loop: python3 {SCRIPT_DIR / 'run_reachout_loop.py'} --project {project_id}"
                 if search_ready_at_bootstrap
-                else "5. After the search shows candidates in Recruiter, run extraction: see SKILL.md for workflow"
+                else f"{len(next_steps) + 2}. After the search shows candidates in Recruiter, run extraction: see SKILL.md for workflow"
             ),
         ]
     )

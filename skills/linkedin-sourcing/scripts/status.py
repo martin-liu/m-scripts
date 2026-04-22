@@ -50,9 +50,108 @@ from phase_registry import (
     get_next_phase,
     get_phase_metadata,
 )
+from config_utils import (
+    get_unresolved_project_messaging_fields,
+    parse_config_file,
+)
 
 
-def get_loop_command(project_ref: str, confirm_send: bool = False) -> str:
+def build_confirm_search_entries(
+    structured_summary: dict[str, Any] | None = None,
+    legacy_summary: str | None = None,
+) -> list[tuple[str, str]]:
+    """Build normalized confirm-search summary entries for JSON and pretty output."""
+    if structured_summary:
+        entries: list[tuple[str, str]] = [
+            ("info", "Recruiter search verified with visible candidates")
+        ]
+        filter_analysis = structured_summary.get("filter_analysis") or {}
+        reconciliation = structured_summary.get("reconciliation") or {}
+
+        if reconciliation.get("companies_added"):
+            entries.append(
+                ("success", f"Auto-added companies: {', '.join(reconciliation['companies_added'][:5])}")
+            )
+        if reconciliation.get("companies_failed"):
+            entries.append(
+                ("warning", f"Failed to add companies: {', '.join(reconciliation['companies_failed'][:5])}")
+            )
+        if reconciliation.get("keywords_added"):
+            entries.append(
+                ("success", f"Auto-added keywords: {', '.join(reconciliation['keywords_added'][:5])}")
+            )
+        if reconciliation.get("keywords_failed"):
+            entries.append(
+                ("warning", f"Failed to add keywords: {', '.join(reconciliation['keywords_failed'][:5])}")
+            )
+        if reconciliation.get("titles_removed"):
+            entries.append(
+                ("success", f"Auto-removed malformed titles: {', '.join(reconciliation['titles_removed'][:3])}")
+            )
+        if reconciliation.get("titles_failed"):
+            entries.append(
+                ("warning", f"Failed to remove titles: {', '.join(reconciliation['titles_failed'][:3])}")
+            )
+        if reconciliation.get("errors"):
+            entries.append(
+                ("warning", f"Reconciliation errors: {', '.join(reconciliation['errors'][:3])}")
+            )
+        if filter_analysis.get("issues"):
+            issues = filter_analysis["issues"]
+            entries.append(("info", f"Issues: {len(issues)}"))
+            entries.extend(("warning", issue) for issue in issues)
+        if filter_analysis.get("missing_companies"):
+            entries.append(
+                ("warning", f"Missing companies: {', '.join(filter_analysis['missing_companies'][:5])}")
+            )
+        if filter_analysis.get("missing_keywords"):
+            entries.append(
+                ("warning", f"Missing keywords: {', '.join(filter_analysis['missing_keywords'][:5])}")
+            )
+        if filter_analysis.get("malformed_titles"):
+            entries.append(
+                ("warning", f"Malformed titles: {', '.join(filter_analysis['malformed_titles'][:3])}")
+            )
+        if filter_analysis.get("observed_companies"):
+            entries.append(
+                ("info", f"Observed companies: {', '.join(filter_analysis['observed_companies'][:5])}")
+            )
+        if filter_analysis.get("observed_keywords"):
+            entries.append(
+                ("info", f"Observed keywords: {', '.join(filter_analysis['observed_keywords'][:5])}")
+            )
+        return entries
+
+    if not legacy_summary:
+        return []
+
+    entries = []
+    for part in legacy_summary.split("; "):
+        text = part.strip()
+        if not text:
+            continue
+        if text.startswith(("Auto-added companies:", "Auto-added keywords:", "Auto-removed malformed titles:")):
+            entries.append(("success", text))
+        elif text.startswith("Issue:"):
+            entries.append(("warning", text[6:].strip()))
+        elif text.startswith(
+            (
+                "Failed to add companies:",
+                "Failed to add keywords:",
+                "Failed to remove titles:",
+                "Missing companies:",
+                "Missing keywords:",
+                "Malformed titles:",
+                "Reconciliation errors:",
+            )
+        ):
+            entries.append(("warning", text))
+        else:
+            entries.append(("info", text))
+    return entries
+
+
+def get_loop_command(project_ref: str, confirm_send: bool = False, confirm_search: bool = False) -> str:
     """Get the canonical loop command to resume workflow.
 
     The loop is the primary workflow driver. Always use this command
@@ -61,6 +160,7 @@ def get_loop_command(project_ref: str, confirm_send: bool = False) -> str:
     Args:
         project_ref: Project reference (ID, URL, or config path)
         confirm_send: Whether to include --confirm-send flag
+        confirm_search: Whether to include --confirm-search flag
 
     Returns:
         Command string to run the loop
@@ -68,6 +168,8 @@ def get_loop_command(project_ref: str, confirm_send: bool = False) -> str:
     script_path = shlex.quote(str(SCRIPT_DIR / "run_reachout_loop.py"))
     quoted_project_ref = shlex.quote(project_ref)
     base_cmd = f"python3 {script_path} --project {quoted_project_ref}"
+    if confirm_search:
+        return f"{base_cmd} --confirm-search"
     if confirm_send:
         return f"{base_cmd} --confirm-send"
     return base_cmd
@@ -114,12 +216,28 @@ def get_loop_resume_guidance(
         guidance["resolve_now"] = (
             "Open the Recruiter search page in Chrome and configure the candidate search using the provided search brief"
         )
+    elif code == "browser_unavailable":
+        # Specific guidance for browser_unavailable with recovery command if available
+        action_context = action_required.get("context", {})
+        recovery_cmd = action_context.get("recovery_command") if action_context else None
+        if recovery_cmd:
+            guidance["resolve_now"] = (
+                f"Chrome/CDP is not connected. Run: {recovery_cmd}"
+            )
+        else:
+            guidance["resolve_now"] = (
+                "Chrome/CDP is not connected. Run the connect_browser.sh script to establish connection"
+            )
     elif code in {"browser_manual_intervention", "browser_blocked"}:
         guidance["resolve_now"] = "Complete the browser task in Chrome"
     elif code == "auth_required":
         guidance["resolve_now"] = "Log in to LinkedIn Recruiter in the browser"
     elif code == "create_search_failed":
         guidance["resolve_now"] = "Fix the search configuration issue"
+    elif code == "project_messaging_incomplete":
+        fields = action_required.get("context", {}).get("fields", [])
+        field_list = ", ".join(fields) if fields else "project messaging fields"
+        guidance["resolve_now"] = f"Review and update {field_list} in config.sh before drafting"
     elif actor == "user":
         guidance["resolve_now"] = (
             "Resolve the blocker in the browser, then rerun the loop"
@@ -183,11 +301,18 @@ def determine_next_phase(
     Returns:
         Tuple of (next_phase, message, ready)
     """
-    # Block if workbook is unreadable - status must be authoritative
-    if workbook_summary.get("error"):
-        return None, f"Workbook unreadable: {workbook_summary['error']}", False
+    # Block if workbook is unreadable - but allow create_search->confirm_search handoff
+    # even when workbook is missing (extraction hasn't run yet)
+    workbook_error = workbook_summary.get("error")
+    if workbook_error:
+        # Allow create_search completed -> confirm_search even without workbook
+        if current_phase == "create_search" and phase_status == "completed":
+            pass  # Continue to confirm_search handoff below
+        else:
+            return None, f"Workbook unreadable: {workbook_error}", False
 
     by_action = workbook_summary.get("by_next_action", {})
+    total_rows = workbook_summary.get("total_rows", 0)
 
     # If there's an action_required field present, we're blocked regardless of status value
     # This handles cases like create_search persisting status='search_not_configured' with action_required
@@ -197,6 +322,13 @@ def determine_next_phase(
     # Bootstrap handoff: freshly bootstrapped projects should proceed to create_search
     if current_phase == "bootstrap" and phase_status == "completed":
         return "create_search", "Bootstrap complete; proceed to create_search", True
+
+    # create_search -> confirm_search handoff: when create_search completes and
+    # no workbook rows exist yet (extraction hasn't run), route to confirm_search
+    if current_phase == "create_search" and phase_status == "completed":
+        # Only skip confirm_search if we already have extracted rows
+        if total_rows == 0:
+            return "confirm_search", "Search created; confirm filters before extraction", True
 
     # If current phase failed, stay there
     if phase_status == "failed":
@@ -230,7 +362,6 @@ def determine_next_phase(
         return "send", f"{by_action['send']} rows ready to send", True
 
     # If all rows are done, we're at the end
-    total_rows = workbook_summary.get("total_rows", 0)
     done_count = by_action.get("done", 0)
     if total_rows > 0 and done_count == total_rows:
         return None, "All rows completed", True
@@ -310,6 +441,13 @@ def get_status(project_ref: str, work_dir: Path | None = None) -> dict[str, Any]
     result["status"] = state.get("status")
     result["workflow_mode"] = state.get("workflow_mode", "reachout")
     result["action_required"] = state.get("action_required")
+    result["last_result_summary"] = state.get("last_result_summary")
+    result["create_search_summary"] = state.get("create_search_summary")
+    result["unresolved_project_messaging_fields"] = []
+
+    config = parse_config_file(resolution["config_path"])
+    unresolved_project_fields = get_unresolved_project_messaging_fields(config)
+    result["unresolved_project_messaging_fields"] = unresolved_project_fields
 
     # Get workbook summary
     workbook_path = Path(result["workbook_path"])
@@ -336,6 +474,31 @@ def get_status(project_ref: str, work_dir: Path | None = None) -> dict[str, Any]
     result["ready"] = ready
     result["message"] = message
 
+    if next_phase == "draft" and unresolved_project_fields:
+        result["action_required"] = {
+            "code": "project_messaging_incomplete",
+            "summary": "Project messaging fields must be finalized before drafting",
+            "steps": [
+                f"Open {result['config_path']}",
+                f"Replace placeholder values for: {', '.join(unresolved_project_fields)}",
+                "Rerun the loop after saving config.sh",
+            ],
+            "actor": "agent",
+            "context": {
+                "fields": unresolved_project_fields,
+                "config_path": result["config_path"],
+            },
+        }
+        result["next_phase"] = None
+        result["ready"] = False
+        result["message"] = "Action required before drafting"
+
+    if next_phase == "confirm_search" and result["workbook_summary"].get("error"):
+        result["workbook_summary"] = {
+            "total_rows": result["workbook_summary"].get("total_rows", 0),
+            "by_next_action": result["workbook_summary"].get("by_next_action", {}),
+        }
+
     # Generate loop command - the primary way to resume workflow
     if result["project_id"]:
         result["loop_command"] = get_loop_command(result["project_id"])
@@ -350,6 +513,17 @@ def get_status(project_ref: str, work_dir: Path | None = None) -> dict[str, Any]
     # Compatibility shim: next_command for existing JSON consumers
     # Points to the canonical loop command as the primary workflow path
     result["next_command"] = result["loop_command"]
+
+    # Add confirm_search_summary when at confirm_search boundary
+    # Prefer structured create_search_summary over legacy last_result_summary
+    if next_phase == "confirm_search":
+        entries = build_confirm_search_entries(
+            structured_summary=result.get("create_search_summary"),
+            legacy_summary=result.get("last_result_summary"),
+        )
+        if entries:
+            result["confirm_search_entries"] = entries
+            result["confirm_search_summary"] = "; ".join(text for _, text in entries)
 
     return result
 
@@ -423,17 +597,43 @@ def main():
             if status.get("loop_command"):
                 print(f"\nThen run:")
                 print(f"  {status['loop_command']}")
-        elif status.get("next_phase") in ("review", "send"):
+        elif status.get("next_phase") in ("confirm_search", "review", "send"):
             # Boundary guidance with explicit loop resume command
             next_phase = status["next_phase"]
-            if next_phase == "review":
-                print(f"\n🛑 Boundary: Review required")
+            if next_phase == "confirm_search":
+                print(f"\n🛑 USER CONFIRMATION REQUIRED: Verify search filters")
+                print(f"  The USER must review and confirm search filters in LinkedIn Recruiter:")
+                print(f"    - Check Job Titles filter (no duplicates/concatenation)")
+                print(f"    - Check Companies filter includes all target companies from config")
+                print(f"    - Confirm candidate results look correct")
+                print(f"    - Manually add any missing companies that could not be auto-added")
+                entries = status.get("confirm_search_entries") or build_confirm_search_entries(
+                    structured_summary=status.get("create_search_summary"),
+                    legacy_summary=status.get("last_result_summary"),
+                )
+                if entries:
+                    print(f"\n  Filter inspection findings:")
+                    for kind, text in entries:
+                        if text == "Recruiter search verified with visible candidates":
+                            continue
+                        if kind == "success":
+                            print(f"    ✅ {text}")
+                        elif kind == "warning":
+                            suffix = " (USER must add these manually)" if text.startswith(("Failed to add companies:", "Failed to add keywords:")) else ""
+                            print(f"    ⚠️  {text}{suffix}")
+                        else:
+                            print(f"    ℹ️  {text}")
+                print(f"\nAfter USER confirms filters are correct, run:")
+                print(f"  {status['loop_command']} --confirm-search")
+                print(f"\n⚠️  Only use --confirm-search after the USER has verified the filters")
+            elif next_phase == "review":
+                print(f"\n🛑 Boundary: Review and confirmation required")
                 print(f"  Open the workbook and review drafted messages")
-                print(f"\nAfter review, run:")
+                print(f"\nAfter review and confirmation, run:")
                 print(f"  {status['loop_command']}")
             elif next_phase == "send":
                 print(f"\n🛑 Boundary: Send confirmation required")
-                print(f"  Review messages in workbook, then run with --confirm-send:")
+                print(f"  Review and confirm messages in workbook, then run with --confirm-send:")
                 print(f"  {status['loop_command']} --confirm-send")
         elif status.get("loop_command"):
             # Normal operation - show loop command

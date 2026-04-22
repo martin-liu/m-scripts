@@ -377,6 +377,42 @@ Best""")
         assert john_row["next_action"] == "review"
         assert john_row["draft_body"] is not None
 
+    def test_fails_when_config_has_placeholders(self, tmp_path):
+        """Should fail instead of drafting placeholder text into emails."""
+        from project_state import create_initial_state, load_project_state, save_project_state
+
+        config_path = tmp_path / "config.sh"
+        config_path.write_text(
+            'PROJECT_ID="test"\nPOSITION_TITLE="Engineer"\nTEAM_NAME="AI"\nLOCATION="SF"\nCORE_FUNCTION="[CORE FUNCTION - PLEASE UPDATE]"\nBUSINESS_IMPACT="[BUSINESS IMPACT - PLEASE UPDATE]"\nUSER_EMAIL="test@example.com"\n'
+        )
+
+        template_path = tmp_path / "inmail_template.txt"
+        template_path.write_text("Subject: Test\n\nBody for {FirstName}")
+
+        workbook_path = self.create_test_workbook(
+            tmp_path,
+            [
+                {
+                    "name": "John",
+                    "title": "Engineer",
+                    "company": "Google",
+                    "status": "Extracted",
+                    "next_action": "draft",
+                }
+            ],
+        )
+
+        state = create_initial_state("test", current_phase="enrich", status="completed")
+        save_project_state(tmp_path, state)
+
+        result = rd.run_draft(tmp_path, config_path, workbook_path, template_path)
+
+        assert result["success"] is False
+        assert "placeholder values" in result["error"]
+        updated_state = load_project_state(tmp_path)
+        assert updated_state["current_phase"] == "draft"
+        assert updated_state["status"] == "failed"
+
 
 class TestRunDraftIntegration:
     """Integration tests for run_draft module."""

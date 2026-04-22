@@ -434,11 +434,40 @@ class TestRunBrowserCommand:
     def test_timeout_with_dialog(self, mock_run, mock_check):
         """Should detect blocking dialog on timeout."""
         mock_check.return_value = True
-        # First call times out, second call (dialog check) finds alert
+        # First call times out, second call (dialog check) finds alert,
+        # third accepts it, fourth confirms it is gone.
         mock_run.side_effect = [
             subprocess.TimeoutExpired(cmd=["agent-browser"], timeout=30),
             Mock(
                 stdout='{"type": "alert", "message": "Please log in"}',
+                stderr="",
+                returncode=0,
+            ),
+            Mock(stdout="accepted", stderr="", returncode=0),
+            Mock(stdout='{"exists": false}', stderr="", returncode=0),
+        ]
+
+        mode = bu.BrowserMode(mode="cdp", cdp_port="9234")
+        result = bu.run_browser_command(mode, "eval", "some_js", timeout=30)
+
+        assert result["timed_out"] is True
+        assert result["dialog_recovery"]["attempted_auto_accept"] is True
+        assert result["dialog_recovery"]["auto_accept_succeeded"] is True
+        assert result["dialog_recovery"]["recovered"] is True
+        assert result["dialog_info"]["has_dialog"] is True
+        assert result["dialog_info"]["dialog_type"] == "alert"
+        assert result["dialog_recovery"]["post_recovery_dialog_info"]["has_dialog"] is False
+        assert "auto-accepted" in result["error"]
+
+    @patch("browser_utils.check_browser_available")
+    @patch("subprocess.run")
+    def test_timeout_with_confirm_does_not_auto_accept(self, mock_run, mock_check):
+        """Should not auto-accept confirm dialogs in the shared default path."""
+        mock_check.return_value = True
+        mock_run.side_effect = [
+            subprocess.TimeoutExpired(cmd=["agent-browser"], timeout=30),
+            Mock(
+                stdout='{"type": "confirm", "message": "Discard draft?"}',
                 stderr="",
                 returncode=0,
             ),
@@ -449,8 +478,61 @@ class TestRunBrowserCommand:
 
         assert result["timed_out"] is True
         assert result["dialog_info"]["has_dialog"] is True
+        assert result["dialog_info"]["dialog_type"] == "confirm"
+        assert result["dialog_recovery"]["attempted_auto_accept"] is False
+        assert "blocking confirm dialog detected" in result["error"]
+
+    @patch("browser_utils.check_browser_available")
+    @patch("subprocess.run")
+    def test_retry_after_alert_recovery_is_opt_in(self, mock_run, mock_check):
+        """Should retry once only when caller explicitly opts in."""
+        mock_check.return_value = True
+        mock_run.side_effect = [
+            subprocess.TimeoutExpired(cmd=["agent-browser"], timeout=30),
+            Mock(
+                stdout='{"type": "alert", "message": "Session refreshed"}',
+                stderr="",
+                returncode=0,
+            ),
+            Mock(stdout="accepted", stderr="", returncode=0),
+            Mock(stdout='{"exists": false}', stderr="", returncode=0),
+            Mock(stdout='{"ok": true}', stderr="", returncode=0),
+        ]
+
+        mode = bu.BrowserMode(mode="cdp", cdp_port="9234")
+        result = bu.run_browser_command(
+            mode,
+            "eval",
+            "some_js",
+            timeout=30,
+            retry_after_alert_recovery=True,
+        )
+
+        assert result["timed_out"] is False
+        assert result["returncode"] == 0
+        assert result["parsed"] == {"ok": True}
+        assert result["dialog_recovery"]["detected_dialog_info"]["dialog_type"] == "alert"
         assert result["dialog_info"]["dialog_type"] == "alert"
-        assert "alert dialog detected" in result["error"]
+
+
+class TestRunBrowserProbe:
+    """Tests for read-only browser probe helper."""
+
+    @patch("browser_utils.run_browser_command")
+    def test_enables_retry_after_alert_recovery(self, mock_run):
+        mock_run.return_value = {"returncode": 0, "parsed": {"ok": True}}
+
+        result = bu.run_browser_probe("9234", "eval", "({ ok: true })", timeout=12)
+
+        assert result["parsed"] == {"ok": True}
+        mock_run.assert_called_once_with(
+            "9234",
+            "eval",
+            "({ ok: true })",
+            timeout=12,
+            check_dialog_on_timeout=True,
+            retry_after_alert_recovery=True,
+        )
 
 
 class TestFormatTimeoutError:

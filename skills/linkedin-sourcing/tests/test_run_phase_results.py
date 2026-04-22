@@ -188,7 +188,7 @@ class TestSendResultHandling:
             assert result["error"] is None
 
     def test_blocked_on_exit_code_2(self):
-        """Should report blocked when exit code is 2 (browser state not clean)."""
+        """Should report blocked when exit code is 2 (send blocked)."""
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(
                 returncode=2,
@@ -207,8 +207,8 @@ class TestSendResultHandling:
 
             assert result["success"] is False
             assert result["blocked"] is True
-            assert result["block_reason"] == "browser_state_not_clean"
-            assert "browser state" in result["error"].lower()
+            assert result["block_reason"] == "send_blocked"
+            assert "send is blocked" in result["error"].lower()
 
     def test_failure_on_exit_code_1(self):
         """Should report failure when exit code is 1 (some sends failed)."""

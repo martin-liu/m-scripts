@@ -26,6 +26,8 @@ import re
 import sys
 from collections import Counter
 from pathlib import Path
+
+from config_utils import get_unresolved_project_messaging_fields
 from typing import Any
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -114,11 +116,17 @@ def read_all_rows(wb) -> list[dict[str, Any]]:
 def update_row(wb, row_id: int, updates: dict[str, Any]):
     """Update a single row by row_id with the given column values."""
     ws = wb["Candidates"]
+    actual_headers = []
+    for cell in ws[1]:
+        if cell.value is not None:
+            actual_headers.append(cell.value)
+    header_to_index = {header: idx for idx, header in enumerate(actual_headers)}
     for row in ws.iter_rows(min_row=2):
         if row[0].value == row_id:
             for col_name, value in updates.items():
-                if col_name in COLUMNS:
-                    row[COLUMNS.index(col_name)].value = value
+                col_idx = header_to_index.get(col_name)
+                if col_idx is not None:
+                    row[col_idx].value = value
             return True
     return False
 
@@ -157,20 +165,26 @@ def load_merged_config(project_config_path: str) -> dict[str, str]:
     return config
 
 
-def should_exclude_by_title(title: str | None, exclude_titles: str) -> bool:
-    """Check if a title should be excluded based on EXCLUDE_TITLES.
-
-    Performs case-insensitive partial matching against each exclude pattern.
-    """
+def get_matching_exclude_title_patterns(
+    title: str | None,
+    exclude_titles: str,
+) -> list[str]:
+    """Return the configured exclusion patterns that match a title."""
     if not title:
-        return False
+        return []
 
     title_lower = title.lower()
-    for pattern in exclude_titles.split(","):
-        pattern = pattern.strip().lower()
-        if pattern and pattern in title_lower:
-            return True
-    return False
+    matches: list[str] = []
+    for raw_pattern in exclude_titles.split(","):
+        pattern = raw_pattern.strip()
+        if pattern and pattern.lower() in title_lower:
+            matches.append(pattern)
+    return matches
+
+
+def should_exclude_by_title(title: str | None, exclude_titles: str) -> bool:
+    """Check if a title should be excluded based on EXCLUDE_TITLES."""
+    return bool(get_matching_exclude_title_patterns(title, exclude_titles))
 
 
 def extract_first_name(name: str | None) -> str:
@@ -424,6 +438,10 @@ def cmd_filter(workbook_path: str, config_path: str, use_enrichment: bool = True
     kept = 0
     filtered = 0
     skipped = 0
+    filtered_details = []
+    exclusion_patterns = [
+        pattern.strip() for pattern in exclude_titles.split(",") if pattern.strip()
+    ]
 
     for row in rows:
         status = row.get("status") or ""
@@ -449,7 +467,8 @@ def cmd_filter(workbook_path: str, config_path: str, use_enrichment: bool = True
 
         title = row.get("title") or ""
 
-        if should_exclude_by_title(title, exclude_titles):
+        matched_patterns = get_matching_exclude_title_patterns(title, exclude_titles)
+        if matched_patterns:
             update_row(
                 wb,
                 row_id,
@@ -459,6 +478,15 @@ def cmd_filter(workbook_path: str, config_path: str, use_enrichment: bool = True
                 },
             )
             filtered += 1
+            filtered_details.append(
+                {
+                    "row_id": row_id,
+                    "name": row.get("name") or "",
+                    "title": title,
+                    "matched_exclusion_rules": matched_patterns,
+                    "reason": f"Matched exclusion rule(s): {', '.join(matched_patterns)}",
+                }
+            )
         else:
             # Route to enrichment or draft based on use_enrichment flag
             next_action_value = "enrich" if use_enrichment else "draft"
@@ -482,6 +510,8 @@ def cmd_filter(workbook_path: str, config_path: str, use_enrichment: bool = True
         "filtered": filtered,
         "skipped": skipped,
         "target_phase": target_phase,
+        "exclude_titles": exclusion_patterns,
+        "filtered_details": filtered_details,
     }
 
 
@@ -499,6 +529,18 @@ def cmd_draft(
     Updates status=Drafted, next_action=review.
     """
     config = load_merged_config(config_path)
+
+    placeholder_fields = get_unresolved_project_messaging_fields(config)
+    if placeholder_fields:
+        return {
+            "drafted": 0,
+            "skipped": 0,
+            "error": (
+                "Config contains placeholder values that must be updated before drafting: "
+                f"{', '.join(placeholder_fields)}"
+            ),
+        }
+
     template_subject, template_body = parse_template(template_path)
 
     wb = load_workbook(workbook_path)

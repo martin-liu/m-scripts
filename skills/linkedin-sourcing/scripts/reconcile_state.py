@@ -174,6 +174,8 @@ def reconcile_project(
         project_id, existing_state, workbook_summary
     )
 
+    default_loop_command = get_loop_command(project_id)
+
     extraction_state_result = get_extraction_state_path(
         work_dir, project_id, workbook_path
     )
@@ -187,7 +189,7 @@ def reconcile_project(
             "error": extraction_state_result.get(
                 "error", "Failed to resolve extraction resume state"
             ),
-            "loop_command": get_loop_command(project_id),
+            "loop_command": default_loop_command,
         }
 
     extraction_state_path = extraction_state_result.get("path")
@@ -206,20 +208,31 @@ def reconcile_project(
                     "Extraction resume state is unreadable. Inspect it before "
                     "running reconcile."
                 ),
-                "loop_command": get_loop_command(project_id),
+                "loop_command": default_loop_command,
             }
         if extraction_state and extraction_state.get("status") in {"running", "failed"}:
+            status = extraction_state.get("status")
+            if status == "running":
+                error_msg = (
+                    "Extraction is currently running. Do not reconcile yet. "
+                    "Wait for extraction to complete or interrupt it before reconciling."
+                )
+                loop_command = default_loop_command
+            else:  # status == "failed"
+                error_msg = (
+                    "Extraction failed and needs recovery. Do not reconcile yet. "
+                    "Run the loop with --retry-failed to retry extraction, or clear the extraction state manually."
+                )
+                loop_command = f"{default_loop_command} --retry-failed"
             return {
                 "success": False,
                 "project_id": project_id,
                 "project_dir": str(project_dir),
                 "state_path": str(state_path),
                 "workbook_path": str(workbook_path),
-                "error": (
-                    "Extraction resume state is still active. Do not reconcile yet. "
-                    "Finish or inspect extraction recovery first."
-                ),
-                "loop_command": get_loop_command(project_id),
+                "error": error_msg,
+                "extraction_status": status,
+                "loop_command": loop_command,
             }
         clear_extraction_state = should_clear_extraction_state(
             extraction_state_path,
@@ -257,7 +270,7 @@ def reconcile_project(
         "reconciled_state": reconciled_state,
         "cleared_extraction_state": clear_extraction_state and apply,
         "would_clear_extraction_state": clear_extraction_state and not apply,
-        "loop_command": get_loop_command(project_id),
+        "loop_command": default_loop_command,
         "message": (
             "State reconciled"
             if apply and changed

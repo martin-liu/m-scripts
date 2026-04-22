@@ -46,6 +46,11 @@ COLUMNS = [
 _openpyxl = None
 
 
+def get_sheet_headers(ws):
+    """Return the non-empty header values from the first sheet row."""
+    return [cell.value for cell in ws[1] if cell.value is not None]
+
+
 def get_openpyxl():
     """Lazy-load and cache openpyxl, auto-installing if missing."""
     global _openpyxl
@@ -106,10 +111,7 @@ def read(path, filters=None):
     ws = wb["Candidates"]
 
     # Read actual headers from the workbook (handles old/new schemas)
-    actual_headers = []
-    for cell in ws[1]:
-        if cell.value is not None:
-            actual_headers.append(cell.value)
+    actual_headers = get_sheet_headers(ws)
 
     rows = []
     for row in ws.iter_rows(min_row=2, values_only=False):
@@ -133,13 +135,16 @@ def update(path, row_id, updates):
     """Update a single row by row_id with the given column values."""
     wb = load_candidates_workbook(path)
     ws = wb["Candidates"]
+    actual_headers = get_sheet_headers(ws)
+    header_to_index = {header: idx for idx, header in enumerate(actual_headers)}
     row_id = int(row_id)
     found = False
     for row in ws.iter_rows(min_row=2):
         if row[0].value == row_id:
             for col_name, value in updates.items():
-                if col_name in COLUMNS:
-                    row[COLUMNS.index(col_name)].value = value
+                col_idx = header_to_index.get(col_name)
+                if col_idx is not None:
+                    row[col_idx].value = value
             found = True
             break
     if not found:
@@ -153,9 +158,11 @@ def append(path, data):
     """Append a new candidate row and return the assigned row_id."""
     wb = load_candidates_workbook(path)
     ws = wb["Candidates"]
+    actual_headers = get_sheet_headers(ws)
     next_id = ws.max_row  # row 1 is header, so max_row gives next sequential id
-    data["row_id"] = next_id
-    ws.append([data.get(col) for col in COLUMNS])
+    row_data = dict(data)
+    row_data["row_id"] = next_id
+    ws.append([row_data.get(col) for col in actual_headers])
     wb.save(path)
     return next_id
 
@@ -178,9 +185,11 @@ def upsert(path, data, key_column="profile_url"):
     """
     wb = load_candidates_workbook(path)
     ws = wb["Candidates"]
+    actual_headers = get_sheet_headers(ws)
+    header_to_index = {header: idx for idx, header in enumerate(actual_headers)}
 
     key_value = data.get(key_column)
-    key_col_idx = COLUMNS.index(key_column) if key_column in COLUMNS else None
+    key_col_idx = header_to_index.get(key_column)
 
     # Search for existing row by key
     if key_value and key_col_idx is not None:
@@ -189,15 +198,17 @@ def upsert(path, data, key_column="profile_url"):
                 # Found existing row - update it
                 row_id = row[0].value  # row_id is first column
                 for col_name, value in data.items():
-                    if col_name in COLUMNS:
-                        row[COLUMNS.index(col_name)].value = value
+                    col_idx = header_to_index.get(col_name)
+                    if col_idx is not None:
+                        row[col_idx].value = value
                 wb.save(path)
                 return {"row_id": row_id, "action": "updated"}
 
     # No existing row found - append new
     next_id = ws.max_row
-    data["row_id"] = next_id
-    ws.append([data.get(col) for col in COLUMNS])
+    row_data = dict(data)
+    row_data["row_id"] = next_id
+    ws.append([row_data.get(col) for col in actual_headers])
     wb.save(path)
     return {"row_id": next_id, "action": "inserted"}
 

@@ -10,6 +10,7 @@ before and after execution.
 
 Phases:
     create_search  - Create LinkedIn Recruiter search
+    confirm_search - Confirm search filters (human boundary, use --confirm-search to proceed)
     extract        - Extract candidates from Recruiter
     filter         - Filter candidates by title
     enrich         - Enrich candidate profiles
@@ -127,7 +128,12 @@ def _run_subprocess_with_json_output(
                 "error": parsed.get("message", result.stderr or "Command failed"),
             }
     except subprocess.TimeoutExpired:
-        return {"success": False, "error": f"Timeout after {timeout} seconds"}
+        return {
+            "success": False,
+            "error": f"Timeout after {timeout} seconds",
+            "failure_code": "timeout",
+            "can_retry": True,
+        }
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -159,6 +165,10 @@ def run_create_search_phase(
         result["next_phase"] = result["parsed"].get("next_phase", "extract")
     elif result.get("blocked"):
         result["next_phase"] = result["parsed"].get("next_phase", "create_search")
+
+    # Preserve timeout failure_code for retry handling
+    if result.get("failure_code") == "timeout":
+        result["can_retry"] = True
 
     return result
 
@@ -232,20 +242,6 @@ def run_enrich_phase(
     return result
 
 
-def run_review_phase(
-    project_dir: Path,
-    config_path: Path,
-    workbook_path: Path,
-    local_project_id: str,
-) -> dict[str, Any]:
-    """Review phase is a human stop boundary - just update state."""
-    return {
-        "success": True,
-        "message": "Review phase: Please open workbook and review drafted messages",
-        "workbook_path": str(workbook_path),
-    }
-
-
 def run_send_phase(
     project_dir: Path,
     config_path: Path,
@@ -254,7 +250,7 @@ def run_send_phase(
 ) -> dict[str, Any]:
     """Run send phase via subprocess to existing script.
 
-    Exit code 2 indicates the browser state is not ready and needs follow-up.
+    Exit code 2 indicates the send phase is blocked and needs follow-up.
     """
     cmd = [
         sys.executable,
@@ -268,25 +264,25 @@ def run_send_phase(
         timeout=600,
         success_code=0,
         blocked_code=2,
-        blocked_reason="browser_state_not_clean",
+        blocked_reason="send_blocked",
     )
 
     # Add send-specific error message for blocked state
     if result.get("blocked"):
-        result["error"] = "Browser state not clean - operator intervention required"
+        result["error"] = "Send is blocked - operator intervention required"
 
     return result
 
 
 # Phase runner registry
 # Note: bootstrap is a pre-loop entrypoint, not a runnable loop phase
+# Note: confirm_search and review are human stop boundaries handled inline in run_phase()
 PHASE_RUNNERS: dict[str, callable] = {
     "create_search": run_create_search_phase,
     "extract": run_extract_phase,
     "filter": run_filter_phase,
     "enrich": run_enrich_phase,
     "draft": run_draft_phase,
-    "review": run_review_phase,
     "send": run_send_phase,
 }
 
@@ -353,10 +349,10 @@ def run_phase(
             "message": f"Phase '{phase}' requires human action",
             "workbook_path": str(workbook_path),
         }
-        # Review phase is a non-sticky human stop boundary - don't set action_required
-        # to avoid creating a stale blocker. The workbook's next_action=review rows
-        # are the source of truth for review state.
-        if phase == "review":
+        # Review and confirm_search phases are non-sticky human stop boundaries -
+        # don't set action_required to avoid creating a stale blocker.
+        # The workbook's next_action rows are the source of truth for state.
+        if phase in ("review", "confirm_search"):
             result["state_after"] = update_project_state(
                 project_dir,
                 current_phase=phase,
@@ -364,6 +360,9 @@ def run_phase(
                 action_required=False,  # Explicitly clear any stale action_required
                 last_error=False,
             )
+            # confirm_search transitions to extract
+            if phase == "confirm_search":
+                result["phase_result"]["next_phase"] = "extract"
         else:
             result["state_after"] = update_project_state(
                 project_dir,
@@ -413,14 +412,22 @@ def run_phase(
 
             if phase_result.get("success", False):
                 result["success"] = True
+                state_update_kwargs = {
+                    "current_phase": phase,
+                    "status": "completed",
+                    "action_required": False,  # Clear action_required on success
+                    "last_error": False,  # Clear any previous error
+                }
+
+                # Preserve create_search's richer summary written by the subprocess.
+                # For other phases, keep the existing compact fallback summary.
+                if phase != "create_search":
+                    state_update_kwargs["last_result_summary"] = str(phase_result)[:200]
+
                 # Update state to completed - clear any stale action_required
                 result["state_after"] = update_project_state(
                     project_dir,
-                    current_phase=phase,
-                    status="completed",
-                    action_required=False,  # Clear action_required on success
-                    last_error=False,  # Clear any previous error
-                    last_result_summary=str(phase_result)[:200],
+                    **state_update_kwargs,
                 )
             elif phase_result.get("blocked"):
                 # action_required blocker - preserve action_required if present
@@ -449,6 +456,11 @@ def run_phase(
                     )
             else:
                 result["error"] = phase_result.get("error", "Phase failed")
+                # Preserve timeout failure_code for loop retry handling
+                if phase_result.get("failure_code"):
+                    result["failure_code"] = phase_result["failure_code"]
+                if phase_result.get("can_retry"):
+                    result["can_retry"] = phase_result["can_retry"]
                 result["state_after"] = update_project_state(
                     project_dir,
                     status="failed",
@@ -481,7 +493,7 @@ def main():
             file=sys.stderr,
         )
         print(
-            "  phase: create_search|extract|filter|enrich|draft|review|send",
+            "  phase: create_search|confirm_search|extract|filter|enrich|draft|review|send",
             file=sys.stderr,
         )
         sys.exit(1)

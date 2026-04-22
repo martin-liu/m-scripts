@@ -267,6 +267,83 @@ class TestInferTeamName:
         assert bp.infer_team_name("") == ""
 
 
+class TestExtractKeywordsFromText:
+    """Tests for shared keyword extraction from text."""
+
+    def test_extracts_python_keyword(self):
+        """Should extract Python from text."""
+        result = bp.extract_keywords_from_text("Senior Python Engineer")
+        assert "Python" in result
+
+    def test_extracts_multiple_keywords(self):
+        """Should extract multiple matching keywords."""
+        result = bp.extract_keywords_from_text("Python Kubernetes Engineer with AWS experience")
+        assert "Python" in result
+        assert "Kubernetes" in result
+        assert "AWS" in result
+
+    def test_uses_word_boundaries(self):
+        """Should use word boundaries to avoid false matches."""
+        # "go" as standalone word should match
+        result = bp.extract_keywords_from_text("Go Developer")
+        assert "Go" in result
+
+    def test_does_not_treat_go_as_common_verb(self):
+        """Should not infer Go from ordinary prose usage."""
+        result = bp.extract_keywords_from_text("We go deep on reliability")
+        assert "Go" not in result
+
+    def test_does_not_treat_go_to_market_as_go_language(self):
+        """Should not infer Go from hyphenated non-language phrases."""
+        result = bp.extract_keywords_from_text("Lead go-to-market strategy")
+        assert "Go" not in result
+
+    def test_extracts_golang_keyword(self):
+        """Should still infer Go from Golang."""
+        result = bp.extract_keywords_from_text("Senior Golang engineer")
+        assert "Go" in result
+
+    def test_deduplicates_keywords(self):
+        """Should deduplicate keywords while preserving order."""
+        result = bp.extract_keywords_from_text("Python Python Kubernetes")
+        # Python should appear only once
+        assert result.count("Python") == 1
+        assert result.index("Python") < result.index("Kubernetes")
+
+    def test_uses_jd_text_fallback(self):
+        """Should use jd_text for additional keyword inference."""
+        result = bp.extract_keywords_from_text(
+            "Software Engineer",
+            jd_text="Experience with Kubernetes and Docker required"
+        )
+        assert "Kubernetes" in result
+        assert "Docker" in result
+
+    def test_extracts_infrastructure_keywords(self):
+        """Should extract infrastructure-related keywords."""
+        result = bp.extract_keywords_from_text("Infrastructure Engineer with Terraform and AWS")
+        assert "Terraform" in result
+        assert "AWS" in result
+        assert "Infrastructure" in result
+
+    def test_extracts_ml_keywords(self):
+        """Should extract ML/AI keywords."""
+        result = bp.extract_keywords_from_text("ML Engineer with PyTorch and CUDA")
+        assert "PyTorch" in result
+        assert "CUDA" in result
+        assert "Machine Learning" in result
+
+    def test_returns_empty_for_no_matches(self):
+        """Should return empty list for text with no keyword matches."""
+        result = bp.extract_keywords_from_text("General Office Manager")
+        assert result == []
+
+    def test_handles_empty_text(self):
+        """Should handle empty text gracefully."""
+        assert bp.extract_keywords_from_text("") == []
+        assert bp.extract_keywords_from_text(None) == []
+
+
 class TestInferKeywords:
     """Tests for keyword inference from position title."""
 
@@ -290,6 +367,24 @@ class TestInferKeywords:
     def test_returns_empty_for_no_match(self):
         """Should return empty string for unmatched titles."""
         assert bp.infer_keywords("General Engineer") == ""
+
+    def test_uses_jd_text_for_fallback(self):
+        """Should use jd_text for additional keyword inference."""
+        result = bp.infer_keywords("Software Engineer", jd_text="Kubernetes Docker AWS")
+        assert "Kubernetes" in result
+        assert "Docker" in result
+        assert "AWS" in result
+
+    def test_precedence_title_over_jd(self):
+        """Title keywords should appear before JD keywords in result."""
+        result = bp.infer_keywords("Python Engineer", jd_text="Kubernetes")
+        # Python from title should come before Kubernetes from JD
+        assert result.index("Python") < result.index("Kubernetes")
+
+    def test_does_not_infer_go_from_general_jd_prose(self):
+        """JD fallback should remain conservative for ambiguous words."""
+        result = bp.infer_keywords("Software Engineer", jd_text="We go deep on reliability")
+        assert "Go" not in result
 
 
 class TestReadJdText:
@@ -354,6 +449,38 @@ class TestBuildConfig:
         assert config["CORE_FUNCTION"] == "building AI systems"
         assert config["BUSINESS_IMPACT"] == "powering global products"
         assert config["KEYWORDS"] == "PyTorch, CUDA"
+
+    def test_keyword_fallback_uses_description_and_core_function_text(self):
+        """Keyword fallback should use broader JD-derived text when metadata keywords are absent."""
+        inferred = {
+            "position_title": "Software Engineer",
+            "team_name": "Infrastructure Platform",
+            "location": "San Francisco",
+            "core_function": "Build Kubernetes control planes",
+            "business_impact": "Improve cloud infrastructure reliability",
+            "description": "Experience with Terraform and AWS required",
+            "keywords": "",
+        }
+        overrides = {
+            k: None
+            for k in [
+                "position_title",
+                "team_name",
+                "location",
+                "core_function",
+                "business_impact",
+                "keywords",
+                "companies",
+                "exclude_titles",
+                "recruiter_url",
+            ]
+        }
+
+        config = bp.build_config("123", inferred, overrides)
+
+        assert "Kubernetes" in config["KEYWORDS"]
+        assert "Terraform" in config["KEYWORDS"]
+        assert "AWS" in config["KEYWORDS"]
 
     def test_overrides_take_precedence(self):
         """Override values should take precedence over inferred."""
@@ -576,11 +703,11 @@ class TestBuildConfig:
         assert config["CANDIDATE_DELAY_SEC"] == "10"
 
 
-class TestParseExistingConfig:
-    """Tests for parse_existing_config function."""
+class TestParseConfigFile:
+    """Tests for parse_config_file function (via config_utils)."""
 
     def test_parses_double_quoted_values(self, tmp_path):
-        """Should parse double-quoted values from existing config."""
+        """Should parse double-quoted values from config file."""
         config_file = tmp_path / "config.sh"
         config_file.write_text(
             'PROJECT_ID="my_project"\n'
@@ -588,28 +715,31 @@ class TestParseExistingConfig:
             'TEAM_NAME="AI Team"\n'
         )
 
-        result = bp.parse_existing_config(config_file)
+        from config_utils import parse_config_file
+        result = parse_config_file(config_file)
 
         assert result["PROJECT_ID"] == "my_project"
         assert result["POSITION_TITLE"] == "Senior Engineer"
         assert result["TEAM_NAME"] == "AI Team"
 
     def test_parses_single_quoted_values(self, tmp_path):
-        """Should parse single-quoted values from existing config."""
+        """Should parse single-quoted values from config file."""
         config_file = tmp_path / "config.sh"
         config_file.write_text("PROJECT_ID='my_project'\nPOSITION_TITLE='Engineer'")
 
-        result = bp.parse_existing_config(config_file)
+        from config_utils import parse_config_file
+        result = parse_config_file(config_file)
 
         assert result["PROJECT_ID"] == "my_project"
         assert result["POSITION_TITLE"] == "Engineer"
 
     def test_parses_unquoted_values(self, tmp_path):
-        """Should parse unquoted values from existing config."""
+        """Should parse unquoted values from config file."""
         config_file = tmp_path / "config.sh"
         config_file.write_text("PROJECT_ID=my_project\nDAILY_LIMIT=200")
 
-        result = bp.parse_existing_config(config_file)
+        from config_utils import parse_config_file
+        result = parse_config_file(config_file)
 
         assert result["PROJECT_ID"] == "my_project"
         assert result["DAILY_LIMIT"] == "200"
@@ -625,7 +755,8 @@ class TestParseExistingConfig:
             'POSITION_TITLE="Engineer"'
         )
 
-        result = bp.parse_existing_config(config_file)
+        from config_utils import parse_config_file
+        result = parse_config_file(config_file)
 
         assert result["PROJECT_ID"] == "my_project"
         assert result["POSITION_TITLE"] == "Engineer"
@@ -633,7 +764,8 @@ class TestParseExistingConfig:
 
     def test_returns_empty_for_missing_file(self, tmp_path):
         """Should return empty dict for missing file."""
-        result = bp.parse_existing_config(tmp_path / "nonexistent.sh")
+        from config_utils import parse_config_file
+        result = parse_config_file(tmp_path / "nonexistent.sh")
         assert result == {}
 
 
@@ -1929,6 +2061,36 @@ class TestBootstrapProject:
 
         next_steps_text = "\n".join(result["next_steps"])
         assert "ensure_recruiter_project" in next_steps_text
+
+    def test_next_steps_call_out_unresolved_project_messaging(self, tmp_path, monkeypatch):
+        """Bootstrap should call out unresolved project-level messaging fields early."""
+        monkeypatch.setattr(bp.Path, "home", lambda: tmp_path)
+
+        args = Mock()
+        args.jd_url = None
+        args.jd_text = "JD content"
+        args.work_dir = str(tmp_path / "work")
+        args.recruiter_url = "https://linkedin.com/talent/hire/12345/overview"
+        args.cdp_port = "9234"
+        args.project_id = None
+        args.position_title = "Engineer"
+        args.team_name = None
+        args.location = None
+        args.core_function = None
+        args.business_impact = None
+        args.keywords = None
+        args.companies = None
+        args.exclude_titles = None
+
+        result = bp.bootstrap_project(args)
+
+        assert result["unresolved_project_messaging_fields"] == [
+            "CORE_FUNCTION",
+            "BUSINESS_IMPACT",
+        ]
+        next_steps_text = "\n".join(result["next_steps"])
+        assert "Finalize project messaging fields before drafting" in next_steps_text
+        assert "CORE_FUNCTION, BUSINESS_IMPACT" in next_steps_text
 
     def test_jd_text_derives_title_from_content_no_explicit_title(
         self, tmp_path, monkeypatch

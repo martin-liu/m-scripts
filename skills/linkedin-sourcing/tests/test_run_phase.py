@@ -22,8 +22,8 @@ class TestPhaseRunnersRegistry:
         """Every runnable phase must have a runner registered."""
         from phase_registry import REACHOUT_PHASES, REVIEW_PHASES
 
-        # Human-only phases don't need runners
-        human_phases = {"review"}
+        # Human stop boundaries are handled inline in run_phase(), not via registry
+        human_phases = {"review", "confirm_search"}
         # Bootstrap is a pre-loop entrypoint, not a runnable loop phase
         excluded_phases = {"bootstrap"}
 
@@ -42,6 +42,18 @@ class TestPhaseRunnersRegistry:
 
 class TestCLIContracts:
     """Tests that phase runners use correct CLI contracts."""
+
+    def test_main_does_not_exit_when_valid_args_provided(self, capsys):
+        """CLI should not print usage or exit early when valid args are provided."""
+        with patch.object(sys, "argv", ["run_phase.py", "proj-1", "create_search"]):
+            with patch("run_phase.run_phase") as mock_run_phase:
+                mock_run_phase.return_value = {"success": True, "phase": "create_search"}
+
+                rp.main()
+
+        captured = capsys.readouterr()
+        assert "Usage:" not in captured.err
+        mock_run_phase.assert_called_once_with("proj-1", "create_search", False)
 
     def test_create_search_uses_project_flag(self):
         """create_search phase should use --project flag."""
@@ -251,6 +263,164 @@ class TestRunPhaseIntegration:
                 "not runnable" in result.get("error", "").lower()
                 or "bootstrap" in result.get("error", "").lower()
             )
+
+
+class TestConfirmSearchPhase:
+    """Tests for confirm_search phase behavior."""
+
+    def test_confirm_search_does_not_persist_action_required(self):
+        """Confirm search phase should NOT persist a blocking action_required.
+
+        This is critical for resumability: confirm_search should be a non-sticky
+        boundary that allows the loop to proceed with --confirm-search flag.
+        """
+        with patch("run_phase.resolve_project_ref") as mock_resolve:
+            with patch("run_phase.load_project_state") as mock_state:
+                with patch("run_phase.update_project_state") as mock_update:
+                    mock_resolve.return_value = {
+                        "success": True,
+                        "config_path": Path("/tmp/test/config.sh"),
+                        "workbook_path": Path("/tmp/test/workbook.xlsx"),
+                        "local_project_id": "test_project",
+                    }
+                    mock_state.return_value = {"workflow_mode": "reachout"}
+                    mock_update.return_value = {"current_phase": "confirm_search", "status": "completed"}
+
+                    result = rp.run_phase("test_project", "confirm_search")
+
+                    assert result["success"] is True
+                    # Should have called update_project_state with action_required=False
+                    # to clear any stale blocker
+                    mock_update.assert_called()
+                    call_kwargs = mock_update.call_args.kwargs
+                    assert call_kwargs.get("action_required") is False
+                    assert call_kwargs.get("status") == "completed"
+
+    def test_confirm_search_returns_extract_next_phase(self):
+        """Confirm search phase should indicate extract is the next phase."""
+        with patch("run_phase.resolve_project_ref") as mock_resolve:
+            with patch("run_phase.load_project_state") as mock_state:
+                with patch("run_phase.update_project_state") as mock_update:
+                    mock_resolve.return_value = {
+                        "success": True,
+                        "config_path": Path("/tmp/test/config.sh"),
+                        "workbook_path": Path("/tmp/test/workbook.xlsx"),
+                        "local_project_id": "test_project",
+                    }
+                    mock_state.return_value = {"workflow_mode": "reachout"}
+                    mock_update.return_value = {"current_phase": "confirm_search", "status": "completed"}
+
+                    result = rp.run_phase("test_project", "confirm_search")
+
+                    assert result["success"] is True
+                    assert result["phase_result"]["next_phase"] == "extract"
+
+
+class TestCreateSearchSummaryPreservation:
+    """Regression tests for preserving create_search inspection summaries."""
+
+    def test_create_search_does_not_clobber_inner_summary(self):
+        """run_phase should preserve the summary already written by run_create_search."""
+        with patch("run_phase.resolve_project_ref") as mock_resolve:
+            with patch("run_phase.load_project_state") as mock_state:
+                with patch("run_phase.update_project_state") as mock_update:
+                    mock_resolve.return_value = {
+                        "success": True,
+                        "config_path": Path("/tmp/test/config.sh"),
+                        "workbook_path": Path("/tmp/test/workbook.xlsx"),
+                        "local_project_id": "test_project",
+                    }
+                    mock_state.return_value = {"workflow_mode": "reachout"}
+                    mock_update.return_value = {
+                        "current_phase": "create_search",
+                        "status": "completed",
+                    }
+
+                    with patch("subprocess.run") as mock_run:
+                        mock_run.return_value = MagicMock(
+                            returncode=0,
+                            stdout='{"success": true, "phase": "create_search", "next_phase": "confirm_search", "message": "Recruiter search has visible candidates - awaiting confirmation"}',
+                            stderr="",
+                        )
+
+                        result = rp.run_phase("test_project", "create_search")
+
+                    assert result["success"] is True
+                    assert mock_update.call_count == 2
+                    completed_call_kwargs = mock_update.call_args_list[1].kwargs
+                    assert completed_call_kwargs["current_phase"] == "create_search"
+                    assert completed_call_kwargs["status"] == "completed"
+                    assert completed_call_kwargs.get("last_result_summary") is None
+
+
+class TestTimeoutHandling:
+    """Tests for timeout recovery in phase execution."""
+
+    def test_subprocess_timeout_returns_retryable_error(self):
+        """Timeout should return failure_code='timeout' and can_retry=True."""
+        import subprocess
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.side_effect = subprocess.TimeoutExpired(cmd=["test"], timeout=300)
+
+            result = rp._run_subprocess_with_json_output(
+                ["test"], timeout=300, success_code=0
+            )
+
+            assert result["success"] is False
+            assert result["failure_code"] == "timeout"
+            assert result["can_retry"] is True
+            assert "Timeout after 300 seconds" in result["error"]
+
+    def test_create_search_timeout_preserves_failure_code(self):
+        """create_search phase should preserve timeout failure_code for retry."""
+        import subprocess
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.side_effect = subprocess.TimeoutExpired(cmd=["test"], timeout=300)
+
+            project_dir = Path("/tmp/test_project")
+            config_path = project_dir / "config.sh"
+            workbook_path = project_dir / "workbook.xlsx"
+
+            result = rp.run_create_search_phase(
+                project_dir, config_path, workbook_path, "test_project"
+            )
+
+            assert result["success"] is False
+            assert result["failure_code"] == "timeout"
+            assert result["can_retry"] is True
+
+    def test_run_phase_preserves_timeout_failure_code(self):
+        """run_phase should preserve timeout failure_code in result."""
+        import subprocess
+
+        with patch("run_phase.resolve_project_ref") as mock_resolve:
+            with patch("run_phase.load_project_state") as mock_state:
+                with patch("run_phase.update_project_state") as mock_update:
+                    mock_resolve.return_value = {
+                        "success": True,
+                        "config_path": Path("/tmp/test/config.sh"),
+                        "workbook_path": Path("/tmp/test/workbook.xlsx"),
+                        "local_project_id": "test_project",
+                    }
+                    mock_state.return_value = {"workflow_mode": "reachout"}
+                    mock_update.return_value = {}
+
+                    with patch("subprocess.run") as mock_run:
+                        mock_run.side_effect = subprocess.TimeoutExpired(
+                            cmd=["test"], timeout=300
+                        )
+
+                        result = rp.run_phase("test_project", "create_search")
+
+                        assert result["success"] is False
+                        assert result["failure_code"] == "timeout"
+                        assert result["can_retry"] is True
+                        # State should be "failed" to allow retry, not "action_required"
+                        assert mock_update.call_count == 2
+                        failed_call = mock_update.call_args_list[1]
+                        assert failed_call.kwargs["status"] == "failed"
 
 
 if __name__ == "__main__":

@@ -202,7 +202,53 @@ def test_reconcile_project_refuses_active_extraction_recovery(tmp_path, monkeypa
     result = rs.reconcile_project(str(config_path), apply=True, work_dir=tmp_path)
 
     assert result["success"] is False
-    assert "Do not reconcile yet" in result["error"]
+    assert "running" in result["error"]
+    assert extraction_state_path.exists() is True
+
+
+def test_reconcile_project_refuses_failed_extraction_recovery(tmp_path, monkeypatch):
+    """Failed extraction recovery should explain why reconcile is blocked."""
+    project_dir = tmp_path / "projects" / "12345_role"
+    project_dir.mkdir(parents=True)
+    config_path = project_dir / "config.sh"
+    config_path.write_text('PROJECT_ID="12345"\n', encoding="utf-8")
+    (project_dir / "workbook.xlsx").write_text("placeholder", encoding="utf-8")
+    extraction_state_path = tmp_path / "runtime" / "extraction-state" / "state.json"
+    extraction_state_path.parent.mkdir(parents=True)
+    extraction_state_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "project_id": "12345",
+                "workbook_path": str(project_dir / "workbook.xlsx"),
+                "config_path": str(config_path),
+                "status": "failed",
+                "updated_at": "2026-01-01T00:00:00",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        rs,
+        "get_workbook_summary",
+        lambda _path: {"total_rows": 2, "by_next_action": {"filter": 2}},
+    )
+    monkeypatch.setattr(
+        rs,
+        "get_extraction_state_path",
+        lambda *_args, **_kwargs: {
+            "success": True,
+            "path": extraction_state_path,
+            "error": None,
+        },
+    )
+
+    result = rs.reconcile_project(str(config_path), apply=True, work_dir=tmp_path)
+
+    assert result["success"] is False
+    assert "failed" in result["error"]
+    assert "--retry-failed" in result["loop_command"]
     assert extraction_state_path.exists() is True
 
 
@@ -269,3 +315,86 @@ def test_reconcile_project_refuses_when_extraction_state_lookup_fails(
 
     assert result["success"] is False
     assert result["error"] == "lookup failed"
+
+
+def test_reconcile_distinguishes_running_vs_failed_extraction(tmp_path, monkeypatch):
+    """Reconcile should provide different error messages for running vs failed extraction."""
+    project_dir = tmp_path / "projects" / "12345_role"
+    project_dir.mkdir(parents=True)
+    config_path = project_dir / "config.sh"
+    config_path.write_text(
+        'PROJECT_ID="12345"\nRECRUITER_PROJECT_URL="https://linkedin.com/talent/hire/999/discover/recruiterSearch"\n',
+        encoding="utf-8",
+    )
+    (project_dir / "workbook.xlsx").write_text("placeholder", encoding="utf-8")
+
+    # Test "running" status
+    extraction_state_path_running = tmp_path / "runtime" / "extraction-state" / "state_running.json"
+    extraction_state_path_running.parent.mkdir(parents=True)
+    extraction_state_path_running.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "project_id": "12345",
+                "workbook_path": str(project_dir / "workbook.xlsx"),
+                "config_path": str(config_path),
+                "status": "running",
+                "updated_at": "2026-01-01T00:00:00",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        rs,
+        "get_workbook_summary",
+        lambda _path: {"total_rows": 2, "by_next_action": {"filter": 2}},
+    )
+    monkeypatch.setattr(
+        rs,
+        "get_extraction_state_path",
+        lambda *_args, **_kwargs: {
+            "success": True,
+            "path": extraction_state_path_running,
+            "error": None,
+        },
+    )
+
+    result = rs.reconcile_project(str(config_path), apply=True, work_dir=tmp_path)
+
+    assert result["success"] is False
+    assert "currently running" in result["error"]
+    assert result["extraction_status"] == "running"
+
+    # Test "failed" status
+    extraction_state_path_failed = tmp_path / "runtime" / "extraction-state" / "state_failed.json"
+    extraction_state_path_failed.parent.mkdir(parents=True, exist_ok=True)
+    extraction_state_path_failed.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "project_id": "12345",
+                "workbook_path": str(project_dir / "workbook.xlsx"),
+                "config_path": str(config_path),
+                "status": "failed",
+                "updated_at": "2026-01-01T00:00:00",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        rs,
+        "get_extraction_state_path",
+        lambda *_args, **_kwargs: {
+            "success": True,
+            "path": extraction_state_path_failed,
+            "error": None,
+        },
+    )
+
+    result = rs.reconcile_project(str(config_path), apply=True, work_dir=tmp_path)
+
+    assert result["success"] is False
+    assert "failed" in result["error"]
+    assert result["extraction_status"] == "failed"

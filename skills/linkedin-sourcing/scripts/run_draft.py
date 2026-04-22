@@ -157,6 +157,16 @@ def run_draft(
             row_ids=row_ids,
         )
 
+        if draft_result.get("error"):
+            result["error"] = str(draft_result["error"])
+            update_project_state(
+                project_dir,
+                current_phase="draft",
+                status="failed",
+                last_error=result["error"],
+            )
+            return result
+
         # cmd_draft returns a dict with drafted, skipped
         result["drafted"] = draft_result.get("drafted", 0)
         result["skipped"] = draft_result.get("skipped", 0)

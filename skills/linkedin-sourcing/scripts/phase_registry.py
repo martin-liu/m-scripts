@@ -21,6 +21,7 @@ from typing import Any
 # bootstrap is a pre-loop entrypoint, not a runnable loop phase
 REACHOUT_PHASES = [
     "create_search",
+    "confirm_search",
     "extract",
     "filter",
     "enrich",
@@ -49,6 +50,12 @@ PHASE_METADATA: dict[str, dict[str, Any]] = {
         "description": "Create LinkedIn Recruiter search from config",
         "requires_browser": True,
         "is_automated": True,
+    },
+    "confirm_search": {
+        "name": "Confirm Search",
+        "description": "Human confirmation of search filters before extraction",
+        "requires_browser": False,
+        "is_automated": False,
     },
     "extract": {
         "name": "Extract",

@@ -135,6 +135,28 @@ class TestReadEnrichableRows:
         assert rows[0]["row_id"] == 1
         assert rows[1]["row_id"] == 3
 
+    @patch("excel_utils.read")
+    def test_applies_resume_from_row_id_and_limit(self, mock_read, tmp_path):
+        mock_read.return_value = [
+            {"row_id": 1, "name": "Test 1", "next_action": "enrich"},
+            {"row_id": 2, "name": "Test 2", "next_action": "enrich"},
+            {"row_id": 3, "name": "Test 3", "next_action": "enrich"},
+        ]
+
+        rows = run_enrich.read_enrichable_rows(
+            tmp_path / "test.xlsx",
+            resume_from_row_id=2,
+            limit=1,
+        )
+
+        assert [row["row_id"] for row in rows] == [2]
+
+    def test_rejects_negative_limit(self, tmp_path):
+        with pytest.raises(run_enrich.EnrichError) as exc_info:
+            run_enrich.read_enrichable_rows(tmp_path / "test.xlsx", limit=-1)
+
+        assert "limit must be >= 0" in str(exc_info.value)
+
 
 class TestEnrichSingleRow:
     """Tests for enrich_single_row function."""
@@ -244,6 +266,44 @@ class TestRunEnrichPhase:
         result = run_enrich.run_enrich_phase("test_project")
 
         assert result == 0
+
+    @patch("run_enrich.load_runtime_context")
+    @patch("run_enrich.resolve_project_and_workbook")
+    @patch("run_enrich.read_enrichable_rows")
+    @patch("run_enrich.enrich_single_row")
+    @patch("run_enrich.update_row_after_enrichment")
+    def test_passes_resume_and_limit_to_reader(
+        self,
+        mock_update,
+        mock_enrich,
+        mock_read,
+        mock_resolve,
+        mock_ctx,
+    ):
+        mock_ctx.return_value = {"work_dir": "/test", "profile": {"CDP_PORT": "9234"}}
+        mock_resolve.return_value = (
+            Path("/test/config.sh"),
+            Path("/test/workbook.xlsx"),
+        )
+        mock_read.return_value = [
+            {"row_id": 5, "name": "Test User", "profile_url": "https://linkedin.com/in/test"}
+        ]
+        mock_enrich.return_value = (True, "Skills: Python", None)
+
+        result = run_enrich.run_enrich_phase(
+            "test_project",
+            resume_from_row_id=5,
+            limit=1,
+        )
+
+        assert result == 0
+        mock_read.assert_called_once_with(
+            Path("/test/workbook.xlsx"),
+            row_ids=None,
+            resume_from_row_id=5,
+            limit=1,
+        )
+        mock_update.assert_called_once()
 
     @patch("run_enrich.load_runtime_context")
     @patch("run_enrich.resolve_project_and_workbook")

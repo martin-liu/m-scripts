@@ -6,12 +6,16 @@ Repeatedly runs: status -> check stop conditions -> run one phase -> repeat.
 Stop conditions (clean stops):
     - action_required blockers
     - Human review boundary (review phase)
+    - Confirm search boundary (unless --confirm-search flag given)
     - Send boundary (unless --confirm-send flag given)
     - Workflow complete (no more work)
 
 Usage:
     # Run the loop with automatic stops at boundaries
     python3 run_reachout_loop.py --project "{PROJECT_ID}"
+
+    # Confirm search filters and proceed to extraction
+    python3 run_reachout_loop.py --project "{PROJECT_ID}" --confirm-search
 
     # Include send phase (requires explicit confirmation)
     python3 run_reachout_loop.py --project "{PROJECT_ID}" --confirm-send
@@ -105,6 +109,8 @@ def load_status(project_ref: str) -> dict[str, Any]:
 def check_stop_conditions(
     status_result: dict[str, Any],
     confirm_send: bool = False,
+    confirm_search: bool = False,
+    retry_failed: bool = False,
 ) -> tuple[bool, str, int]:
     """Check if the loop should stop based on current status.
 
@@ -116,17 +122,20 @@ def check_stop_conditions(
         5. Not ready (blocked state)
         6. Workflow complete (no next_phase and ready=True)
         7. Human review boundary (review phase)
-        8. Send boundary (unless confirm_send=True)
+        8. Confirm search boundary (unless confirm_search=True)
+        9. Send boundary (unless confirm_send=True)
 
     Args:
         status_result: Result from status.get_status()
         confirm_send: Whether to proceed past send boundary
+        confirm_search: Whether to proceed past confirm_search boundary
 
     Returns:
         Tuple of (should_stop, reason, exit_code)
     """
     action_required = status_result.get("action_required")
     next_phase = status_result.get("next_phase")
+    phase_to_run = next_phase or status_result.get("current_phase")
     current_phase = status_result.get("current_phase")
     phase_status = status_result.get("status")
     ready = status_result.get("ready", False)
@@ -153,6 +162,9 @@ def check_stop_conditions(
 
     # Stop 3: Current phase failed
     if phase_status == "failed":
+        if retry_failed:
+            retry_phase = next_phase or current_phase
+            return (False, f"Retrying failed phase: {retry_phase}", 0)
         return (
             True,
             f"Phase '{current_phase}' failed - needs attention before continuing",
@@ -194,11 +206,19 @@ def check_stop_conditions(
     if next_phase == "review":
         return (
             True,
-            "Stopped at review boundary - human review required before proceeding",
+            "Stopped at review boundary - human review and confirmation required before proceeding",
             0,
         )
 
-    # Stop 8: Send boundary (unless confirmed)
+    # Stop 8: Confirm search boundary (USER must verify filters before extraction)
+    if next_phase == "confirm_search" and not confirm_search:
+        return (
+            True,
+            "Stopped at confirm_search boundary - USER must verify search filters in Recruiter before extraction",
+            0,
+        )
+
+    # Stop 9: Send boundary (unless confirmed)
     if next_phase == "send" and not confirm_send:
         return (
             True,
@@ -291,6 +311,7 @@ def format_stop_guidance(
     reason: str,
     exit_code: int,
     confirm_send: bool = False,
+    confirm_search: bool = False,
 ) -> str:
     """Format clear guidance for what to do after loop stops.
 
@@ -326,11 +347,42 @@ def format_stop_guidance(
             lines.append(f"  - {step}")
         lines.append(f"\nThen resume with:")
         lines.append(f"  {loop_cmd}")
+    elif next_phase == "confirm_search":
+        # Confirm search boundary - USER must confirm, not agent
+        lines.append(f"\n🛑 USER CONFIRMATION REQUIRED: Verify search filters")
+        lines.append(f"  The USER must review and confirm search filters in LinkedIn Recruiter:")
+        lines.append(f"    - Check Job Titles filter for correct titles (no duplicates/concatenation)")
+        lines.append(f"    - Check Companies filter includes all target companies from config")
+        lines.append(f"    - Manually add any companies that could not be auto-added")
+        lines.append(f"    - Verify candidate results look correct")
+        # Show filter analysis summary if available
+        filter_summary = status_result.get("confirm_search_summary") or status_result.get("last_result_summary")
+        if filter_summary:
+            lines.append(f"\n  Filter inspection findings:")
+            for line in filter_summary.split("; "):
+                line = line.strip()
+                if line.startswith("Issue:"):
+                    lines.append(f"    ⚠️  {line[6:].strip()}")
+                elif line.startswith("Missing companies:"):
+                    lines.append(f"    ⚠️  {line}")
+                elif line.startswith("Malformed titles:"):
+                    lines.append(f"    ⚠️  {line}")
+                elif line.startswith("Auto-added companies:"):
+                    lines.append(f"    ✅ {line}")
+                elif line.startswith("Auto-removed malformed titles:"):
+                    lines.append(f"    ✅ {line}")
+                elif line.startswith("Failed to add companies:"):
+                    lines.append(f"    ⚠️  {line} (USER must add these manually)")
+                elif line and not line.startswith("Recruiter search"):
+                    lines.append(f"    ℹ️  {line}")
+        lines.append(f"\nAfter USER confirms filters are correct, resume with:")
+        lines.append(f"  {loop_cmd} --confirm-search")
+        lines.append(f"\n⚠️  Only use --confirm-search after the USER has verified the filters")
     elif next_phase == "review":
         # Review boundary
         lines.append(f"\nNext step:")
         lines.append(f"  Open workbook and review drafted messages")
-        lines.append(f"\nAfter review, resume with:")
+        lines.append(f"\nAfter review and confirmation, resume with:")
         lines.append(f"  {loop_cmd}")
     elif next_phase == "send":
         # Send boundary
@@ -356,6 +408,8 @@ def run_loop_iteration(
     project_ref: str,
     confirm_send: bool = False,
     dry_run: bool = False,
+    confirm_search: bool = False,
+    retry_failed: bool = False,
 ) -> tuple[bool, str, int]:
     """Run one iteration of the loop: status check + phase execution.
 
@@ -363,6 +417,7 @@ def run_loop_iteration(
         project_ref: Project reference
         confirm_send: Whether to proceed past send boundary
         dry_run: If True, don't actually execute phases
+        confirm_search: Whether to proceed past confirm_search boundary
 
     Returns:
         Tuple of (should_continue, message, exit_code)
@@ -370,6 +425,7 @@ def run_loop_iteration(
     # Step 1: Get status
     status_result = load_status(project_ref)
     next_phase = status_result.get("next_phase")
+    phase_to_run = next_phase or status_result.get("current_phase")
 
     print(f"\n{'=' * 60}")
     print(f"Current phase: {status_result.get('current_phase', 'unknown')}")
@@ -385,9 +441,14 @@ def run_loop_iteration(
             print(f"  - {action}: {count}")
 
     # Step 2: Check stop conditions
-    should_stop, reason, exit_code = check_stop_conditions(status_result, confirm_send)
+    should_stop, reason, exit_code = check_stop_conditions(
+        status_result,
+        confirm_send,
+        confirm_search,
+        retry_failed,
+    )
     if should_stop:
-        guidance = format_stop_guidance(status_result, reason, exit_code, confirm_send)
+        guidance = format_stop_guidance(status_result, reason, exit_code, confirm_send, confirm_search)
         print(guidance)
         return (False, reason, exit_code)
 
@@ -398,8 +459,11 @@ def run_loop_iteration(
         return (True, "Dry run - would continue", 0)
 
     # Step 3: Run the phase
-    print(f"\nRunning phase: {next_phase}")
-    phase_result = run_single_phase(project_ref, next_phase, dry_run=dry_run)
+    if not phase_to_run:
+        return (False, "No phase available to run", 1)
+
+    print(f"\nRunning phase: {phase_to_run}")
+    phase_result = run_single_phase(project_ref, phase_to_run, dry_run=dry_run)
 
     # Step 4: Classify result
     should_continue, message, result_exit_code = classify_phase_result(phase_result)
@@ -430,6 +494,8 @@ def run_reachout_loop(
     dry_run: bool = False,
     once: bool = False,
     max_iterations: int = 100,
+    confirm_search: bool = False,
+    retry_failed: bool = False,
 ) -> int:
     """Run the reachout workflow loop.
 
@@ -439,12 +505,13 @@ def run_reachout_loop(
         dry_run: If True, show what would happen without executing
         once: If True, run only one iteration
         max_iterations: Safety limit to prevent infinite loops
+        confirm_search: Whether to proceed past confirm_search boundary
 
     Returns:
         Exit code (0 for clean stop, non-zero for errors)
     """
     print(f"Starting reachout loop for project: {project_ref}")
-    print(f"Options: confirm_send={confirm_send}, dry_run={dry_run}, once={once}")
+    print(f"Options: confirm_send={confirm_send}, confirm_search={confirm_search}, dry_run={dry_run}, once={once}")
 
     iteration = 0
 
@@ -458,6 +525,8 @@ def run_reachout_loop(
                 project_ref,
                 confirm_send=confirm_send,
                 dry_run=dry_run,
+                confirm_search=confirm_search,
+                retry_failed=retry_failed,
             )
 
             if not should_continue:
@@ -505,6 +574,11 @@ def main() -> int:
         help="Project reference: local PROJECT_ID, Recruiter URL, or numeric ID",
     )
     parser.add_argument(
+        "--confirm-search",
+        action="store_true",
+        help="Proceed past confirm_search boundary to extraction",
+    )
+    parser.add_argument(
         "--confirm-send",
         action="store_true",
         help="Proceed past send boundary (required for sending)",
@@ -518,6 +592,11 @@ def main() -> int:
         "--once",
         action="store_true",
         help="Run only one iteration (debug only)",
+    )
+    parser.add_argument(
+        "--retry-failed",
+        action="store_true",
+        help="Retry the current failed phase instead of stopping immediately",
     )
     parser.add_argument(
         "--max-iterations",
@@ -534,6 +613,8 @@ def main() -> int:
         dry_run=args.dry_run,
         once=args.once,
         max_iterations=args.max_iterations,
+        confirm_search=args.confirm_search,
+        retry_failed=args.retry_failed,
     )
 
 
