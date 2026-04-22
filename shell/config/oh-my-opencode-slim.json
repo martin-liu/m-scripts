@@ -5,11 +5,6 @@
     "azure-openai": {
       "orchestrator": {
         "model": "azure-openai/gpt-5.4",
-        "permission": {
-          "external_directory": {
-            "*": "allow"
-          }
-        },
         "skills": [
           "*"
         ],
