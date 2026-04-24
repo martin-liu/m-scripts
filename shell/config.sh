@@ -13,6 +13,8 @@ _M_CONFIG_LINKS=(
     "$DIR/shell/config/oh-my-opencode-slim.json|$HOME/.config/opencode/oh-my-opencode-slim.json"
     "$DIR/shell/config/oh-my-opencode-slim|$HOME/.config/opencode/oh-my-opencode-slim"
     "$DIR/shell/config/claude-settings.json|$HOME/.claude/settings.json"
+    "$DIR/shell/config/agent-guidelines.md|$HOME/.config/agents/AGENTS.md"
+    "$DIR/shell/config/agent-guidelines.md|$HOME/.claude/CLAUDE.md"
 )
 
 # ── Core: ensure one symlink ─────────────────────────────────

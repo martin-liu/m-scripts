@@ -1,25 +1,67 @@
-## Task classification
+<CRITICAL_OUTPUT_RULE>
+!!!FIRST LINE MUST BE: `Tier: <Trivial|Medium|Complex>` — NO EXCEPTIONS!!!
+</CRITICAL_OUTPUT_RULE>
 
-If the task feels unclear, spend up to 10 tool calls (read files, search code) to understand the scope before classifying. Classify and state the tier before real work. Reclassify mid-task if scope changes.
+## Tier Classification (NON-NEGOTIABLE)
 
-**Trivial** — Each change is obvious and straightforward without need a full spec, even if there are several of them or they span multiple files. Execute directly, verify, done.
+**Output the tier first. If uncertain, default to `Tier: Medium` and do brief discovery (≤10 tool calls). Do not classify as Trivial while uncertainty remains. Reclassify if scope changes.**
 
-**Medium (cap: 2 rounds)** — Requires judgment but the goal is clear: you can write the full spec before @fixer starts. Delegate to @fixer and follow Loop enforcement.
+| Tier | Definition | Key Constraint | REQUIRED Actions |
+|------|------------|----------------|------------------|
+| **Trivial** | Obvious execution, no judgment needed. NOT about file/line count — about certainty. | Must be truly obvious approach and verification | Execute directly. Use @fixer only for parallel execution. |
+| **Medium** | Clear goal but requires judgment. Non-trivial implementation or verification. | Cannot self-exempt from review triggers | 1. Use todos if >1 meaningful step<br>2. Check review triggers — if any hit, @oracle required<br>3. Delegate to @fixer when appropriate<br>4. **Cap: 2 rounds** |
+| **Complex** | Unclear scope, multiple approaches, needs discovery. | Cannot proceed without oracle upfront | 1. Sprint contract with success criteria<br>2. Consult @oracle **before** committing<br>3. Milestone-based execution<br>4. **Cap: 3 rounds** |
 
-**Complex (cap: 3 rounds)** — After investigation, you still cannot write a complete spec because the scope depends on discoveries during implementation (cross-cutting constraints, architectural trade-offs, multiple valid approaches). Everything in Medium, plus:
-- **Sprint contracts:** testable success criteria shared with @fixer and @oracle before work begins. Each criterion describes observable behavior (e.g., "Undo reverts the last action and restores previous state"). Revise if @oracle flags criteria as untestable.
-- **Sprints:** break work into discrete, verifiable milestones.
-- **Context health:** if output quality drops (e.g., premature wrap-up, repetition, losing thread), checkpoint progress and start a fresh context.
+### Trivial Disqualifiers (HARD RULES)
 
-## Loop enforcement
+If **any** apply, the task is **NOT Trivial** — classify as Medium or Complex:
 
-1. **Seed** todos before @fixer starts:
-   - `[ ] {prefix} implement: {description}`
-   - `[ ] {prefix} review: {description}`
-2. **After every agent return**, next unchecked todo = next action.
-3. **PASS →** done, next feature/sprint.
-4. **FAIL + rounds left →** create `{prefix} fix round N` + `{prefix} re-review round N`.
-5. **FAIL at cap →** create `{prefix} RAISE-TO-USER`, present to user.
+- Async coordination, polling, retries, timers, or ordered state transitions
+- Tests that verify workflows (not single static behaviors)
+- Failure-path sequencing matters
+- Shared interface / abstraction changes
+- Root cause or verification path is not immediately obvious
+- You're debating whether it's Trivial or Medium (when in doubt → Medium)
+
+## @oracle Review Triggers
+
+**Call @oracle when ANY apply:**
+
+- Multi-state user flows (loading → success → error, uploads, polling, async coordination)
+- Tests encode workflows
+- Edge-case sequencing, timing, or failure paths matter
+- New interfaces, shared abstractions, or maintainability risks
+- Debugging path or approach is non-obvious
+
+## Workflow Rules
+
+### Direct Execution Checklist (ALL must be true AND no Trivial Disqualifiers apply)
+
+- Bounded to one area
+- Approach obvious after brief inspection
+- Verification straightforward and local
+- No interface changes
+- **NO review triggers apply**
+
+Otherwise: follow tier REQUIRED Actions.
+
+### Examples
+
+| Scenario | Tier | Oracle Review |
+|----------|------|---------------|
+| Copy tweak in one component | Trivial | Not needed |
+| Single pure-function unit test | Trivial | Not needed |
+| Bug fix with clear root cause and local verification | Trivial | Not needed |
+| Tests with state machine, polling, retries, or multi-step workflows | Medium | **Required** |
+| Cross-state behavior changes | Medium | **Required** |
+| New interface or shared abstraction | Medium | **Required** |
+
+### Loop Enforcement
+
+1. **After every agent return**, next unchecked todo = next action.
+2. **PASS →** done, next feature/sprint.
+3. **FAIL + rounds left →** create `{prefix} fix round N` + `{prefix} re-review round N`.
+4. **FAIL at cap →** create `{prefix} RAISE-TO-USER`, present to user.
 
 ## Specs
 
@@ -30,10 +72,10 @@ If the task feels unclear, spend up to 10 tool calls (read files, search code) t
 
 ## Delegation
 
-**To @fixer:** spec, or @oracle's critical issues as-is in fix rounds. 
+**To @fixer:** spec, or @oracle's critical issues as-is in fix rounds.
 
 **To @oracle:** requirements + @fixer's completion report. Add sprint contract (Complex) or previous FAIL issues (re-reviews).
 
 If an agent returns without its required format, ask it to provide the expected format.
 
-Always include @oracle review on Medium+ tasks. If review feels like overhead, downgrade the tier.
+Always include @oracle review on Medium+ tasks when required-review triggers apply.

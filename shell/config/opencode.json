@@ -15,7 +15,7 @@
       "/tmp/**": "allow"
     }
   },
-  "small_model": "azure/kimi-k2.5",
+  "small_model": "azure/kimi-k2.6",
   "provider": {
     "ollama": {
       "models": {
@@ -43,12 +43,21 @@
         }
       },
       "models": {
+        "kimi-k2.6": {
+          "name": "kimi-k2.6",
+          "cost": {
+            "input": 0.95,
+            "output": 4
+          },
+          "options": {"thinking": {"type": "enabled", "budgetTokens": 16000}}
+        },
         "kimi-k2.5": {
           "name": "kimi-k2.5",
           "cost": {
             "input": 0.6,
             "output": 3
-          }
+          },
+          "options": {"thinking": {"type": "enabled", "budgetTokens": 16000}}
         }
       }
     },
@@ -96,122 +105,6 @@
     }
   },
   "agent": {
-    "coder": {
-      "mode": "primary",
-      "model": "azure-openai/gpt-5.4",
-      "reasoningEffort": "medium",
-      "color": "primary",
-      "description": "Fast executor: writes code, runs tests, fixes bugs, and manages state",
-      "prompt": "You are the coder in a two-role system: you (a fast executor) and @architect (an on-demand deep thinker). You own all everyday coding work and should complete tasks yourself by default.\n\n## Delegation policy\n\n- Do NOT auto-delegate to @architect\n- Do NOT invoke the task tool unless the user explicitly asks you to consult @architect\n- If you would otherwise escalate, continue with your own best judgment or ask the user for guidance\n\n## Execution tiers\n\nTrivial (single file, obvious fix): execute immediately, no planning overhead.\n\nMedium-complex (multi-file, clear scope, or anything requiring more than a couple of steps): always use todowrite to track the work.\n- Start the todo list before making changes\n- Keep exactly one item in_progress at a time\n- Mark items done as you go\n- Include at least one explicit self-reflection item, add more self-reflection for very complex tasks\n- Include a cleanup item for temporary files, task memory, or follow-up housekeeping when relevant\n\nComplex (ambiguous scope, architectural risk, or multi-step epic):\n1. Start with todowrite and track the full task there.\n2. Create a task-scoped memory file at .opencode/tmp/<slug>.md (e.g. .opencode/tmp/fix-auth-race.md). Never use a generic MEMORY.md.\n3. Start the file with a header: `# <task summary>` followed by `Started: <timestamp>`.\n4. Mirror major milestones and review notes in the memory file.\n5. Add Self-Review and Cleanup todo items before considering the task complete.\n\n## Memory file protocol\n\nEach complex task gets its own memory file. This prevents concurrent sessions from corrupting each other.\n- File naming: .opencode/tmp/<short-kebab-slug>.md \u2014 descriptive of the task\n- Header: task summary and start timestamp on the first two lines\n- On task start: list any existing .opencode/tmp/*.md files. If you find stale files from previous tasks (check timestamps and relevance), delete them before proceeding\n- During the task: keep major decisions, blockers, and corrections up to date\n- On task end: delete your memory file\n\n## Self-review protocol\n\nAssume your first draft of non-trivial code has bugs. During reflection/review steps:\n1. Reread the code you wrote against the original requirements\n2. Look for off-by-one errors, missing edge cases, broken imports, and incorrect types\n3. Run tests or type checks to verify\n4. Update the todo list and memory file with corrections before continuing\nDo not skip review. Do not mark a medium-complex or complex task done without at least one review pass.\n\n## General rules\n\n- Keep changes minimal, targeted, and reversible\n- Run verification (tests, type checks, lints) after changes\n- Report failures cleanly instead of retrying blindly\n- Prefer concrete progress over long explanations\n- When blocked or uncertain, ask the user\n- Complete cleanup items before finishing the task\n- Delete your task memory file when the task is fully complete",
-      "tools": {
-        "read": true,
-        "edit": true,
-        "write": true,
-        "glob": true,
-        "grep": true,
-        "list": true,
-        "bash": true,
-        "task": true,
-        "todowrite": true,
-        "todoread": true,
-        "webfetch": true
-      },
-      "permission": {
-        "read": {
-          "*": "allow",
-          "*.env": "deny",
-          "*.env.*": "deny",
-          "*.env.example": "allow"
-        },
-        "edit": "allow",
-        "write": "allow",
-        "glob": "allow",
-        "grep": "allow",
-        "list": "allow",
-        "bash": {
-          "just": "allow",
-          "uv": "allow",
-          "rye": "allow",
-          "pnpm": "allow",
-          "npm": "allow",
-          "cargo": "allow",
-          "python3": "allow",
-          "git": "allow",
-          "kubectl": "allow",
-          "gh": "allow",
-          "rm": "deny",
-          "sudo": "deny",
-          "chmod": "deny",
-          "curl": "allow",
-          "wget": "allow",
-          "ssh": "allow",
-          "scp": "allow"
-        },
-        "task": {
-          "*": "deny",
-          "architect": "allow"
-        },
-        "todowrite": "allow",
-        "todoread": "allow",
-        "webfetch": "allow",
-        "question": "allow",
-        "doom_loop": "allow",
-        "external_directory": {
-          "*": "allow"
-        }
-      },
-      "steps": 500
-    },
-    "architect": {
-      "mode": "subagent",
-      "model": "azure-openai/gpt-5.4",
-      "color": "info",
-      "reasoningEffort": "high",
-      "textVerbosity": "low",
-      "reasoningSummary": "auto",
-      "description": "On-demand brain: deep analysis, architectural decisions, and high-confidence recommendations",
-      "prompt": "You are the architect in a two-role system. You are the on-demand brain, invoked only when the user explicitly asks for architect help. You do NOT write code or modify files.\n\n## Entry protocol\n\n1. The coder's handoff message will include a memory file path (e.g. .opencode/tmp/fix-auth-race.md). Read that file FIRST to understand context: what was tried, what failed, and the specific questions for you.\n2. If no path is provided or the file does not exist, work from the handoff message alone.\n3. Check the file's timestamp header. If the file is stale (from a clearly different/completed task), ignore its content and note this in your response.\n\n## What you do\n\n1. Architectural tradeoff analysis\n2. Ambiguous or difficult root-cause investigation\n3. Research across codebase, docs, and the web\n4. High-stakes design decisions requiring risk analysis\n5. Recommendations that need strong evidence and justification\n\nIf the delegated task does not justify deep analysis, say so and return immediately.\n\n## Read-Only Enforcer\n\nYou are STRICTLY READ-ONLY. You cannot edit files, write to the memory file, or run bash commands. You must return all your findings, notes, and recommendations entirely within your final text response packet back to the coder.\n\n## The Dictation Pattern (CRITICAL)\n\nDo NOT attempt to use write tools. If your analysis requires updating the project's memory file, include a section in your final text response formatted exactly as `### Suggested Memory Updates`. Provide the exact text or bullet points the coder should add/modify. The coder will apply these updates on your behalf.\n\n## Operating rules\n\n- Stay strictly read-only: no edits, no writes, no shell commands, no todo modifications\n- Cite file paths and line numbers as evidence\n- Separate observations from recommendations\n- Prefer synthesis over exhaustive dumps\n- Focus on decision support, not generic exposition\n\n## Output format\n\nReturn a structured packet:\n\n**Summary**\n- 2-4 bullets answering the coder's question\n\n**Key Evidence**\n- File paths, line numbers, docs, or web references\n\n**Analysis**\n- Tradeoffs, risks, root cause, or decision framing\n\n**Recommendation**\n- Clear next step for the coder\n\n**Open Questions**\n- Only if something important remains unknown\n\n**### Suggested Memory Updates**\n- Optional: exact notes the coder should write to the task memory file",
-      "tools": {
-        "read": true,
-        "edit": false,
-        "write": false,
-        "glob": true,
-        "grep": true,
-        "list": true,
-        "bash": false,
-        "task": false,
-        "todowrite": false,
-        "todoread": true,
-        "webfetch": true
-      },
-      "permission": {
-        "read": {
-          "*": "allow",
-          "*.env": "deny",
-          "*.env.*": "deny",
-          "*.env.example": "allow"
-        },
-        "edit": "deny",
-        "write": "deny",
-        "glob": "allow",
-        "grep": "allow",
-        "list": "allow",
-        "bash": "deny",
-        "task": "deny",
-        "todowrite": "deny",
-        "todoread": "allow",
-        "webfetch": "allow",
-        "question": "deny",
-        "doom_loop": "allow",
-        "plan_enter": "deny",
-        "plan_exit": "deny",
-        "external_directory": {
-          "*": "deny",
-          "/Users/martinliu/.local/share/opencode/tool-output/*": "allow"
-        }
-      },
-      "steps": 10
-    },
     "explore": {
       "disable": true
     },
@@ -219,7 +112,7 @@
       "disable": true
     }
   },
-  "model": "azure-openai/gpt-5.4",
+  "model": "azure/kimi-k2.6",
   "default_agent": "orchestrator",
   "share": "manual",
   "logLevel": "DEBUG"

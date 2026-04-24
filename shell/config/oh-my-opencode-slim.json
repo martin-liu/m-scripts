@@ -4,7 +4,7 @@
   "presets": {
     "azure-openai": {
       "orchestrator": {
-        "model": "azure-openai/gpt-5.4",
+        "model": "azure/kimi-k2.6",
         "skills": [
           "*"
         ],
@@ -14,14 +14,14 @@
       },
       "oracle": {
         "model": "azure-openai/gpt-5.4",
-        "variant": "high",
+        "variant": "xhigh",
         "skills": [
           "simplify"
         ],
         "mcps": []
       },
       "librarian": {
-        "model": "azure/kimi-k2.5",
+        "model": "azure/kimi-k2.6",
         "variant": "low",
         "skills": [],
         "mcps": [
@@ -31,13 +31,13 @@
         ]
       },
       "explorer": {
-        "model": "azure/kimi-k2.5",
+        "model": "azure/kimi-k2.6",
         "variant": "low",
         "skills": [],
         "mcps": []
       },
       "designer": {
-        "model": "azure/kimi-k2.5",
+        "model": "azure/kimi-k2.6",
         "variant": "medium",
         "skills": [
           "agent-browser"
@@ -45,7 +45,7 @@
         "mcps": []
       },
       "fixer": {
-        "model": "azure/kimi-k2.5",
+        "model": "azure/kimi-k2.6",
         "variant": "low",
         "skills": [],
         "mcps": []
@@ -70,8 +70,7 @@
           "variant": "low"
         },
         "balanced": {
-          "model": "azure-openai/gpt-5.4-mini",
-          "variant": "high"
+          "model": "azure/kimi-k2.6"
         },
         "fast": {
           "model": "azure/kimi-k2.5"
