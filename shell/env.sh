@@ -26,7 +26,7 @@ export PATH=$PATH:$HOME/.rd/bin
 
 ### Pnpm
 export PNPM_HOME="${PNPM_HOME:-$HOME/Library/pnpm}"
-export PATH=$PATH:$PNPM_HOME
+export PATH=$PATH:$PNPM_HOME/bin
 
 ### Python
 export PATH=$PATH:$HOME/.local/bin

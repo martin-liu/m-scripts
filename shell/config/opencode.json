@@ -7,6 +7,7 @@
   "enabled_providers": [
     "openrouter",
     "azure",
+    "azure-westcentralus",
     "azure-openai",
     "ollama"
   ],
@@ -32,9 +33,9 @@
     },
     "azure": {
       "npm": "@ai-sdk/openai-compatible",
-      "name": "Azure Kimi",
+      "name": "Azure WestUS",
       "options": {
-        "baseURL": "{env:AZURE_API_BASE_NANDDEVWESTUS3}/openai/deployments/kimi-k2.5",
+        "baseURL": "{env:AZURE_API_BASE_NANDDEVWESTUS3}/openai/deployments/kimi-k2.6",
         "headers": {
           "api-key": "{env:AZURE_API_KEY_NANDDEVWESTUS3}"
         },
@@ -50,17 +51,33 @@
             "output": 4
           },
           "options": {"thinking": {"type": "enabled", "budgetTokens": 16000}}
+        }
+      }
+    },
+    "azure-westcentralus": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Azure CentralUS",
+      "options": {
+        "baseURL": "{env:AZURE_API_BASE_NANDDEVWESTCENTRALUS}/openai/deployments/DeepSeek-V4-Flash",
+        "headers": {
+          "api-key": "{env:AZURE_API_KEY_NANDDEVWESTCENTRALUS}"
         },
-        "kimi-k2.5": {
-          "name": "kimi-k2.5",
+        "queryParams": {
+          "api-version": "{env:AZURE_API_VERSION}"
+        }
+      },
+      "models": {
+        "deepseek-v4-flash": {
+          "name": "deepseek-v4-flash",
           "cost": {
-            "input": 0.6,
-            "output": 3
+            "input": 1.03,
+            "output": 4.12
           },
           "options": {"thinking": {"type": "enabled", "budgetTokens": 16000}}
         }
       }
     },
+
     "azure-openai": {
       "npm": "@ai-sdk/openai",
       "name": "Azure OpenAI",
@@ -79,6 +96,19 @@
               "input": 5,
               "output": 22.5,
               "cache_read": 0.5
+            }
+          }
+        },
+        "gpt-5.5": {
+          "name": "gpt-5.5",
+          "cost": {
+            "input": 5,
+            "output": 30,
+            "cache_read": 0.5,
+            "context_over_200k": {
+              "input": 10,
+              "output": 45,
+              "cache_read": 1
             }
           }
         },
