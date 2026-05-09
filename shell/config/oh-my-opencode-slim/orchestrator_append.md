@@ -76,6 +76,8 @@ Otherwise: follow tier REQUIRED Actions.
 
 **To @oracle:** requirements + @fixer's completion report. Add sprint contract (Complex) or previous FAIL issues (re-reviews).
 
+**Path convention:** use repo-relative paths in specs (e.g. `src/foo.ts:42`) for files inside the repo; use absolute paths only when pointing outside it (system/config files, other repos). Keeps specs portable and avoids leaking user home dirs into agent context.
+
 If an agent returns without its required format, ask it to provide the expected format.
 
 Always include @oracle review on Medium+ tasks when required-review triggers apply.

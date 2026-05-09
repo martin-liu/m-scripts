@@ -17,7 +17,6 @@ This is m-scripts, a personal CLI tools and shell scripts collection by Martin L
 
 1. **Rust CLI (`m`)**: A command-line tool built with Rust and Clap
    - Main entry: `src/main.rs`
-   - Lyftkube module: `src/lyftkube/` - kubectl wrapper commands
 
 2. **Shell Scripts**: Setup and utility scripts for macOS development environment
    - `bin/setup.sh` - Initial environment setup

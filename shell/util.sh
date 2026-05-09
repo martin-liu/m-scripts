@@ -178,28 +178,6 @@ function timesh() {
   for i in $(seq 1 10); do /usr/bin/time $shell -i -c exit; done
 }
 
-### `lk describe pod core-prod-1/mlpsandbox-chatcanary-df6b8f765-xt6pk`
-function lk() {
-    cmd=$(python - $@ <<EoF
-
-import sys
-import os
-
-i, pod_str = next((i, d) for i, d in enumerate(sys.argv) if '/' in d)
-cluster, pod = pod_str.split('/')
-sys.argv[i] = pod
-proj = pod.split('-')[0]
-if proj.startswith('realtime'):
-    proj = proj[8:]
-env = 'staging' if ('staging' in cluster or 'stg' in cluster) else 'production'
-cmd = f"lyftkube --cluster {cluster} -e {env} kubectl -- -n {proj}-{env} {' '.join(sys.argv[1:])}"
-print(cmd)
-
-EoF
-       )
-    echo $cmd
-    eval $cmd
-}
 
 ### MAC OS (ventra)
 ## trigger sidecar to ipad
