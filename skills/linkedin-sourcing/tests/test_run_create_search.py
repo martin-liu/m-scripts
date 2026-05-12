@@ -174,12 +174,13 @@ class TestRunCreateSearchPhase:
         assert result["next_phase"] == "confirm_search"
         assert "awaiting confirmation" in result["message"]
 
+    @patch("run_create_search.create_initial_search_with_copilot")
     @patch("run_create_search.inspect_search_state")
     @patch("run_create_search._ensure_browser_ready")
     @patch("run_create_search.load_runtime_context")
     @patch("run_create_search.resolve_project")
-    def test_returns_manual_action_when_search_not_configured(
-        self, mock_resolve, mock_ctx, mock_ensure_ready, mock_inspect, tmp_path
+    def test_attempts_copilot_when_search_not_configured(
+        self, mock_resolve, mock_ctx, mock_ensure_ready, mock_inspect, mock_copilot, tmp_path
     ):
         config_path = tmp_path / "config.sh"
         config_path.write_text("", encoding="utf-8")
@@ -202,15 +203,69 @@ class TestRunCreateSearchPhase:
             "failure_code": "search_not_configured",
             "action_required": None,
         }
+        mock_copilot.return_value = {
+            "success": False,
+            "status": "copilot_widget_missing",
+            "failure_code": "ELEMENT_MISSING",
+            "action_required": {
+                "code": "ELEMENT_MISSING",
+                "summary": "Copilot widget not found",
+            },
+        }
 
         result = rcs.run_create_search_phase("proj-1")
 
+        # Should have attempted Copilot
+        mock_copilot.assert_called_once()
         assert result["success"] is False
         assert result["phase"] == "create_search"
-        assert result["status"] == "search_not_configured"
-        assert result["next_phase"] == "create_search"
-        assert result["action_required"]["code"] == "search_not_configured"
-        assert "search_brief" in result["action_required"]["context"]
+        assert "copilot" in result["status"] or result["status"] == "copilot_widget_missing"
+
+    @patch("run_create_search.create_initial_search_with_copilot")
+    @patch("run_create_search.inspect_search_state")
+    @patch("run_create_search._ensure_browser_ready")
+    @patch("run_create_search.load_runtime_context")
+    @patch("run_create_search.resolve_project")
+    def test_attempts_copilot_when_search_unverified(
+        self, mock_resolve, mock_ctx, mock_ensure_ready, mock_inspect, mock_copilot, tmp_path
+    ):
+        """Copilot should also be attempted when status is 'unverified' (widget still loading)."""
+        config_path = tmp_path / "config.sh"
+        config_path.write_text("", encoding="utf-8")
+        (tmp_path / "job_description.txt").write_text("Focus on CV", encoding="utf-8")
+        mock_ctx.return_value = {"profile": {"CDP_PORT": "9230"}}
+        mock_resolve.return_value = (
+            config_path,
+            {
+                "PROJECT_ID": "proj-1",
+                "RECRUITER_PROJECT_URL": "https://linkedin.com/talent/hire/123/discover/recruiterSearch",
+                "POSITION_TITLE": "Research Engineer",
+            },
+            "123",
+        )
+        mock_ensure_ready.return_value = ("9230", None)
+        mock_inspect.return_value = {
+            "success": False,
+            "status": "unverified",
+            "current_url": "https://linkedin.com/talent/hire/123/discover/recruiterSearch",
+            "failure_code": "search_not_configured",
+            "action_required": None,
+        }
+        mock_copilot.return_value = {
+            "success": False,
+            "status": "copilot_timeout",
+            "failure_code": "TIMEOUT",
+            "action_required": {
+                "code": "TIMEOUT",
+                "summary": "Copilot timed out",
+            },
+        }
+
+        result = rcs.run_create_search_phase("proj-1")
+
+        mock_copilot.assert_called_once()
+        assert result["success"] is False
+        assert "copilot" in result["status"] or result["status"] == "copilot_timeout"
 
     @patch("run_create_search._ensure_browser_ready")
     @patch("run_create_search.load_runtime_context")

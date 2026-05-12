@@ -177,9 +177,11 @@ def _get_hiring_company_aliases(company_name: str) -> set[str]:
 def _company_matches_alias(company: str, aliases: set[str]) -> bool:
     """Check if a company name matches any alias (handles variations like 'Inc.', 'Ltd.', etc.).
 
-    Uses both exact normalized matching and substring matching to be robust
+    Uses exact normalized matching and word-boundary substring matching to be robust
     without over-excluding unrelated names.
     """
+    import re
+
     company_lower = company.lower().strip()
     company_normalized = company_lower.replace(" ", "").replace("-", "")
 
@@ -188,12 +190,13 @@ def _company_matches_alias(company: str, aliases: set[str]) -> bool:
         # Exact normalized match
         if company_normalized == alias_normalized:
             return True
-        # Substring match: alias is a distinct word in company name
+        # Word-boundary match: alias is a distinct word in company name
         # e.g., "ByteDance" in "ByteDance Inc." or "TikTok" in "TikTok Pte. Ltd."
-        if alias in company_lower:
+        # but NOT "TikTok" in "TikTokAnalytics"
+        if re.search(r"\b" + re.escape(alias) + r"\b", company_lower):
             return True
         # Reverse: company is a distinct word in alias (less common)
-        if company_lower in alias:
+        if re.search(r"\b" + re.escape(company_lower) + r"\b", alias):
             return True
 
     return False
@@ -370,28 +373,41 @@ def build_copilot_search_query(
 
 
 def build_action_required(
-    recruiter_url: str, search_brief: str, current_url: str | None = None
+    recruiter_url: str,
+    search_brief: str,
+    current_url: str | None = None,
+    copilot_query: str = "",
 ) -> dict[str, Any]:
     """Build agent-actionable search-creation instructions."""
-    context = {
+    context: dict[str, Any] = {
         "recruiter_url": recruiter_url,
         "search_brief": search_brief,
     }
     if current_url:
         context["current_url"] = current_url
+    if copilot_query:
+        context["copilot_query"] = copilot_query
+
+    steps = [
+        "Open the Recruiter project search page in Chrome",
+        "Look for the AI Copilot widget (usually a div with `data-test-copilot-widget`, may need to click a button to expand the widget)",
+        "Click the Copilot input and paste the search brief from context.search_brief",
+        "Ask Copilot to create a candidate search using the provided brief",
+        "Wait for Copilot to generate the search, then review and adjust titles, companies, locations, and exclusions",
+        "Confirm candidate cards or a real results count are visible",
+        "After the search is ready, re-run the loop to continue",
+    ]
+    if copilot_query:
+        steps.insert(
+            3,
+            "WORST CASE: If the agent cannot interact with Copilot automatically, copy the ready-made query from context.copilot_query and paste it into the Copilot input manually",
+        )
 
     return {
         "code": "search_not_configured",
         "summary": "The Recruiter project needs a candidate search configured",
-        "message": "Open the Recruiter project in Chrome and create the candidate search using the provided search brief",
-        "steps": [
-            "Open the Recruiter project search page in Chrome",
-            "If Recruiter shows 'Start a search', choose job description, Boolean search, or profile",
-            "Use the search brief provided in context.search_brief",
-            "Review and adjust titles, companies, locations, and exclusions",
-            "Confirm candidate cards or a real results count are visible",
-            "After the search is ready, Re-run the loop to continue",
-        ],
+        "message": "Open the Recruiter project in Chrome and use the AI Copilot to create the candidate search",
+        "steps": steps,
         "can_retry": True,
         "context": context,
         "actor": "agent",
@@ -2463,13 +2479,19 @@ def run_create_search_phase(
     result["current_url"] = inspection.get("current_url")
     result["failure_code"] = inspection.get("failure_code")
 
-    # If search is not configured, try creating it via Copilot
+    # If search is not configured or unverified, try creating it via Copilot
+    # "unverified" means no search results and no creation prompt detected —
+    # the Copilot widget may still be loading, so we attempt Copilot creation
+    inspection_status = inspection.get("status", "")
     if (
         not inspection.get("success")
-        and inspection.get("status") == "search_not_configured"
+        and inspection_status in ("search_not_configured", "unverified")
+        and not inspection.get("action_required")
     ):
         print(
-            "Search not configured - attempting AI Copilot search creation...",
+            "Search not configured (status: {inspection_status}) - attempting AI Copilot search creation...".format(
+                inspection_status=inspection_status
+            ),
             file=sys.stderr,
         )
         copilot_result = create_initial_search_with_copilot(
@@ -2603,10 +2625,12 @@ def run_create_search_phase(
                 create_search_summary=False,
             )
         else:
+            copilot_query = build_copilot_search_query(config, jd_text, jd_url)
             action_req = build_action_required(
                 recruiter_url=recruiter_url,
                 search_brief=search_brief,
                 current_url=inspection.get("current_url"),
+                copilot_query=copilot_query,
             )
             update_project_state(
                 project_dir=project_dir,
@@ -2640,10 +2664,12 @@ def run_create_search_phase(
 
     result["success"] = False
     result["next_phase"] = "create_search"
+    copilot_query = build_copilot_search_query(config, jd_text, jd_url)
     result["action_required"] = build_action_required(
         recruiter_url=recruiter_url,
         search_brief=search_brief,
         current_url=inspection.get("current_url"),
+        copilot_query=copilot_query,
     )
     result["message"] = (
         "Open the Recruiter project and create the candidate search using the provided search brief"

@@ -3895,7 +3895,7 @@ class TestCreateSearchMessaging:
         assert "You need to" not in action.get("message", "")
         # Should have clear message for agent
         assert "Open the Recruiter project" in action["message"]
-        assert "search brief" in action["message"].lower()
+        assert "copilot" in action["message"].lower()
 
     def test_action_required_steps_are_agent_focused(self):
         """Action required steps should be clear for agent execution."""
@@ -3912,7 +3912,7 @@ class TestCreateSearchMessaging:
         assert any("Open the Recruiter project" in step for step in steps)
         assert any("search brief" in step.lower() for step in steps)
         # Should include retry instruction
-        assert any("Re-run" in step for step in steps)
+        assert any("re-run" in step.lower() for step in steps)
 
 
 if __name__ == "__main__":
