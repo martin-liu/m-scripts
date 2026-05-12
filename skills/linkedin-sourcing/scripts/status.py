@@ -480,7 +480,7 @@ def get_status(project_ref: str, work_dir: Path | None = None) -> dict[str, Any]
             "summary": "Project messaging fields must be finalized before drafting",
             "steps": [
                 f"Open {result['config_path']}",
-                f"Replace placeholder values for: {', '.join(unresolved_project_fields)}",
+                f"Fill in {', '.join(unresolved_project_fields)} based on the job description — do not ask the user unless you are genuinely uncertain",
                 "Rerun the loop after saving config.sh",
             ],
             "actor": "agent",
@@ -626,14 +626,9 @@ def main():
                 print(f"\nAfter USER confirms filters are correct, run:")
                 print(f"  {status['loop_command']} --confirm-search")
                 print(f"\n⚠️  Only use --confirm-search after the USER has verified the filters")
-            elif next_phase == "review":
-                print(f"\n🛑 Boundary: Review and confirmation required")
-                print(f"  Open the workbook and review drafted messages")
-                print(f"\nAfter review and confirmation, run:")
-                print(f"  {status['loop_command']}")
             elif next_phase == "send":
                 print(f"\n🛑 Boundary: Send confirmation required")
-                print(f"  Review and confirm messages in workbook, then run with --confirm-send:")
+                print(f"  Review drafted messages in workbook, then run with --confirm-send:")
                 print(f"  {status['loop_command']} --confirm-send")
         elif status.get("loop_command"):
             # Normal operation - show loop command

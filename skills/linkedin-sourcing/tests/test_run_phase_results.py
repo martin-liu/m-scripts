@@ -335,45 +335,54 @@ class TestRunPhaseStateUpdates:
 
 
 class TestReviewPhaseHandling:
-    """Tests for review phase as human stop boundary."""
+    """Tests for review phase as automated approval."""
 
-    def test_review_phase_is_not_blocked(self):
-        """Review phase should succeed but be treated as stop boundary by loop."""
+    def test_review_phase_approves_drafted_rows(self):
+        """Review phase should auto-approve drafted rows."""
         with patch("run_phase.resolve_project_ref") as mock_resolve:
             with patch("run_phase.load_project_state") as mock_state:
                 with patch("run_phase.update_project_state") as mock_update:
-                    mock_resolve.return_value = {
-                        "success": True,
-                        "config_path": Path("/tmp/test/config.sh"),
-                        "workbook_path": Path("/tmp/test/workbook.xlsx"),
-                    }
-                    mock_state.return_value = {"workflow_mode": "reachout"}
+                    with patch("reachout_automation.cmd_approve") as mock_approve:
+                        mock_resolve.return_value = {
+                            "success": True,
+                            "config_path": Path("/tmp/test/config.sh"),
+                            "workbook_path": Path("/tmp/test/workbook.xlsx"),
+                        }
+                        mock_state.return_value = {"workflow_mode": "reachout"}
+                        mock_approve.return_value = {
+                            "approved": 3,
+                            "skipped": 0,
+                        }
 
-                    result = rp.run_phase("test_project", "review")
+                        result = rp.run_phase("test_project", "review")
 
-                    assert result["success"] is True
-                    assert "review" in result["phase_result"]["message"].lower()
-                    assert "human" in result["phase_result"]["message"].lower()
+                        assert result["success"] is True
+                        mock_approve.assert_called_once_with("/tmp/test/workbook.xlsx")
 
-    def test_review_phase_does_not_create_sticky_blocker(self):
-        """Review phase should not set action_required to avoid sticky blocker."""
+    def test_review_phase_clears_action_required_on_success(self):
+        """Review phase should clear stale action_required on success."""
         with patch("run_phase.resolve_project_ref") as mock_resolve:
             with patch("run_phase.load_project_state") as mock_state:
                 with patch("run_phase.update_project_state") as mock_update:
-                    mock_resolve.return_value = {
-                        "success": True,
-                        "config_path": Path("/tmp/test/config.sh"),
-                        "workbook_path": Path("/tmp/test/workbook.xlsx"),
-                    }
-                    mock_state.return_value = {"workflow_mode": "reachout"}
+                    with patch("reachout_automation.cmd_approve") as mock_approve:
+                        mock_resolve.return_value = {
+                            "success": True,
+                            "config_path": Path("/tmp/test/config.sh"),
+                            "workbook_path": Path("/tmp/test/workbook.xlsx"),
+                        }
+                        mock_state.return_value = {"workflow_mode": "reachout"}
+                        mock_approve.return_value = {
+                            "approved": 3,
+                            "skipped": 0,
+                        }
 
-                    rp.run_phase("test_project", "review")
+                        rp.run_phase("test_project", "review")
 
-                    # Check that state was updated with completed status, not action_required
-                    call_args = mock_update.call_args_list
-                    last_call = call_args[-1]
-                    assert last_call[1]["status"] == "completed"
-                    assert last_call[1]["action_required"] is False
+                        # Check that state was updated with completed status
+                        call_args = mock_update.call_args_list
+                        last_call = call_args[-1]
+                        assert last_call[1]["status"] == "completed"
+                        assert last_call[1]["action_required"] is False
 
 
 class TestActionRequiredClearing:

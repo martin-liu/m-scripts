@@ -1157,7 +1157,7 @@ Team""")
 
         config_file = tmp_path / "config.sh"
         config_file.write_text(
-            'POSITION_TITLE="Engineer"\nTEAM_NAME="AI"\nLOCATION="SF"\nCORE_FUNCTION="[CORE FUNCTION - PLEASE UPDATE]"\nBUSINESS_IMPACT="[BUSINESS IMPACT - PLEASE UPDATE]"\nUSER_EMAIL="test@test.com"'
+            'POSITION_TITLE="Engineer"\nTEAM_NAME="AI"\nLOCATION="SF"\nCORE_FUNCTION="[AGENT: infer from JD - what does this team do?]"\nBUSINESS_IMPACT="[AGENT: infer from JD - why does this work matter?]"\nUSER_EMAIL="test@test.com"'
         )
 
         rows = [

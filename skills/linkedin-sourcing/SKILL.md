@@ -30,6 +30,16 @@ The loop decides the next phase from project and workbook state. Do not run indi
 python3 "$SKILL_DIR/scripts/bootstrap_project.py" --jd-url "https://example.com/job"
 ```
 
+**Agent responsibility during bootstrap:**
+- Read the job description (JD) from the provided URL
+- Infer `CORE_FUNCTION` (what the team does, e.g., "building scalable ML infrastructure") from the JD
+- Infer `BUSINESS_IMPACT` (why it matters, e.g., "powering recommendation systems for billions of users") from the JD
+- Pass them as CLI flags:
+  ```bash
+  python3 "$SKILL_DIR/scripts/bootstrap_project.py" --jd-url "..." --core-function "..." --business-impact "..."
+  ```
+- Only ask the user for these fields if the JD is ambiguous or you are genuinely uncertain after reading it
+
 ### Start or continue work
 
 ```bash
@@ -50,8 +60,7 @@ Do not guess the next phase.
 |---|---|
 | Login/auth required | Log into LinkedIn Recruiter, then rerun the loop |
 | Browser/CDP unavailable | Reconnect Chrome (`connect_browser.sh`), then rerun the loop |
-| Manual review required | Review requested workbook rows/drafts, then rerun the loop |
-| Send confirmation required | Get explicit user approval before sending |
+| Send confirmation required | Review drafted messages in workbook, get explicit user approval, then run with `--confirm-send` |
 | Page/dialog blocked | Clear the blocker, then rerun the loop |
 | Unclear failure | Stop and inspect `DEBUG.md`; do not manually advance phases |
 

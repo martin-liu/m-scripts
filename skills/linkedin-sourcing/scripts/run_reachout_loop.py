@@ -121,9 +121,8 @@ def check_stop_conditions(
         4. Current phase still running
         5. Not ready (blocked state)
         6. Workflow complete (no next_phase and ready=True)
-        7. Human review boundary (review phase)
-        8. Confirm search boundary (unless confirm_search=True)
-        9. Send boundary (unless confirm_send=True)
+        7. Confirm search boundary (unless confirm_search=True)
+        8. Send boundary (unless confirm_send=True)
 
     Args:
         status_result: Result from status.get_status()
@@ -202,15 +201,7 @@ def check_stop_conditions(
     if next_phase is None and ready:
         return (True, "Workflow complete - no more phases to run", 0)
 
-    # Stop 7: Human review boundary
-    if next_phase == "review":
-        return (
-            True,
-            "Stopped at review boundary - human review and confirmation required before proceeding",
-            0,
-        )
-
-    # Stop 8: Confirm search boundary (USER must verify filters before extraction)
+    # Stop 7: Confirm search boundary (USER must verify filters before extraction)
     if next_phase == "confirm_search" and not confirm_search:
         return (
             True,
@@ -218,7 +209,7 @@ def check_stop_conditions(
             0,
         )
 
-    # Stop 9: Send boundary (unless confirmed)
+    # Stop 8: Send boundary (unless confirmed)
     if next_phase == "send" and not confirm_send:
         return (
             True,
@@ -285,14 +276,6 @@ def classify_phase_result(phase_result: dict[str, Any]) -> tuple[bool, str, int]
             False,
             f"Phase '{phase}' blocked: {action_required.get('summary', 'Action required before continuing')}",
             2,
-        )
-
-    # Check for review phase (human stop boundary)
-    if phase == "review" and success:
-        return (
-            False,
-            "Review phase reached - human review required before proceeding",
-            0,
         )
 
     # Check for explicit failure
@@ -380,12 +363,6 @@ def format_stop_guidance(
         lines.append(f"\nAfter USER confirms filters are correct, resume with:")
         lines.append(f"  {loop_cmd} --confirm-search")
         lines.append(f"\n⚠️  Only use --confirm-search after the USER has verified the filters")
-    elif next_phase == "review":
-        # Review boundary
-        lines.append(f"\nNext step:")
-        lines.append(f"  Open workbook and review drafted messages")
-        lines.append(f"\nAfter review and confirmation, resume with:")
-        lines.append(f"  {loop_cmd}")
     elif next_phase == "send":
         # Send boundary
         if confirm_send:

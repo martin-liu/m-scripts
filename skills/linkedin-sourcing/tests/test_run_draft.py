@@ -383,7 +383,7 @@ Best""")
 
         config_path = tmp_path / "config.sh"
         config_path.write_text(
-            'PROJECT_ID="test"\nPOSITION_TITLE="Engineer"\nTEAM_NAME="AI"\nLOCATION="SF"\nCORE_FUNCTION="[CORE FUNCTION - PLEASE UPDATE]"\nBUSINESS_IMPACT="[BUSINESS IMPACT - PLEASE UPDATE]"\nUSER_EMAIL="test@example.com"\n'
+            'PROJECT_ID="test"\nPOSITION_TITLE="Engineer"\nTEAM_NAME="AI"\nLOCATION="SF"\nCORE_FUNCTION="[AGENT: infer from JD - what does this team do?]"\nBUSINESS_IMPACT="[AGENT: infer from JD - why does this work matter?]"\nUSER_EMAIL="test@example.com"\n'
         )
 
         template_path = tmp_path / "inmail_template.txt"

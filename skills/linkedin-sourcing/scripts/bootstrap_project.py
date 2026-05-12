@@ -1120,13 +1120,13 @@ def build_config(
             "core_function",
             "core_function",
             "CORE_FUNCTION",
-            "[CORE FUNCTION - PLEASE UPDATE]",
+            "[AGENT: infer from JD - what does this team do?]",
         ),
         "BUSINESS_IMPACT": get_value(
             "business_impact",
             "business_impact",
             "BUSINESS_IMPACT",
-            "[BUSINESS IMPACT - PLEASE UPDATE]",
+            "[AGENT: infer from JD - why does this work matter?]",
         ),
         "KEYWORDS": (
             overrides.get("keywords")

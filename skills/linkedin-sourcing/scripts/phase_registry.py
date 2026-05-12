@@ -83,9 +83,9 @@ PHASE_METADATA: dict[str, dict[str, Any]] = {
     },
     "review": {
         "name": "Review",
-        "description": "Human review of drafted messages",
+        "description": "Approve drafted messages for sending",
         "requires_browser": False,
-        "is_automated": False,
+        "is_automated": True,
     },
     "send": {
         "name": "Send",

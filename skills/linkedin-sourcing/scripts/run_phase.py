@@ -56,6 +56,22 @@ def run_filter_phase(
         return {"success": False, "error": str(e), "kept": 0, "filtered": 0}
 
 
+def run_review_phase(
+    project_dir: Path,
+    config_path: Path,
+    workbook_path: Path,
+    local_project_id: str,
+) -> dict[str, Any]:
+    """Run the review phase: auto-approve drafted rows for sending."""
+    try:
+        from reachout_automation import cmd_approve
+
+        result = cmd_approve(str(workbook_path))
+        return {"success": True, **result}
+    except Exception as e:
+        return {"success": False, "error": str(e), "approved": 0}
+
+
 def run_draft_phase(
     project_dir: Path,
     config_path: Path,
@@ -277,13 +293,14 @@ def run_send_phase(
 
 # Phase runner registry
 # Note: bootstrap is a pre-loop entrypoint, not a runnable loop phase
-# Note: confirm_search and review are human stop boundaries handled inline in run_phase()
+# Note: confirm_search is a human stop boundary handled inline in run_phase()
 PHASE_RUNNERS: dict[str, callable] = {
     "create_search": run_create_search_phase,
     "extract": run_extract_phase,
     "filter": run_filter_phase,
     "enrich": run_enrich_phase,
     "draft": run_draft_phase,
+    "review": run_review_phase,
     "send": run_send_phase,
 }
 
@@ -352,10 +369,10 @@ def run_phase(
             "message": f"Phase '{phase}' requires human action",
             "workbook_path": str(workbook_path),
         }
-        # Review and confirm_search phases are non-sticky human stop boundaries -
+        # confirm_search is a non-sticky human stop boundary -
         # don't set action_required to avoid creating a stale blocker.
         # The workbook's next_action rows are the source of truth for state.
-        if phase in ("review", "confirm_search"):
+        if phase == "confirm_search":
             result["state_after"] = update_project_state(
                 project_dir,
                 current_phase=phase,
@@ -363,9 +380,7 @@ def run_phase(
                 action_required=False,  # Explicitly clear any stale action_required
                 last_error=False,
             )
-            # confirm_search transitions to extract
-            if phase == "confirm_search":
-                result["phase_result"]["next_phase"] = "extract"
+            result["phase_result"]["next_phase"] = "extract"
         else:
             result["state_after"] = update_project_state(
                 project_dir,

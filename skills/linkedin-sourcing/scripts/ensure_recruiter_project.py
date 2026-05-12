@@ -64,6 +64,7 @@ from recruiter_url_utils import (
 
 # LinkedIn Recruiter URLs
 RECRUITER_BASE = "https://www.linkedin.com/talent"
+RECRUITER_HOME_URL = f"{RECRUITER_BASE}/home"
 PROJECTS_URL = f"{RECRUITER_BASE}/projects"
 
 # JavaScript snippets for browser automation
@@ -562,7 +563,15 @@ def navigate_to_projects(
         - dialog_info: dict | None - dialog status if timeout occurred
         - recovery_attempted: bool - whether recovery was attempted
     """
-    # First attempt: direct navigation
+    # Pre-flight: ensure we're in the Recruiter context by visiting home first
+    # This handles cases where the browser is on a non-LinkedIn page
+    home_result = _run_browser_command(
+        browser_mode, "goto", RECRUITER_HOME_URL, timeout=30, check_dialog_on_timeout=True
+    )
+    if not home_result.get("error") and not home_result.get("timed_out"):
+        time.sleep(2)
+
+    # First attempt: direct navigation to Projects page
     result = _run_browser_command(
         browser_mode, "goto", PROJECTS_URL, timeout=30, check_dialog_on_timeout=True
     )

@@ -548,7 +548,7 @@ class TestBuildConfig:
 
         assert "[POSITION TITLE - PLEASE UPDATE]" in config["POSITION_TITLE"]
         assert "[LOCATION - PLEASE UPDATE]" in config["LOCATION"]
-        assert "[CORE FUNCTION - PLEASE UPDATE]" in config["CORE_FUNCTION"]
+        assert "[AGENT: infer from JD" in config["CORE_FUNCTION"]
 
     def test_preserves_existing_config_values(self):
         """Should preserve existing config values when reusing a project."""

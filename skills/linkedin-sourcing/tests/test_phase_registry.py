@@ -105,11 +105,11 @@ class TestGetPhaseMetadata:
         assert meta["requires_browser"] is False
         assert meta["is_automated"] is True
 
-    def test_review_is_human_stop_boundary(self):
-        """Review phase should not be automated."""
+    def test_review_is_automated(self):
+        """Review phase should be automated (auto-approves drafted rows)."""
         meta = pr.get_phase_metadata("review")
 
-        assert meta["is_automated"] is False
+        assert meta["is_automated"] is True
 
     def test_confirm_search_is_human_stop_boundary(self):
         """Confirm_search phase should not be automated."""

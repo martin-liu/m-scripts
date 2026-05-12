@@ -613,7 +613,7 @@ def cmd_draft(
 
 
 def cmd_approve(workbook_path: str):
-    """Auto-approve all drafted rows for testing.
+    """Auto-approve all drafted rows ready for sending.
 
     Sets status=Approved, next_action=send for all rows
     where status=Drafted and next_action=review.

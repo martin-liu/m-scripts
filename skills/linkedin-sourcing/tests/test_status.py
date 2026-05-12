@@ -957,7 +957,7 @@ class TestGetStatus:
         project_dir.mkdir(parents=True)
         config_file = project_dir / "config.sh"
         config_file.write_text(
-            'PROJECT_ID="test_project"\nCORE_FUNCTION="[CORE FUNCTION - PLEASE UPDATE]"\nBUSINESS_IMPACT="[BUSINESS IMPACT - PLEASE UPDATE]"\n'
+            'PROJECT_ID="test_project"\nCORE_FUNCTION="[AGENT: infer from JD - what does this team do?]"\nBUSINESS_IMPACT="[AGENT: infer from JD - why does this work matter?]"\n'
         )
 
         workbook_path = project_dir / "workbook.xlsx"

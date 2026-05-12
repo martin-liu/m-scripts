@@ -22,6 +22,7 @@ import html
 import json
 import re
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -390,18 +391,23 @@ def build_action_required(
 
     steps = [
         "Open the Recruiter project search page in Chrome",
-        "Look for the AI Copilot widget (usually a div with `data-test-copilot-widget`, may need to click a button to expand the widget)",
-        "Click the Copilot input and paste the search brief from context.search_brief",
-        "Ask Copilot to create a candidate search using the provided brief",
+        "Look for the AI Copilot widget (usually a chat panel or 'Ask Copilot' button)",
+    ]
+    if copilot_query:
+        steps.extend([
+            "Copy the ready-made query from context.copilot_query",
+            "Paste it into the Copilot input and press Enter",
+        ])
+    else:
+        steps.extend([
+            "Click the Copilot input and paste the search brief from context.search_brief",
+            "Ask Copilot to create a candidate search using the provided brief",
+        ])
+    steps.extend([
         "Wait for Copilot to generate the search, then review and adjust titles, companies, locations, and exclusions",
         "Confirm candidate cards or a real results count are visible",
         "After the search is ready, re-run the loop to continue",
-    ]
-    if copilot_query:
-        steps.insert(
-            3,
-            "WORST CASE: If the agent cannot interact with Copilot automatically, copy the ready-made query from context.copilot_query and paste it into the Copilot input manually",
-        )
+    ])
 
     return {
         "code": "search_not_configured",
@@ -1253,8 +1259,6 @@ def _find_facet_option_ref(
     """
     sys.path.insert(0, str(SCRIPT_DIR))
     try:
-        import time
-
         from browser_utils import run_browser_probe
 
         target = _normalize_facet_option_text(target_value)
@@ -1388,8 +1392,6 @@ def _add_facet_filters(
     """
     sys.path.insert(0, str(SCRIPT_DIR))
     try:
-        import time
-
         from browser_utils import (
             run_browser_command,
             run_browser_probe,
@@ -1819,8 +1821,6 @@ def create_initial_search_with_copilot(
                     ).to_dict(),
                 }
             # Wait for expansion
-            import time
-
             time.sleep(1)
             # Re-detect
             for _ in range(5):
@@ -2178,8 +2178,6 @@ def inspect_search_state(
                     # re-extract and re-analyze to get updated state
                     if reconciliation_result.get("attempted"):
                         # Brief wait for UI to update
-                        import time
-
                         time.sleep(1.0)
                         filter_chips = _extract_filter_chips_from_page(cdp_port)
                         filter_analysis = _analyze_filter_state(
@@ -2513,70 +2511,42 @@ def run_create_search_phase(
     runtime_work_dir = ctx.get("work_dir")
     runtime_chrome_profile = ctx.get("profile", {}).get("CHROME_PROFILE")
 
-    # Always try Copilot first to create/update the search.
-    # Inspection is used for verification afterwards.
-    print(
-        "Attempting AI Copilot search creation/update...",
-        file=sys.stderr,
-    )
-    copilot_result = create_initial_search_with_copilot(
+    # Inspect the current search state first
+    inspection = inspect_search_state(
         effective_cdp_port,
         recruiter_url,
-        config,
-        jd_text=jd_text,
-        jd_url=jd_url,
         work_dir=Path(runtime_work_dir) if runtime_work_dir else None,
         chrome_profile=runtime_chrome_profile,
+        config=config,
+        jd_text=jd_text,
+        jd_url=jd_url,
     )
-    if copilot_result.get("success"):
-        # Copilot succeeded — verify with inspect_search_state
-        inspection = inspect_search_state(
-            effective_cdp_port,
-            recruiter_url,
-            work_dir=Path(runtime_work_dir) if runtime_work_dir else None,
-            chrome_profile=runtime_chrome_profile,
-            config=config,
-            jd_text=jd_text,
-            jd_url=jd_url,
-        )
-        result["status"] = inspection.get("status", "unknown")
-        result["current_url"] = inspection.get("current_url")
-        result["failure_code"] = inspection.get("failure_code")
+    result["status"] = inspection.get("status", "unknown")
+    result["current_url"] = inspection.get("current_url")
+    result["failure_code"] = inspection.get("failure_code")
+
+    # If search is already ready, we're done
+    if inspection.get("success"):
+        print("Search already configured.", file=sys.stderr)
     else:
-        # Copilot failed — fall back to inspection to see current state
+        # Search not configured — generate Copilot query and ask user to paste it
         print(
-            f"Copilot attempt failed ({copilot_result.get('status')}) — falling back to inspection...",
+            "Search not configured — generating Copilot query for manual paste...",
             file=sys.stderr,
         )
-        inspection = inspect_search_state(
-            effective_cdp_port,
-            recruiter_url,
-            work_dir=Path(runtime_work_dir) if runtime_work_dir else None,
-            chrome_profile=runtime_chrome_profile,
-            config=config,
-            jd_text=jd_text,
-            jd_url=jd_url,
-        )
-        result["status"] = inspection.get("status", "unknown")
-        result["current_url"] = inspection.get("current_url")
+        copilot_query = build_copilot_search_query(config, jd_text, jd_url)
+        result["success"] = False
+        result["status"] = inspection.get("status", "search_not_configured")
         result["failure_code"] = inspection.get("failure_code")
-
-        # If inspection shows search is already ready, treat as success
-        if inspection.get("success"):
-            print(
-                "Search already configured — Copilot not needed.",
-                file=sys.stderr,
-            )
-        else:
-            # Both Copilot and inspection failed — preserve Copilot failure details
-            # in result for the final return, but still update project state below
-            result["success"] = False
-            result["status"] = copilot_result.get("status", "copilot_failed")
-            result["failure_code"] = copilot_result.get("failure_code")
-            result["action_required"] = copilot_result.get("action_required")
-            result["message"] = (
-                f"AI Copilot search creation failed: {copilot_result.get('status')}"
-            )
+        result["action_required"] = build_action_required(
+            recruiter_url=recruiter_url,
+            search_brief=search_brief,
+            current_url=inspection.get("current_url"),
+            copilot_query=copilot_query,
+        )
+        result["message"] = (
+            "Open the Recruiter project, paste the Copilot query, and create the search"
+        )
 
     # Update project state based on result
     sys.path.insert(0, str(SCRIPT_DIR))
@@ -2712,17 +2682,11 @@ def run_create_search_phase(
         )
         return result
 
+    # Search not configured — return with Copilot query for manual paste
     result["success"] = False
     result["next_phase"] = "create_search"
-    copilot_query = build_copilot_search_query(config, jd_text, jd_url)
-    result["action_required"] = build_action_required(
-        recruiter_url=recruiter_url,
-        search_brief=search_brief,
-        current_url=inspection.get("current_url"),
-        copilot_query=copilot_query,
-    )
     result["message"] = (
-        "Open the Recruiter project and create the candidate search using the provided search brief"
+        "Open the Recruiter project, paste the Copilot query, and create the search"
     )
     return result
 

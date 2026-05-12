@@ -195,8 +195,8 @@ class TestCheckStopConditions:
         assert "running" in reason.lower()
         assert exit_code == 0
 
-    def test_stops_at_review_boundary(self):
-        """Should stop at review phase (human boundary)."""
+    def test_does_not_stop_at_review_phase(self):
+        """Review phase is automated - loop should not stop."""
         status_result = {
             "action_required": None,
             "next_phase": "review",
@@ -206,8 +206,7 @@ class TestCheckStopConditions:
 
         should_stop, reason, exit_code = loop.check_stop_conditions(status_result)
 
-        assert should_stop is True
-        assert "review" in reason.lower()
+        assert should_stop is False
         assert exit_code == 0
 
     def test_stops_at_send_boundary_without_confirm(self):
@@ -324,8 +323,8 @@ class TestClassifyPhaseResult:
         assert should_continue is True
         assert exit_code == 0
 
-    def test_stops_at_review_boundary(self):
-        """Should stop at review phase even on success."""
+    def test_continues_after_review_phase(self):
+        """Review phase is automated - loop should continue on success."""
         phase_result = {
             "success": True,
             "phase": "review",
@@ -333,8 +332,7 @@ class TestClassifyPhaseResult:
 
         should_continue, message, exit_code = loop.classify_phase_result(phase_result)
 
-        assert should_continue is False
-        assert "review" in message.lower()
+        assert should_continue is True
         assert exit_code == 0
 
     def test_stops_on_browser_blocker(self):
@@ -515,7 +513,7 @@ class TestRunLoopIteration:
                 )
 
                 mock_run.assert_called_once_with(
-                    "test_project", "filter", dry_run=False
+                    "test_project", "filter", dry_run=False, reset_retry_count=False
                 )
                 assert should_continue is True
                 assert exit_code == 0
@@ -544,7 +542,7 @@ class TestRunLoopIteration:
                 )
 
                 mock_run.assert_called_once_with(
-                    "test_project", "create_search", dry_run=False
+                    "test_project", "create_search", dry_run=False, reset_retry_count=True
                 )
                 assert should_continue is True
                 assert exit_code == 0
@@ -772,8 +770,8 @@ class TestRunReachoutLoop:
 class TestIntegrationScenarios:
     """Integration-style tests for common scenarios."""
 
-    def test_full_workflow_to_review_boundary(self):
-        """Test loop runs through phases until review boundary."""
+    def test_full_workflow_to_send_boundary(self):
+        """Test loop runs through phases until send boundary."""
         status_sequence = [
             # Initial: extract complete, filter ready
             {
@@ -799,7 +797,7 @@ class TestIntegrationScenarios:
                 "action_required": None,
                 "workbook_summary": {"total_rows": 5, "by_next_action": {"draft": 5}},
             },
-            # After draft: review boundary (should stop)
+            # After draft: review ready (automated)
             {
                 "current_phase": "draft",
                 "status": "completed",
@@ -807,12 +805,21 @@ class TestIntegrationScenarios:
                 "action_required": None,
                 "workbook_summary": {"total_rows": 5, "by_next_action": {"review": 5}},
             },
+            # After review: send boundary (should stop)
+            {
+                "current_phase": "review",
+                "status": "completed",
+                "next_phase": "send",
+                "action_required": None,
+                "workbook_summary": {"total_rows": 5, "by_next_action": {"send": 5}},
+            },
         ]
 
         phase_results = [
             {"success": True, "phase": "filter"},
             {"success": True, "phase": "enrich"},
             {"success": True, "phase": "draft"},
+            {"success": True, "phase": "review"},
         ]
 
         with patch.object(loop, "load_status") as mock_load:
@@ -823,7 +830,7 @@ class TestIntegrationScenarios:
                 exit_code = loop.run_reachout_loop("test_project")
 
                 assert exit_code == 0
-                assert mock_run.call_count == 3  # filter, enrich, draft
+                assert mock_run.call_count == 4  # filter, enrich, draft, review
 
     def test_stops_at_send_without_confirm(self):
         """Test loop stops at send boundary without --confirm-send."""
@@ -872,7 +879,7 @@ class TestIntegrationScenarios:
                 exit_code = loop.run_reachout_loop("test_project", confirm_send=True)
 
                 assert exit_code == 0
-                mock_run.assert_called_once_with("test_project", "send", dry_run=False)
+                mock_run.assert_called_once_with("test_project", "send", dry_run=False, reset_retry_count=False)
 
 
 if __name__ == "__main__":
