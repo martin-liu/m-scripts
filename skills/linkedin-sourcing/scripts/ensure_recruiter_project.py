@@ -286,6 +286,11 @@ CLICK_OUTSIDE_JS = """
 
 CHECK_UNTITLED_JS = """
 (function() {
+    // Check page title first
+    if (document.title && document.title.toLowerCase().includes('untitled')) {
+        return { isUntitled: true, title: document.title, selector: 'document.title' };
+    }
+
     // Check multiple possible title locations
     const titleSelectors = [
         'h1[data-test-project-name-name]',
@@ -295,7 +300,7 @@ CHECK_UNTITLED_JS = """
         '.project-title',
         '[data-test-project-name-name]'
     ];
-    
+
     for (const sel of titleSelectors) {
         const titleEl = document.querySelector(sel);
         if (titleEl) {
@@ -317,41 +322,72 @@ RENAME_PROJECT_JS = """
 (function() {{
     const newName = {project_name!r};
 
+    function sleep(ms) {{
+        const start = Date.now();
+        while (Date.now() - start < ms) {{}}
+    }}
+
+    function findInputWithUntitled() {{
+        const inputs = Array.from(document.querySelectorAll('input[type="text"]'));
+        return inputs.find(input => input.value.toLowerCase().includes('untitled'));
+    }}
+
+    function findSaveButton() {{
+        return Array.from(document.querySelectorAll('button')).find(
+            b => b.textContent.trim() === 'Save'
+        );
+    }}
+
     // Strategy 1: Try clicking "Edit project name" button in settings panel
     const editNameBtn = document.querySelector('button[aria-label*="Edit project name" i]');
     if (editNameBtn) {{
         editNameBtn.click();
-        // Wait for input to appear
-        setTimeout(() => {{
-            const inputs = Array.from(document.querySelectorAll('input[type="text"]'));
-            const nameInput = inputs.find(input => input.value.toLowerCase().includes('untitled'));
-            if (nameInput) {{
-                nameInput.value = newName;
-                nameInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                nameInput.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                
-                // Click Save
-                const saveBtn = Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim() === 'Save');
-                if (saveBtn) saveBtn.click();
+        // Synchronous polling loop: wait for input to appear
+        let nameInput = null;
+        for (let i = 0; i < 10; i++) {{
+            sleep(100);
+            nameInput = findInputWithUntitled();
+            if (nameInput) break;
+        }}
+        if (nameInput) {{
+            nameInput.value = newName;
+            nameInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
+            nameInput.dispatchEvent(new Event('change', {{ bubbles: true }}));
+
+            // Click Save
+            let saveBtn = null;
+            for (let i = 0; i < 10; i++) {{
+                sleep(100);
+                saveBtn = findSaveButton();
+                if (saveBtn) break;
             }}
-        }}, 300);
-        return {{ attempted: true, method: 'settings_edit' }};
+            if (saveBtn) {{
+                saveBtn.click();
+                return {{ attempted: true, method: 'settings_edit', newName: newName }};
+            }}
+            return {{ attempted: true, method: 'settings_edit', newName: newName, warning: 'Save button not found' }};
+        }}
+        return {{ attempted: false, error: 'Input with untitled value not found after clicking edit' }};
     }}
 
     // Strategy 2: Try clicking on the title directly (older UI)
     const titleEl = document.querySelector('h1, [data-test-id*="title"], .project-title');
     if (titleEl) {{
         titleEl.click();
-        setTimeout(() => {{
-            const input = document.querySelector('input[type="text"], input:not([type])');
-            if (input) {{
-                input.value = newName;
-                input.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                input.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                input.dispatchEvent(new KeyboardEvent('keydown', {{ key: 'Enter', bubbles: true }}));
-            }}
-        }}, 100);
-        return {{ attempted: true, method: 'direct_click' }};
+        let input = null;
+        for (let i = 0; i < 10; i++) {{
+            sleep(100);
+            input = document.querySelector('input[type="text"], input:not([type])');
+            if (input) break;
+        }}
+        if (input) {{
+            input.value = newName;
+            input.dispatchEvent(new Event('input', {{ bubbles: true }}));
+            input.dispatchEvent(new Event('change', {{ bubbles: true }}));
+            input.dispatchEvent(new KeyboardEvent('keydown', {{ key: 'Enter', bubbles: true }}));
+            return {{ attempted: true, method: 'direct_click', newName: newName }};
+        }}
+        return {{ attempted: false, error: 'Input not found after clicking title' }};
     }}
 
     return {{ attempted: false, error: 'Could not find rename mechanism' }};
@@ -1181,10 +1217,34 @@ def ensure_project_exists(
             if not goto_result.get("error"):
                 time.sleep(2)
                 rename_project(browser_mode, project_name)
-                time.sleep(2)
+                time.sleep(1)
+                # Verify rename succeeded
+                untitled_check = check_untitled(browser_mode)
+                if untitled_check.get("isUntitled"):
+                    # Retry once more
+                    rename_project(browser_mode, project_name)
+                    time.sleep(1)
+                    untitled_check = check_untitled(browser_mode)
+                    if untitled_check.get("isUntitled"):
+                        print(
+                            f"Warning: Project rename may not have succeeded. Still showing: {untitled_check.get('title')}",
+                            file=sys.stderr,
+                        )
         else:
             rename_project(browser_mode, project_name)
-            time.sleep(2)
+            time.sleep(1)
+            # Verify rename succeeded
+            untitled_check = check_untitled(browser_mode)
+            if untitled_check.get("isUntitled"):
+                # Retry once more
+                rename_project(browser_mode, project_name)
+                time.sleep(1)
+                untitled_check = check_untitled(browser_mode)
+                if untitled_check.get("isUntitled"):
+                    print(
+                        f"Warning: Project rename may not have succeeded. Still showing: {untitled_check.get('title')}",
+                        file=sys.stderr,
+                    )
 
     # Step 8: Get the final URL and resolve to search URL
     url_result = get_current_url(browser_mode)

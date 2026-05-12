@@ -235,6 +235,8 @@ def _extract_compact_facts(page_data: dict[str, Any]) -> str:
 
 def _page_data_is_still_loading(page_data: dict[str, Any]) -> bool:
     """Return True when the extracted profile data still reflects a loading shell."""
+    if page_data.get("isLoading"):
+        return True
     headline = (page_data.get("headline") or "").strip().lower()
     top_lines = [
         line.strip().lower() for line in page_data.get("top_lines", []) if line
@@ -328,7 +330,8 @@ PROFILE_EXTRACTION_JS = r"""
         education: [],
         headline: "",
         name: "",
-        top_lines: []
+        top_lines: [],
+        isLoading: false
     };
 
     // Extract name
@@ -380,6 +383,17 @@ PROFILE_EXTRACTION_JS = r"""
                 duration: ""
             });
         });
+    }
+
+    // Detect loading states in the experience section
+    const expSection = document.querySelector('#experience-section, section:has(#experience), [data-test-id="experience-section"]');
+    if (expSection) {
+        const hasLoaders = expSection.querySelectorAll('.artdeco-loader, .skeleton, [aria-busy="true"]').length > 0;
+        const hasLoadingText = /\bloading\b/i.test(expSection.textContent || '');
+        const hasItems = expSection.querySelectorAll('li, .artdeco-list__item, .pv-entity__summary-info').length > 0;
+        if (hasLoaders || hasLoadingText || !hasItems) {
+            data.isLoading = true;
+        }
     }
 
     // Extract education
@@ -548,7 +562,7 @@ def _enrich_via_browser(
     ]
 
     try:
-        for attempt in range(3):
+        for attempt in range(5):
             eval_result = subprocess.run(
                 eval_cmd,
                 capture_output=True,
@@ -612,8 +626,8 @@ def _enrich_via_browser(
                     resume_hint="Check browser for prompts, then retry",
                 )
 
-            if attempt < 2 and _page_data_is_still_loading(page_data):
-                time.sleep(1)
+            if attempt < 4 and _page_data_is_still_loading(page_data):
+                time.sleep(2)
                 continue
 
             enrichment_notes = _extract_compact_facts(page_data)

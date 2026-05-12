@@ -901,14 +901,9 @@ COPILOT_FOCUS_INPUT_JS = """
   textarea.style.height = "160px";
   textarea.focus();
   textarea.click();
-  // Clear any existing value using native setter so React detects the change
-  const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
-  const oldValue = textarea.value;
-  setter.call(textarea, "");
-  if (textarea._valueTracker) {
-    textarea._valueTracker.setValue(oldValue);
-  }
-  textarea.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "deleteContent" }));
+  // Clear any existing value using execCommand so React detects the change
+  textarea.select();
+  document.execCommand("delete", false, null);
   return {
     success: true, tag: textarea.tagName,
     role: textarea.getAttribute("role") || "",
@@ -952,29 +947,40 @@ COPILOT_TYPE_FALLBACK_JS = """
   if (!query) return { ok: false, reason: "no_pending_query" };
   const textarea = widget.querySelector('textarea.copilot-chat-input__textbox');
   if (!textarea) return { ok: false, reason: "textarea_missing" };
+  // Make hidden textarea interactable
   textarea.style.visibility = "visible";
   textarea.style.display = "block";
   textarea.style.opacity = "1";
   textarea.style.position = "fixed";
   textarea.style.zIndex = "2147483647";
   textarea.focus();
-  const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
-  const oldValue = textarea.value;
-  setter.call(textarea, query);
-  if (textarea._valueTracker) {
-    textarea._valueTracker.setValue(oldValue);
+  textarea.click();
+  // Select all and delete first
+  textarea.select();
+  document.execCommand("delete", false, null);
+  // Use execCommand insertText so React/contenteditable systems pick it up
+  const inserted = document.execCommand("insertText", false, query);
+  if (!inserted) {
+    // Fallback: native setter + comprehensive events
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
+    const oldValue = textarea.value;
+    setter.call(textarea, query);
+    if (textarea._valueTracker) {
+      textarea._valueTracker.setValue(oldValue);
+    }
+    textarea.dispatchEvent(new InputEvent("beforeinput", {
+      bubbles: true, cancelable: true, inputType: "insertText", data: query
+    }));
+    textarea.dispatchEvent(new InputEvent("input", {
+      bubbles: true, inputType: "insertText", data: query
+    }));
+    textarea.dispatchEvent(new Event("change", { bubbles: true }));
   }
-  textarea.dispatchEvent(new InputEvent("beforeinput", {
-    bubbles: true, cancelable: true, inputType: "insertText", data: query
-  }));
-  textarea.dispatchEvent(new InputEvent("input", {
-    bubbles: true, inputType: "insertText", data: query
-  }));
-  textarea.dispatchEvent(new Event("change", { bubbles: true }));
+  // Update mirror element if present
   const mirror = widget.querySelector('.copilot-chat-input__textbox-mirror');
   if (mirror) mirror.textContent = query;
   delete widget.dataset.copilotPendingQuery;
-  return { ok: true, length: textarea.value.length };
+  return { ok: true, length: textarea.value.length, method: inserted ? "execCommand" : "nativeSetter" };
 })()
 """
 
@@ -982,6 +988,35 @@ COPILOT_SUBMIT_JS = """
 (function() {
   const widget = document.querySelector('[data-test-copilot-widget]');
   if (!widget) return { success: false, reason: "widget_missing" };
+  const textarea = widget.querySelector('textarea.copilot-chat-input__textbox');
+  // Try pressing Enter in the textarea first (many chat widgets submit on Enter)
+  if (textarea) {
+    textarea.focus();
+    textarea.dispatchEvent(new KeyboardEvent("keydown", {
+      key: "Enter", code: "Enter", keyCode: 13, which: 13,
+      bubbles: true, cancelable: true
+    }));
+    textarea.dispatchEvent(new KeyboardEvent("keypress", {
+      key: "Enter", code: "Enter", keyCode: 13, which: 13,
+      bubbles: true, cancelable: true
+    }));
+    textarea.dispatchEvent(new KeyboardEvent("keyup", {
+      key: "Enter", code: "Enter", keyCode: 13, which: 13,
+      bubbles: true, cancelable: true
+    }));
+    // Give the widget a moment to react
+    const start = Date.now();
+    while (Date.now() - start < 300) {}
+    // Check if the widget shows a generating/loading state (indicates submit worked)
+    const bodyText = document.body.textContent.toLowerCase();
+    const isGenerating = bodyText.includes("generating") || bodyText.includes("working on") ||
+      bodyText.includes("creating search") || bodyText.includes("thinking") ||
+      !!document.querySelector('[aria-busy="true"], .artdeco-spinner');
+    if (isGenerating) {
+      return { success: true, method: "enter_key" };
+    }
+  }
+  // Fallback: click the submit button
   const form = widget.querySelector('form.copilot-chat-input');
   const buttons = Array.from((form || widget).querySelectorAll('button, [role="button"]'));
   const submitButton = buttons.find((btn) => {
@@ -1053,8 +1088,9 @@ COPILOT_VALIDATE_INPUT_JS = """
 COPILOT_POLL_JS = """
 (function() {
   const widget = document.querySelector('[data-test-copilot-widget]');
-  const bodyText = document.body.innerText.toLowerCase();
-  const widgetText = widget ? widget.innerText.toLowerCase() : "";
+  // Use textContent instead of innerText to avoid forced layout recalculation
+  const bodyText = document.body.textContent.toLowerCase();
+  const widgetText = widget ? widget.textContent.toLowerCase() : "";
   return {
     hasWidget: !!widget,
     widgetState: widget
@@ -1900,7 +1936,17 @@ def create_initial_search_with_copilot(
         expected_project_id = _extract_project_id_from_url(recruiter_url)
         for attempt in range(45):
             time.sleep(2)
-            poll_result = run_browser_command(cdp_port, "eval", COPILOT_POLL_JS)
+            poll_result = run_browser_command(
+                cdp_port, "eval", COPILOT_POLL_JS, timeout=10.0
+            )
+            # If poll timed out, treat as "still processing" and continue
+            if poll_result.get("timed_out"):
+                if attempt > 0 and attempt % 10 == 0:
+                    print(
+                        f"  Copilot poll timed out, still waiting... ({attempt * 2}s)",
+                        file=sys.stderr,
+                    )
+                continue
             poll_parsed = safe_get_parsed(poll_result, default={})
 
             # Check if we're still on the right project
@@ -2466,59 +2512,64 @@ def run_create_search_phase(
     # Use runtime work_dir and chrome_profile from context, not project_dir.parent
     runtime_work_dir = ctx.get("work_dir")
     runtime_chrome_profile = ctx.get("profile", {}).get("CHROME_PROFILE")
-    inspection = inspect_search_state(
+
+    # Always try Copilot first to create/update the search.
+    # Inspection is used for verification afterwards.
+    print(
+        "Attempting AI Copilot search creation/update...",
+        file=sys.stderr,
+    )
+    copilot_result = create_initial_search_with_copilot(
         effective_cdp_port,
         recruiter_url,
-        work_dir=Path(runtime_work_dir) if runtime_work_dir else None,
-        chrome_profile=runtime_chrome_profile,
-        config=config,
+        config,
         jd_text=jd_text,
         jd_url=jd_url,
+        work_dir=Path(runtime_work_dir) if runtime_work_dir else None,
+        chrome_profile=runtime_chrome_profile,
     )
-    result["status"] = inspection.get("status", "unknown")
-    result["current_url"] = inspection.get("current_url")
-    result["failure_code"] = inspection.get("failure_code")
-
-    # If search is not configured or unverified, try creating it via Copilot
-    # "unverified" means no search results and no creation prompt detected —
-    # the Copilot widget may still be loading, so we attempt Copilot creation
-    inspection_status = inspection.get("status", "")
-    if (
-        not inspection.get("success")
-        and inspection_status in ("search_not_configured", "unverified")
-        and not inspection.get("action_required")
-    ):
-        print(
-            "Search not configured (status: {inspection_status}) - attempting AI Copilot search creation...".format(
-                inspection_status=inspection_status
-            ),
-            file=sys.stderr,
-        )
-        copilot_result = create_initial_search_with_copilot(
+    if copilot_result.get("success"):
+        # Copilot succeeded — verify with inspect_search_state
+        inspection = inspect_search_state(
             effective_cdp_port,
             recruiter_url,
-            config,
-            jd_text=jd_text,
-            jd_url=jd_url,
             work_dir=Path(runtime_work_dir) if runtime_work_dir else None,
             chrome_profile=runtime_chrome_profile,
+            config=config,
+            jd_text=jd_text,
+            jd_url=jd_url,
         )
-        if copilot_result.get("success"):
-            # Re-inspect to get full filter analysis
-            inspection = inspect_search_state(
-                effective_cdp_port,
-                recruiter_url,
-                work_dir=Path(runtime_work_dir) if runtime_work_dir else None,
-                chrome_profile=runtime_chrome_profile,
-                config=config,
-                jd_text=jd_text,
-                jd_url=jd_url,
+        result["status"] = inspection.get("status", "unknown")
+        result["current_url"] = inspection.get("current_url")
+        result["failure_code"] = inspection.get("failure_code")
+    else:
+        # Copilot failed — fall back to inspection to see current state
+        print(
+            f"Copilot attempt failed ({copilot_result.get('status')}) — falling back to inspection...",
+            file=sys.stderr,
+        )
+        inspection = inspect_search_state(
+            effective_cdp_port,
+            recruiter_url,
+            work_dir=Path(runtime_work_dir) if runtime_work_dir else None,
+            chrome_profile=runtime_chrome_profile,
+            config=config,
+            jd_text=jd_text,
+            jd_url=jd_url,
+        )
+        result["status"] = inspection.get("status", "unknown")
+        result["current_url"] = inspection.get("current_url")
+        result["failure_code"] = inspection.get("failure_code")
+
+        # If inspection shows search is already ready, treat as success
+        if inspection.get("success"):
+            print(
+                "Search already configured — Copilot not needed.",
+                file=sys.stderr,
             )
-            result["status"] = inspection.get("status", "unknown")
-            result["current_url"] = inspection.get("current_url")
-            result["failure_code"] = inspection.get("failure_code")
         else:
-            # Copilot creation failed - preserve the failure details
+            # Both Copilot and inspection failed — preserve Copilot failure details
+            # in result for the final return, but still update project state below
             result["success"] = False
             result["status"] = copilot_result.get("status", "copilot_failed")
             result["failure_code"] = copilot_result.get("failure_code")
@@ -2526,7 +2577,6 @@ def run_create_search_phase(
             result["message"] = (
                 f"AI Copilot search creation failed: {copilot_result.get('status')}"
             )
-            return result
 
     # Update project state based on result
     sys.path.insert(0, str(SCRIPT_DIR))

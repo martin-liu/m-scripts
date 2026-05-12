@@ -2978,6 +2978,7 @@ class TestStaleBlockerClearing:
         assert structured.get("filter_analysis") == filter_analysis
         assert structured.get("reconciliation") == reconciliation
 
+    @patch("run_create_search.create_initial_search_with_copilot")
     @patch("project_state.update_project_state")
     @patch("run_create_search.inspect_search_state")
     @patch("run_create_search._ensure_browser_ready")
@@ -2990,6 +2991,7 @@ class TestStaleBlockerClearing:
         mock_ensure_ready,
         mock_inspect,
         mock_update,
+        mock_copilot,
         tmp_path,
     ):
         """Blocked create_search must clear any stale structured summary."""
@@ -3005,6 +3007,15 @@ class TestStaleBlockerClearing:
             "123",
         )
         mock_ensure_ready.return_value = ("9230", None)
+        mock_copilot.return_value = {
+            "success": False,
+            "status": "copilot_widget_missing",
+            "failure_code": "ELEMENT_MISSING",
+            "action_required": {
+                "code": "ELEMENT_MISSING",
+                "summary": "Copilot widget not found",
+            },
+        }
         mock_inspect.return_value = {
             "success": False,
             "status": "loading",
