@@ -31,7 +31,7 @@ class TestCheckCdpAvailable:
         mock_cm.__exit__ = Mock(return_value=False)
         mock_urlopen.return_value = mock_cm
 
-        result = bu.check_cdp_available("9234")
+        result = bu.check_cdp_available("9230")
 
         assert result is True
 
@@ -40,7 +40,7 @@ class TestCheckCdpAvailable:
         """Should return False when CDP is unavailable."""
         mock_urlopen.side_effect = URLError("Connection refused")
 
-        result = bu.check_cdp_available("9234")
+        result = bu.check_cdp_available("9230")
 
         assert result is False
 
@@ -49,7 +49,7 @@ class TestCheckCdpAvailable:
         """Should return False on timeout."""
         mock_urlopen.side_effect = TimeoutError()
 
-        result = bu.check_cdp_available("9234")
+        result = bu.check_cdp_available("9230")
 
         assert result is False
 
@@ -62,7 +62,7 @@ class TestRequireCdp:
         """Should not raise when CDP is available."""
         mock_check.return_value = True
 
-        bu.require_cdp("9234")  # Should not raise
+        bu.require_cdp("9230")  # Should not raise
 
     @patch("browser_utils.check_cdp_available")
     def test_cdp_unavailable_raises(self, mock_check):
@@ -70,10 +70,10 @@ class TestRequireCdp:
         mock_check.return_value = False
 
         with pytest.raises(RuntimeError) as exc_info:
-            bu.require_cdp("9234")
+            bu.require_cdp("9230")
 
         assert "connect_browser.sh" in str(exc_info.value)
-        assert "9234" in str(exc_info.value)
+        assert "9230" in str(exc_info.value)
 
 
 class TestBrowserMode:
@@ -81,11 +81,11 @@ class TestBrowserMode:
 
     def test_cdp_mode(self):
         """Should create CDP mode."""
-        mode = bu.BrowserMode(mode="cdp", cdp_port="9234")
+        mode = bu.BrowserMode(mode="cdp", cdp_port="9230")
 
         assert mode.is_cdp() is True
         assert mode.is_agent_browser() is False
-        assert mode.cdp_port == "9234"
+        assert mode.cdp_port == "9230"
 
     def test_agent_browser_mode(self):
         """Should create agent-browser mode."""
@@ -132,10 +132,10 @@ class TestBrowserMode:
 
     def test_build_agent_browser_args_cdp(self):
         """Should build CDP args."""
-        mode = bu.BrowserMode(mode="cdp", cdp_port="9234")
+        mode = bu.BrowserMode(mode="cdp", cdp_port="9230")
         args = mode.build_agent_browser_args()
 
-        assert args == ["--cdp", "9234"]
+        assert args == ["--cdp", "9230"]
 
     def test_build_agent_browser_args_session(self):
         """Should build session args."""
@@ -205,7 +205,7 @@ class TestCheckBrowserAvailable:
     def test_cdp_available(self, mock_check_cdp):
         """Should return True when CDP available."""
         mock_check_cdp.return_value = True
-        mode = bu.BrowserMode(mode="cdp", cdp_port="9234")
+        mode = bu.BrowserMode(mode="cdp", cdp_port="9230")
 
         result = bu.check_browser_available(mode)
 
@@ -215,7 +215,7 @@ class TestCheckBrowserAvailable:
     def test_cdp_not_available(self, mock_check_cdp):
         """Should return False when CDP not available."""
         mock_check_cdp.return_value = False
-        mode = bu.BrowserMode(mode="cdp", cdp_port="9234")
+        mode = bu.BrowserMode(mode="cdp", cdp_port="9230")
 
         result = bu.check_browser_available(mode)
 
@@ -260,7 +260,7 @@ class TestCheckDialogStatus:
             returncode=0,
         )
 
-        mode = bu.BrowserMode(mode="cdp", cdp_port="9234")
+        mode = bu.BrowserMode(mode="cdp", cdp_port="9230")
         result = bu.check_dialog_status(mode)
 
         assert result["has_dialog"] is False
@@ -279,13 +279,13 @@ class TestCheckDialogStatus:
         )
 
         # Pass string directly instead of BrowserMode
-        result = bu.check_dialog_status("9234")
+        result = bu.check_dialog_status("9230")
 
         assert result["has_dialog"] is False
         # Verify the command was built with --cdp
         cmd = mock_run.call_args[0][0]
         assert "--cdp" in cmd
-        assert "9234" in cmd
+        assert "9230" in cmd
 
     @patch("browser_utils.check_browser_available")
     @patch("subprocess.run")
@@ -310,7 +310,7 @@ class TestCheckDialogStatus:
         """Should fail closed with guidance when browser is not available."""
         mock_check.return_value = False
 
-        mode = bu.BrowserMode(mode="cdp", cdp_port="9234")
+        mode = bu.BrowserMode(mode="cdp", cdp_port="9230")
         result = bu.check_dialog_status(mode)
 
         assert result["has_dialog"] is False
@@ -354,7 +354,7 @@ class TestRunBrowserCommand:
             returncode=0,
         )
 
-        mode = bu.BrowserMode(mode="cdp", cdp_port="9234")
+        mode = bu.BrowserMode(mode="cdp", cdp_port="9230")
         result = bu.run_browser_command(mode, "eval", "some_js")
 
         # Command should execute without precheck
@@ -373,7 +373,7 @@ class TestRunBrowserCommand:
             returncode=0,
         )
 
-        mode = bu.BrowserMode(mode="cdp", cdp_port="9234")
+        mode = bu.BrowserMode(mode="cdp", cdp_port="9230")
         result = bu.run_browser_command(mode, "eval", "some_js")
 
         assert result["returncode"] == 0
@@ -384,7 +384,7 @@ class TestRunBrowserCommand:
         cmd = mock_run.call_args[0][0]
         assert cmd[0] == "agent-browser"
         assert "--cdp" in cmd
-        assert "9234" in cmd
+        assert "9230" in cmd
 
     @patch("browser_utils.check_browser_available")
     @patch("subprocess.run")
@@ -398,14 +398,14 @@ class TestRunBrowserCommand:
         )
 
         # Pass string directly instead of BrowserMode
-        result = bu.run_browser_command("9234", "eval", "some_js")
+        result = bu.run_browser_command("9230", "eval", "some_js")
 
         assert result["returncode"] == 0
         # Check the command was built correctly with --cdp
         cmd = mock_run.call_args[0][0]
         assert cmd[0] == "agent-browser"
         assert "--cdp" in cmd
-        assert "9234" in cmd
+        assert "9230" in cmd
 
     @patch("browser_utils.check_browser_available")
     @patch("subprocess.run")
@@ -447,7 +447,7 @@ class TestRunBrowserCommand:
             Mock(stdout='{"exists": false}', stderr="", returncode=0),
         ]
 
-        mode = bu.BrowserMode(mode="cdp", cdp_port="9234")
+        mode = bu.BrowserMode(mode="cdp", cdp_port="9230")
         result = bu.run_browser_command(mode, "eval", "some_js", timeout=30)
 
         assert result["timed_out"] is True
@@ -456,7 +456,10 @@ class TestRunBrowserCommand:
         assert result["dialog_recovery"]["recovered"] is True
         assert result["dialog_info"]["has_dialog"] is True
         assert result["dialog_info"]["dialog_type"] == "alert"
-        assert result["dialog_recovery"]["post_recovery_dialog_info"]["has_dialog"] is False
+        assert (
+            result["dialog_recovery"]["post_recovery_dialog_info"]["has_dialog"]
+            is False
+        )
         assert "auto-accepted" in result["error"]
 
     @patch("browser_utils.check_browser_available")
@@ -473,7 +476,7 @@ class TestRunBrowserCommand:
             ),
         ]
 
-        mode = bu.BrowserMode(mode="cdp", cdp_port="9234")
+        mode = bu.BrowserMode(mode="cdp", cdp_port="9230")
         result = bu.run_browser_command(mode, "eval", "some_js", timeout=30)
 
         assert result["timed_out"] is True
@@ -499,7 +502,7 @@ class TestRunBrowserCommand:
             Mock(stdout='{"ok": true}', stderr="", returncode=0),
         ]
 
-        mode = bu.BrowserMode(mode="cdp", cdp_port="9234")
+        mode = bu.BrowserMode(mode="cdp", cdp_port="9230")
         result = bu.run_browser_command(
             mode,
             "eval",
@@ -511,7 +514,9 @@ class TestRunBrowserCommand:
         assert result["timed_out"] is False
         assert result["returncode"] == 0
         assert result["parsed"] == {"ok": True}
-        assert result["dialog_recovery"]["detected_dialog_info"]["dialog_type"] == "alert"
+        assert (
+            result["dialog_recovery"]["detected_dialog_info"]["dialog_type"] == "alert"
+        )
         assert result["dialog_info"]["dialog_type"] == "alert"
 
 
@@ -522,11 +527,11 @@ class TestRunBrowserProbe:
     def test_enables_retry_after_alert_recovery(self, mock_run):
         mock_run.return_value = {"returncode": 0, "parsed": {"ok": True}}
 
-        result = bu.run_browser_probe("9234", "eval", "({ ok: true })", timeout=12)
+        result = bu.run_browser_probe("9230", "eval", "({ ok: true })", timeout=12)
 
         assert result["parsed"] == {"ok": True}
         mock_run.assert_called_once_with(
-            "9234",
+            "9230",
             "eval",
             "({ ok: true })",
             timeout=12,
@@ -597,7 +602,7 @@ class TestProbeRecruiterAuth:
         """Should return not authenticated when CDP unavailable."""
         mock_check.return_value = False
 
-        result = bu.probe_recruiter_auth("9234")
+        result = bu.probe_recruiter_auth("9230")
 
         assert result["authenticated"] is False
         assert "CDP not available" in result["error"]
@@ -612,7 +617,7 @@ class TestProbeRecruiterAuth:
             _make_js_result("https://www.linkedin.com/talent/home"),  # JS eval
         ]
 
-        result = bu.probe_recruiter_auth("9234")
+        result = bu.probe_recruiter_auth("9230")
 
         assert result["authenticated"] is True
         assert result["error"] is None
@@ -627,7 +632,7 @@ class TestProbeRecruiterAuth:
             _make_js_result("https://www.linkedin.com/talent"),
         ]
 
-        result = bu.probe_recruiter_auth("9234")
+        result = bu.probe_recruiter_auth("9230")
 
         assert result["authenticated"] is True
         assert result["error"] is None
@@ -647,7 +652,7 @@ class TestProbeRecruiterAuth:
             ),
         ]
 
-        result = bu.probe_recruiter_auth("9234")
+        result = bu.probe_recruiter_auth("9230")
 
         assert result["authenticated"] is False
 
@@ -664,7 +669,7 @@ class TestProbeRecruiterAuth:
             ),
         ]
 
-        result = bu.probe_recruiter_auth("9234")
+        result = bu.probe_recruiter_auth("9230")
 
         assert result["authenticated"] is False
 
@@ -682,7 +687,7 @@ class TestProbeRecruiterAuth:
             ),
         ]
 
-        result = bu.probe_recruiter_auth("9234")
+        result = bu.probe_recruiter_auth("9230")
 
         assert result["authenticated"] is False
 
@@ -700,7 +705,7 @@ class TestProbeRecruiterAuth:
             ),
         ]
 
-        result = bu.probe_recruiter_auth("9234")
+        result = bu.probe_recruiter_auth("9230")
 
         assert result["authenticated"] is False
 
@@ -718,7 +723,7 @@ class TestProbeRecruiterAuth:
             ),
         ]
 
-        result = bu.probe_recruiter_auth("9234")
+        result = bu.probe_recruiter_auth("9230")
 
         assert result["authenticated"] is False
 
@@ -734,7 +739,7 @@ class TestProbeRecruiterAuth:
             ),
         ]
 
-        result = bu.probe_recruiter_auth("9234")
+        result = bu.probe_recruiter_auth("9230")
 
         assert result["authenticated"] is True
 
@@ -745,7 +750,7 @@ class TestProbeRecruiterAuth:
         mock_check.return_value = True
         mock_run.return_value = _make_js_result("https://www.linkedin.com/talent/home")
 
-        result = bu.probe_recruiter_auth("9234", navigate=False)
+        result = bu.probe_recruiter_auth("9230", navigate=False)
 
         assert result["authenticated"] is True
         # Should only call eval, not open
@@ -944,7 +949,7 @@ class TestResolveBrowserMode:
         mode_file = runtime_dir / "browser_mode.json"
         mode_file.write_text('{"mode": "cdp", "cdp_port": "9222"}')
 
-        result = bu.resolve_browser_mode(tmp_path, "9234")
+        result = bu.resolve_browser_mode(tmp_path, "9230")
 
         assert result.cdp_port == "9222"
 
@@ -957,17 +962,17 @@ class TestResolveBrowserMode:
             '{"mode": "agent-browser", "session_name": "test", "auth_file": "/auth.json"}'
         )
 
-        result = bu.resolve_browser_mode(tmp_path, "9234")
+        result = bu.resolve_browser_mode(tmp_path, "9230")
 
         assert result.mode == "agent-browser"
         assert result.session_name == "test"
 
     def test_fallback_to_preferred(self, tmp_path):
         """Should fallback to preferred port."""
-        result = bu.resolve_browser_mode(tmp_path, "9234")
+        result = bu.resolve_browser_mode(tmp_path, "9230")
 
         assert result.mode == "cdp"
-        assert result.cdp_port == "9234"
+        assert result.cdp_port == "9230"
 
 
 class TestBrowserContext:
@@ -984,7 +989,7 @@ class TestBrowserContext:
         mock_check.return_value = True
         mock_probe.return_value = {"authenticated": True}
 
-        with bu.BrowserContext(tmp_path, "9234") as ctx:
+        with bu.BrowserContext(tmp_path, "9230") as ctx:
             assert ctx.mode.cdp_port == "9222"
 
     @patch("browser_utils.get_browser_mode")
@@ -1000,7 +1005,7 @@ class TestBrowserContext:
         mock_check.return_value = True
         mock_probe.return_value = {"authenticated": True}  # Already authenticated
 
-        with bu.BrowserContext(tmp_path, "9234") as ctx:
+        with bu.BrowserContext(tmp_path, "9230") as ctx:
             assert ctx.mode.session_name == "test"
 
     @patch("browser_utils.check_cdp_available")
@@ -1009,7 +1014,7 @@ class TestBrowserContext:
         mock_check.return_value = False
 
         with pytest.raises(RuntimeError) as exc_info:
-            with bu.BrowserContext(tmp_path, "9234") as ctx:
+            with bu.BrowserContext(tmp_path, "9230") as ctx:
                 pass
 
         assert "CDP not available" in str(exc_info.value)
@@ -1022,12 +1027,12 @@ class TestBrowserContext:
         self, mock_run, mock_probe, mock_check, mock_get_mode, tmp_path
     ):
         """Should run commands through context."""
-        mock_get_mode.return_value = bu.BrowserMode(mode="cdp", cdp_port="9234")
+        mock_get_mode.return_value = bu.BrowserMode(mode="cdp", cdp_port="9230")
         mock_check.return_value = True
         mock_probe.return_value = {"authenticated": True}  # Already authenticated
         mock_run.return_value = {"returncode": 0, "parsed": {"title": "Test"}}
 
-        with bu.BrowserContext(tmp_path, "9234") as ctx:
+        with bu.BrowserContext(tmp_path, "9230") as ctx:
             result = ctx.run_command("eval", "document.title")
 
         assert result["returncode"] == 0
@@ -1086,7 +1091,7 @@ class TestBrowserContextStaleStateRecovery:
         mock_bootstrap.return_value = {
             "success": True,
             "mode": "cdp",
-            "cdp_port": "9234",
+            "cdp_port": "9230",
             "session_name": None,
             "auth_file": None,
             "message": "Recovered from stale state",
@@ -1102,8 +1107,8 @@ class TestBrowserContextStaleStateRecovery:
             "browser_utils.get_browser_mode",
             side_effect=[
                 bu.BrowserMode(mode="agent-browser", session_name="stale-session"),
-                bu.BrowserMode(mode="cdp", cdp_port="9234"),
-                bu.BrowserMode(mode="cdp", cdp_port="9234"),
+                bu.BrowserMode(mode="cdp", cdp_port="9230"),
+                bu.BrowserMode(mode="cdp", cdp_port="9230"),
             ],
         ):
             with patch(
@@ -1117,10 +1122,10 @@ class TestBrowserContextStaleStateRecovery:
                 with patch("browser_utils.probe_recruiter_auth") as mock_probe:
                     mock_probe.return_value = {"authenticated": True}
                     with bu.BrowserContext(
-                        tmp_path, "9234", auto_bootstrap=True
+                        tmp_path, "9230", auto_bootstrap=True
                     ) as ctx:
                         assert ctx.mode.mode == "cdp"
-                        assert ctx.mode.cdp_port == "9234"
+                        assert ctx.mode.cdp_port == "9230"
 
         # Verify bootstrap was called to recover from stale state
         mock_bootstrap.assert_called_once()
@@ -1141,7 +1146,7 @@ class TestBrowserContextStaleStateRecovery:
         mock_check_available.return_value = False  # Stale state - browser unavailable
 
         with pytest.raises(RuntimeError) as exc_info:
-            with bu.BrowserContext(tmp_path, "9234", auto_bootstrap=False) as ctx:
+            with bu.BrowserContext(tmp_path, "9230", auto_bootstrap=False) as ctx:
                 pass
 
         # Should fail with guidance message
@@ -1173,7 +1178,7 @@ class TestBrowserContextStaleStateRecovery:
         }
 
         with pytest.raises(RuntimeError) as exc_info:
-            with bu.BrowserContext(tmp_path, "9234", auto_bootstrap=True) as ctx:
+            with bu.BrowserContext(tmp_path, "9230", auto_bootstrap=True) as ctx:
                 pass
 
         # Should fail with guidance message including bootstrap error
@@ -1202,7 +1207,7 @@ class TestBrowserContextAutoBootstrap:
     ):
         """Should auto-bootstrap successfully when CDP not available initially."""
         # First call: no saved mode, CDP not available
-        mock_get_mode.side_effect = [None, bu.BrowserMode(mode="cdp", cdp_port="9234")]
+        mock_get_mode.side_effect = [None, bu.BrowserMode(mode="cdp", cdp_port="9230")]
         mock_check_cdp.return_value = False  # CDP not available initially
         mock_check_available.return_value = True  # Available after bootstrap
         mock_probe.return_value = {
@@ -1211,16 +1216,16 @@ class TestBrowserContextAutoBootstrap:
         mock_bootstrap.return_value = {
             "success": True,
             "mode": "cdp",
-            "cdp_port": "9234",
+            "cdp_port": "9230",
             "session_name": None,
             "auth_file": None,
-            "message": "Using existing authenticated browser on port 9234",
+            "message": "Using existing authenticated browser on port 9230",
             "error": None,
         }
 
-        with bu.BrowserContext(tmp_path, "9234", auto_bootstrap=True) as ctx:
+        with bu.BrowserContext(tmp_path, "9230", auto_bootstrap=True) as ctx:
             assert ctx.mode.mode == "cdp"
-            assert ctx.mode.cdp_port == "9234"
+            assert ctx.mode.cdp_port == "9230"
 
         # Verify bootstrap was called with explicit opt-in
         mock_bootstrap.assert_called_once()
@@ -1241,24 +1246,24 @@ class TestBrowserContextAutoBootstrap:
         # 3. Additional calls if any
         mock_get_mode.side_effect = [
             None,
-            bu.BrowserMode(mode="cdp", cdp_port="9234"),
-            bu.BrowserMode(mode="cdp", cdp_port="9234"),
+            bu.BrowserMode(mode="cdp", cdp_port="9230"),
+            bu.BrowserMode(mode="cdp", cdp_port="9230"),
         ]
         mock_check_cdp.return_value = False
         mock_bootstrap.return_value = {
             "success": True,
             "mode": "cdp",
-            "cdp_port": "9234",
+            "cdp_port": "9230",
             "session_name": None,
             "auth_file": None,
-            "message": "Chrome running on port 9234",
+            "message": "Chrome running on port 9230",
             "error": None,
         }
 
         with patch("browser_utils.check_browser_available", return_value=True):
-            with bu.BrowserContext(tmp_path, "9234", auto_bootstrap=True) as ctx:
+            with bu.BrowserContext(tmp_path, "9230", auto_bootstrap=True) as ctx:
                 assert ctx.mode.mode == "cdp"
-                assert ctx.mode.cdp_port == "9234"
+                assert ctx.mode.cdp_port == "9230"
 
     @patch("browser_utils.auth_bootstrap.bootstrap_auth_session")
     @patch("browser_utils.get_browser_mode")
@@ -1280,7 +1285,7 @@ class TestBrowserContextAutoBootstrap:
         }
 
         with pytest.raises(RuntimeError) as exc_info:
-            with bu.BrowserContext(tmp_path, "9234", auto_bootstrap=True) as ctx:
+            with bu.BrowserContext(tmp_path, "9230", auto_bootstrap=True) as ctx:
                 pass
 
         assert "Auth bootstrap failed" in str(exc_info.value)
@@ -1298,7 +1303,7 @@ class TestBrowserContextAutoBootstrap:
         """Should auto-bootstrap when CDP available but not authenticated."""
         # First probe (no saved mode path): not authenticated
         # Second probe (after bootstrap reload): authenticated
-        mock_get_mode.side_effect = [None, bu.BrowserMode(mode="cdp", cdp_port="9234")]
+        mock_get_mode.side_effect = [None, bu.BrowserMode(mode="cdp", cdp_port="9230")]
         mock_check_cdp.return_value = True  # CDP available
         mock_probe.side_effect = [
             {
@@ -1316,16 +1321,16 @@ class TestBrowserContextAutoBootstrap:
         mock_bootstrap.return_value = {
             "success": True,
             "mode": "cdp",
-            "cdp_port": "9234",
+            "cdp_port": "9230",
             "session_name": None,
             "auth_file": None,
-            "message": "Using existing authenticated browser on port 9234",
+            "message": "Using existing authenticated browser on port 9230",
             "error": None,
         }
 
         with mock_check_available:
-            with bu.BrowserContext(tmp_path, "9234", auto_bootstrap=True) as ctx:
-                assert ctx.mode.cdp_port == "9234"
+            with bu.BrowserContext(tmp_path, "9230", auto_bootstrap=True) as ctx:
+                assert ctx.mode.cdp_port == "9230"
 
         # Verify bootstrap was called
         mock_bootstrap.assert_called_once()
@@ -1344,13 +1349,13 @@ class TestBrowserContextAutoBootstrap:
         mock_bootstrap.return_value = {
             "success": True,
             "mode": "cdp",
-            "cdp_port": "9234",
+            "cdp_port": "9230",
             "message": "Success",
             "error": None,
         }
 
         with pytest.raises(RuntimeError) as exc_info:
-            with bu.BrowserContext(tmp_path, "9234", auto_bootstrap=True) as ctx:
+            with bu.BrowserContext(tmp_path, "9230", auto_bootstrap=True) as ctx:
                 pass
 
         assert "Bootstrap succeeded but failed to save browser mode" in str(
@@ -1359,7 +1364,7 @@ class TestBrowserContextAutoBootstrap:
 
     def test_auto_bootstrap_false_by_default(self, tmp_path):
         """Should have auto_bootstrap=False by default."""
-        ctx = bu.BrowserContext(tmp_path, "9234")
+        ctx = bu.BrowserContext(tmp_path, "9230")
         assert ctx.auto_bootstrap is False
 
 
@@ -1377,7 +1382,7 @@ class TestBrowserContextSavedModeAuthCheck:
         # Setup: saved CDP mode exists, browser reachable, but NOT authenticated
         mock_get_mode.side_effect = [
             bu.BrowserMode(mode="cdp", cdp_port="9222"),  # Initial saved mode
-            bu.BrowserMode(mode="cdp", cdp_port="9234"),  # After bootstrap reload
+            bu.BrowserMode(mode="cdp", cdp_port="9230"),  # After bootstrap reload
         ]
         mock_check_available.return_value = True  # Browser is reachable
         mock_probe.return_value = {
@@ -1388,14 +1393,14 @@ class TestBrowserContextSavedModeAuthCheck:
         mock_bootstrap.return_value = {
             "success": True,
             "mode": "cdp",
-            "cdp_port": "9234",
+            "cdp_port": "9230",
             "session_name": None,
             "auth_file": None,
             "message": "Bootstrap succeeded",
             "error": None,
         }
 
-        with bu.BrowserContext(tmp_path, "9234", auto_bootstrap=True) as ctx:
+        with bu.BrowserContext(tmp_path, "9230", auto_bootstrap=True) as ctx:
             assert ctx.mode.mode == "cdp"
 
         # Verify bootstrap was called to recover from unauthenticated state
@@ -1422,7 +1427,7 @@ class TestBrowserContextSavedModeAuthCheck:
         }
 
         with pytest.raises(RuntimeError) as exc_info:
-            with bu.BrowserContext(tmp_path, "9234", auto_bootstrap=False) as ctx:
+            with bu.BrowserContext(tmp_path, "9230", auto_bootstrap=False) as ctx:
                 pass
 
         # Should fail with clear guidance
@@ -1451,7 +1456,7 @@ class TestBrowserContextSavedModeAuthCheck:
             ),  # Initial saved mode
             bu.BrowserMode(
                 mode="cdp",
-                cdp_port="9234",
+                cdp_port="9230",
             ),  # After bootstrap reload (now CDP mode)
         ]
         mock_check_available.return_value = True  # Browser is reachable
@@ -1463,16 +1468,16 @@ class TestBrowserContextSavedModeAuthCheck:
         mock_bootstrap.return_value = {
             "success": True,
             "mode": "cdp",
-            "cdp_port": "9234",
+            "cdp_port": "9230",
             "session_name": None,
             "auth_file": None,
             "message": "Bootstrap succeeded",
             "error": None,
         }
 
-        with bu.BrowserContext(tmp_path, "9234", auto_bootstrap=True) as ctx:
+        with bu.BrowserContext(tmp_path, "9230", auto_bootstrap=True) as ctx:
             assert ctx.mode.mode == "cdp"
-            assert ctx.mode.cdp_port == "9234"
+            assert ctx.mode.cdp_port == "9230"
 
         # Verify bootstrap was called to recover from unauthenticated state
         mock_bootstrap.assert_called_once()
@@ -1501,7 +1506,7 @@ class TestBrowserContextSavedModeAuthCheck:
         }
 
         with pytest.raises(RuntimeError) as exc_info:
-            with bu.BrowserContext(tmp_path, "9234", auto_bootstrap=False) as ctx:
+            with bu.BrowserContext(tmp_path, "9230", auto_bootstrap=False) as ctx:
                 pass
 
         # Should fail with clear guidance (backward compat: still mentions agent-browser)
@@ -1538,7 +1543,7 @@ class TestBrowserContextSavedModeAuthCheck:
         }
 
         with pytest.raises(RuntimeError) as exc_info:
-            with bu.BrowserContext(tmp_path, "9234", auto_bootstrap=True) as ctx:
+            with bu.BrowserContext(tmp_path, "9230", auto_bootstrap=True) as ctx:
                 pass
 
         # Should fail with guidance including bootstrap error
@@ -1577,7 +1582,7 @@ class TestBrowserContextSavedModeAuthCheck:
         }
 
         with pytest.raises(RuntimeError) as exc_info:
-            with bu.BrowserContext(tmp_path, "9234", auto_bootstrap=True) as ctx:
+            with bu.BrowserContext(tmp_path, "9230", auto_bootstrap=True) as ctx:
                 pass
 
         # Should fail with guidance including bootstrap error
@@ -1659,13 +1664,13 @@ class TestActionRequired:
 
     def test_browser_unavailable_factory(self):
         """Should create browser_unavailable action_required."""
-        ar = bu.ActionRequired.browser_unavailable(cdp_port="9234")
+        ar = bu.ActionRequired.browser_unavailable(cdp_port="9230")
 
         assert ar.code == "browser_unavailable"
         assert "Chrome browser is not available" in ar.summary
         assert len(ar.steps) >= 3
         assert ar.can_retry is True
-        assert ar.context["cdp_port"] == "9234"
+        assert ar.context["cdp_port"] == "9230"
         assert ar.actor == "agent"
 
     def test_auth_required_factory(self):
@@ -1793,7 +1798,7 @@ class TestAttemptBrowserAction:
             "timed_out": False,
         }
 
-        mode = bu.BrowserMode(mode="cdp", cdp_port="9234")
+        mode = bu.BrowserMode(mode="cdp", cdp_port="9230")
         result = bu.attempt_browser_action(
             mode, "test operation", "eval", "document.title"
         )
@@ -1809,7 +1814,7 @@ class TestAttemptBrowserAction:
         mock_check.return_value = False
         # run_browser_command not called when browser unavailable
 
-        mode = bu.BrowserMode(mode="cdp", cdp_port="9234")
+        mode = bu.BrowserMode(mode="cdp", cdp_port="9230")
         result = bu.attempt_browser_action(
             mode, "test operation", "eval", "document.title"
         )
@@ -1837,7 +1842,7 @@ class TestAttemptBrowserAction:
             "timed_out": True,
         }
 
-        mode = bu.BrowserMode(mode="cdp", cdp_port="9234")
+        mode = bu.BrowserMode(mode="cdp", cdp_port="9230")
         result = bu.attempt_browser_action(
             mode, "test operation", "eval", "document.title"
         )
@@ -1866,7 +1871,7 @@ class TestAttemptBrowserAction:
             "timed_out": True,
         }
 
-        mode = bu.BrowserMode(mode="cdp", cdp_port="9234")
+        mode = bu.BrowserMode(mode="cdp", cdp_port="9230")
         result = bu.attempt_browser_action(
             mode, "test operation", "eval", "document.title"
         )
@@ -1892,7 +1897,7 @@ class TestAttemptBrowserAction:
             "timed_out": False,
         }
 
-        mode = bu.BrowserMode(mode="cdp", cdp_port="9234")
+        mode = bu.BrowserMode(mode="cdp", cdp_port="9230")
         result = bu.attempt_browser_action(
             mode, "test operation", "eval", "document.title"
         )
@@ -1911,7 +1916,7 @@ class TestClassifyBrowserReadiness:
         """Should classify as browser_unavailable when browser not available."""
         mock_check.return_value = False
 
-        result = bu.classify_browser_readiness("9234")
+        result = bu.classify_browser_readiness("9230")
 
         assert result.readiness == bu.BrowserReadiness.BROWSER_UNAVAILABLE
         assert result.action_required is not None
@@ -1922,7 +1927,7 @@ class TestClassifyBrowserReadiness:
         """Should classify as ready when browser available and no issues."""
         mock_check.return_value = True
 
-        result = bu.classify_browser_readiness("9234")
+        result = bu.classify_browser_readiness("9230")
 
         assert result.readiness == bu.BrowserReadiness.READY
         assert result.action_required is None
@@ -1937,7 +1942,7 @@ class TestClassifyBrowserReadiness:
             "message": "Session expired",
         }
 
-        result = bu.classify_browser_readiness("9234", dialog_info=dialog_info)
+        result = bu.classify_browser_readiness("9230", dialog_info=dialog_info)
 
         assert result.readiness == bu.BrowserReadiness.DIALOG_BLOCKED
         assert result.action_required is not None
@@ -1949,7 +1954,7 @@ class TestClassifyBrowserReadiness:
         mock_check.return_value = True
 
         result = bu.classify_browser_readiness(
-            "9234", current_url="https://www.linkedin.com/login?fromSignIn=true"
+            "9230", current_url="https://www.linkedin.com/login?fromSignIn=true"
         )
 
         assert result.readiness == bu.BrowserReadiness.AUTH_REQUIRED
@@ -1962,7 +1967,7 @@ class TestClassifyBrowserReadiness:
         mock_check.return_value = True
 
         result = bu.classify_browser_readiness(
-            "9234", current_url="https://www.linkedin.com/checkpoint/challenge"
+            "9230", current_url="https://www.linkedin.com/checkpoint/challenge"
         )
 
         assert result.readiness == bu.BrowserReadiness.BLOCKED_OR_CAPTCHA
@@ -1975,7 +1980,7 @@ class TestClassifyBrowserReadiness:
         mock_check.return_value = True
 
         result = bu.classify_browser_readiness(
-            "9234", error="Not authenticated to LinkedIn Recruiter"
+            "9230", error="Not authenticated to LinkedIn Recruiter"
         )
 
         assert result.readiness == bu.BrowserReadiness.AUTH_REQUIRED
@@ -2059,7 +2064,7 @@ class TestRunBrowserCommandNoPrecheck:
             returncode=0,
         )
 
-        mode = bu.BrowserMode(mode="cdp", cdp_port="9234")
+        mode = bu.BrowserMode(mode="cdp", cdp_port="9230")
         result = bu.run_browser_command(mode, "eval", "document.title")
 
         # Command should run without pre-checking browser availability

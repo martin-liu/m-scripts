@@ -13,7 +13,7 @@ Usage:
         --description "Hardware design role for video codec solutions" \
         --location "San Jose, CA" \
         --job-title "SoC Digital Design Engineer" \
-        --cdp-port 9234
+        --cdp-port 9230
 
 Output:
     Prints structured JSON to stdout:
@@ -46,16 +46,19 @@ SKILL_DIR = SCRIPT_DIR.parent
 
 # Import shared browser utilities
 sys.path.insert(0, str(SCRIPT_DIR))
-from browser_utils import BrowserMode, run_browser_command as _run_browser_command
 from browser_utils import (
-    format_timeout_error,
-    FailureCode,
     ActionRequired,
+    BrowserMode,
+    FailureCode,
     classify_browser_readiness,
+    format_timeout_error,
 )
-from recruiter_page_utils import RecoveryHelper, PageStateProbe, ensure_page_ready
+from browser_utils import run_browser_command as _run_browser_command
+from recruiter_page_utils import PageStateProbe, RecoveryHelper, ensure_page_ready
 from recruiter_url_utils import (
     extract_recruiter_id_from_url,
+)
+from recruiter_url_utils import (
     is_contextual_search_url as _is_contextual_search_url,
 )
 
@@ -450,7 +453,7 @@ def run_browser_command(
         action: The action to perform (e.g., "eval", "goto")
         js_code: JavaScript code to execute or URL to navigate to
     """
-    from browser_utils import safe_get_parsed, FailureCode, ActionRequired
+    from browser_utils import ActionRequired, FailureCode, safe_get_parsed
 
     result = _run_browser_command(browser_mode, "eval", js_code, timeout=30)
 
@@ -1090,7 +1093,10 @@ def ensure_project_exists(
     time.sleep(2)  # Wait for form to appear
 
     # Verify form appeared by checking for project name input
-    form_verify = run_browser_command(browser_mode, "eval", """
+    form_verify = run_browser_command(
+        browser_mode,
+        "eval",
+        """
     (function() {
         const nameInput = document.querySelector('input[id$="-projectName"], input[id*="-projectName"]');
         const heading = document.querySelector('h1, h2, h3');
@@ -1100,9 +1106,12 @@ def ensure_project_exists(
             pageHeading: heading ? heading.textContent.trim() : null
         };
     })()
-    """)
+    """,
+    )
     if not form_verify.get("formReady"):
-        result["message"] = "Project creation form did not appear after clicking Create new"
+        result["message"] = (
+            "Project creation form did not appear after clicking Create new"
+        )
         result["failure_code"] = FailureCode.ELEMENT_MISSING
         result["action_required"] = ActionRequired.element_missing(
             selector="project creation form",
@@ -1123,7 +1132,9 @@ def ensure_project_exists(
 
     # Verify the name was actually set correctly
     if not fill_result.get("nameVerified"):
-        result["message"] = f"Project name input found but value could not be set. Actual value: {fill_result.get('actualNameValue')}"
+        result["message"] = (
+            f"Project name input found but value could not be set. Actual value: {fill_result.get('actualNameValue')}"
+        )
         result["failure_code"] = FailureCode.ELEMENT_MISSING
         result["action_required"] = ActionRequired.element_missing(
             selector="project name input value setting",
@@ -1164,7 +1175,9 @@ def ensure_project_exists(
         if project_id_match:
             overview_url = f"https://www.linkedin.com/talent/hire/{project_id_match.group(1)}/overview"
             # Navigate to overview page where rename is more reliable
-            goto_result = _run_browser_command(browser_mode, "goto", overview_url, timeout=30)
+            goto_result = _run_browser_command(
+                browser_mode, "goto", overview_url, timeout=30
+            )
             if not goto_result.get("error"):
                 time.sleep(2)
                 rename_project(browser_mode, project_name)
@@ -1284,8 +1297,8 @@ Output:
     )
     parser.add_argument(
         "--cdp-port",
-        default="9234",
-        help="Chrome DevTools Protocol port (default: 9234)",
+        default="9230",
+        help="Chrome DevTools Protocol port (default: 9230)",
     )
 
     return parser.parse_args()

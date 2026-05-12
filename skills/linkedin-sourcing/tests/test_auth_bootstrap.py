@@ -72,19 +72,19 @@ class TestCheckCdpAvailable:
         mock_cm.__exit__ = Mock(return_value=False)
         mock_urlopen.return_value = mock_cm
 
-        result = ab.check_cdp_available("9234")
+        result = ab.check_cdp_available("9230")
 
         assert result is True
         mock_urlopen.assert_called_once()
         call_args = mock_urlopen.call_args[0][0]
-        assert "localhost:9234" in str(call_args)
+        assert "localhost:9230" in str(call_args)
 
     @patch("urllib.request.urlopen")
     def test_cdp_not_available(self, mock_urlopen):
         """Should return False when CDP is unavailable."""
         mock_urlopen.side_effect = URLError("Connection refused")
 
-        result = ab.check_cdp_available("9234")
+        result = ab.check_cdp_available("9230")
 
         assert result is False
 
@@ -93,7 +93,7 @@ class TestCheckCdpAvailable:
         """Should return False on timeout."""
         mock_urlopen.side_effect = TimeoutError()
 
-        result = ab.check_cdp_available("9234")
+        result = ab.check_cdp_available("9230")
 
         assert result is False
 
@@ -110,10 +110,10 @@ class TestIsPortInUse:
         mock_sock.__exit__ = Mock(return_value=False)
         mock_socket_class.return_value = mock_sock
 
-        result = ab.is_port_in_use(9234)
+        result = ab.is_port_in_use(9230)
 
         assert result is True
-        mock_sock.connect_ex.assert_called_once_with(("localhost", 9234))
+        mock_sock.connect_ex.assert_called_once_with(("localhost", 9230))
 
     @patch("socket.socket")
     def test_port_free(self, mock_socket_class):
@@ -124,7 +124,7 @@ class TestIsPortInUse:
         mock_sock.__exit__ = Mock(return_value=False)
         mock_socket_class.return_value = mock_sock
 
-        result = ab.is_port_in_use(9234)
+        result = ab.is_port_in_use(9230)
 
         assert result is False
 
@@ -133,7 +133,7 @@ class TestIsPortInUse:
         """Should return False on socket error (fail-safe)."""
         mock_socket_class.side_effect = OSError("Socket creation failed")
 
-        result = ab.is_port_in_use(9234)
+        result = ab.is_port_in_use(9230)
 
         assert result is False
 
@@ -169,7 +169,7 @@ class TestProbeRecruiterAuth:
         """Should return not authenticated when CDP unavailable."""
         mock_check.return_value = False
 
-        result = ab.probe_recruiter_auth("9234")
+        result = ab.probe_recruiter_auth("9230")
 
         assert result["authenticated"] is False
         assert "CDP not available" in result["error"]
@@ -186,7 +186,7 @@ class TestProbeRecruiterAuth:
             _make_js_result("https://www.linkedin.com/talent/home"),
         ]
 
-        result = ab.probe_recruiter_auth("9234")
+        result = ab.probe_recruiter_auth("9230")
 
         assert result["authenticated"] is True
         assert result["error"] is None
@@ -202,7 +202,7 @@ class TestProbeRecruiterAuth:
             _make_js_result("https://www.linkedin.com/talent"),
         ]
 
-        result = ab.probe_recruiter_auth("9234")
+        result = ab.probe_recruiter_auth("9230")
 
         assert result["authenticated"] is True
         assert result["error"] is None
@@ -222,7 +222,7 @@ class TestProbeRecruiterAuth:
             ),
         ]
 
-        result = ab.probe_recruiter_auth("9234")
+        result = ab.probe_recruiter_auth("9230")
 
         assert result["authenticated"] is False
 
@@ -240,7 +240,7 @@ class TestProbeRecruiterAuth:
             ),
         ]
 
-        result = ab.probe_recruiter_auth("9234")
+        result = ab.probe_recruiter_auth("9230")
 
         assert result["authenticated"] is False
 
@@ -258,7 +258,7 @@ class TestProbeRecruiterAuth:
             ),
         ]
 
-        result = ab.probe_recruiter_auth("9234")
+        result = ab.probe_recruiter_auth("9230")
 
         assert result["authenticated"] is False
 
@@ -269,7 +269,7 @@ class TestProbeRecruiterAuth:
         mock_check.return_value = True
         mock_run.side_effect = subprocess.TimeoutExpired(cmd="test", timeout=10)
 
-        result = ab.probe_recruiter_auth("9234")
+        result = ab.probe_recruiter_auth("9230")
 
         assert result["authenticated"] is False
         assert "timed out" in result["error"].lower()
@@ -281,7 +281,7 @@ class TestProbeRecruiterAuth:
         mock_check.return_value = True
         mock_run.side_effect = FileNotFoundError()
 
-        result = ab.probe_recruiter_auth("9234")
+        result = ab.probe_recruiter_auth("9230")
 
         assert result["authenticated"] is False
         assert "agent-browser" in result["error"].lower()
@@ -427,7 +427,7 @@ class TestLaunchIsolatedChrome:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             profile_dir = Path(tmpdir) / "profile"
-            result = ab.launch_isolated_chrome(profile_dir, 19234)
+            result = ab.launch_isolated_chrome(profile_dir, 19230)
 
         assert result is not None
         assert result == mock_process
@@ -439,7 +439,7 @@ class TestLaunchIsolatedChrome:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             profile_dir = Path(tmpdir) / "profile"
-            result = ab.launch_isolated_chrome(profile_dir, 19234)
+            result = ab.launch_isolated_chrome(profile_dir, 19230)
 
         assert result is None
 
@@ -463,7 +463,7 @@ class TestLaunchIsolatedChrome:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             profile_dir = Path(tmpdir) / "profile"
-            result = ab.launch_isolated_chrome(profile_dir, 19234)
+            result = ab.launch_isolated_chrome(profile_dir, 19230)
 
         assert result is None
         # Should have terminated the process
@@ -522,7 +522,7 @@ class TestSaveBrowserMode:
             ab.save_browser_mode(
                 work_dir,
                 mode="cdp",
-                cdp_port="9234",
+                cdp_port="9230",
                 headed=True,
             )
 
@@ -531,7 +531,7 @@ class TestSaveBrowserMode:
 
             data = json.loads(mode_file.read_text())
             assert data["mode"] == "cdp"
-            assert data["cdp_port"] == "9234"
+            assert data["cdp_port"] == "9230"
             assert data["session_name"] is None
             assert data["headed"] is True
 
@@ -568,7 +568,7 @@ class TestExportAuthState:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             auth_file = Path(tmpdir) / "auth.json"
-            result = ab.export_auth_state("9234", auth_file)
+            result = ab.export_auth_state("9230", auth_file)
 
         assert result["success"] is False
         assert "CDP not available" in result["error"]
@@ -586,7 +586,7 @@ class TestExportAuthState:
             auth_file.parent.mkdir(parents=True, exist_ok=True)
             auth_file.write_text(json.dumps({"cookies": []}))
 
-            result = ab.export_auth_state("9234", auth_file)
+            result = ab.export_auth_state("9230", auth_file)
 
         assert result["success"] is True
         # Verify state save command was called
@@ -605,7 +605,7 @@ class TestExportAuthState:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             auth_file = Path(tmpdir) / "auth.json"
-            result = ab.export_auth_state("9234", auth_file)
+            result = ab.export_auth_state("9230", auth_file)
 
         assert result["success"] is False
         assert "state save failed" in result["error"]
@@ -755,11 +755,11 @@ class TestPollForAuthentication:
         mock_process = Mock()
         mock_process.poll.return_value = None  # Still running
 
-        result = ab._poll_for_authentication("19234", mock_process, poll_interval=0.1)
+        result = ab._poll_for_authentication("19230", mock_process, poll_interval=0.1)
 
         assert result["authenticated"] is True
         assert "/talent/" in result["url"]
-        mock_probe.assert_called_with("19234")
+        mock_probe.assert_called_with("19230")
 
     @patch("auth_bootstrap.probe_recruiter_auth")
     @patch("time.time")
@@ -776,7 +776,7 @@ class TestPollForAuthentication:
         mock_process = Mock()
         mock_process.poll.return_value = 0  # Chrome exited
 
-        result = ab._poll_for_authentication("19234", mock_process, poll_interval=0.1)
+        result = ab._poll_for_authentication("19230", mock_process, poll_interval=0.1)
 
         assert result["authenticated"] is False
         assert "cancelled" in result["error"].lower()
@@ -798,7 +798,7 @@ class TestPollForAuthentication:
         mock_process.poll.return_value = None  # Still running
 
         result = ab._poll_for_authentication(
-            "19234", mock_process, poll_interval=0.1, timeout=5.0
+            "19230", mock_process, poll_interval=0.1, timeout=5.0
         )
 
         assert result["authenticated"] is False
@@ -823,7 +823,7 @@ class TestPollForAuthentication:
         mock_process.poll.return_value = None
 
         result = ab._poll_for_authentication(
-            "19234", mock_process, poll_interval=0.1, timeout=30.0
+            "19230", mock_process, poll_interval=0.1, timeout=30.0
         )
 
         captured = capsys.readouterr()
@@ -891,8 +891,8 @@ class TestPortSelectionDuringBootstrap:
         mock_interactive,
     ):
         """When preferred port is free, it should be used for Chrome launch."""
-        # Setup: preferred port (9234) is free (no process using it)
-        mock_is_port_in_use.side_effect = lambda port: port != 9234
+        # Setup: preferred port (9230) is free (no process using it)
+        mock_is_port_in_use.side_effect = lambda port: port != 9230
         mock_check.return_value = False  # No CDP on preferred port
         mock_find.return_value = "/usr/bin/google-chrome"
         mock_interactive.return_value = True
@@ -911,17 +911,17 @@ class TestPortSelectionDuringBootstrap:
             work_dir = Path(tmpdir)
 
             result = ab.bootstrap_auth_session(
-                work_dir, "9234", allow_browser_launch=True
+                work_dir, "9230", allow_browser_launch=True
             )
 
         # Should succeed with CDP mode
         assert result["success"] is True
         assert result["mode"] == "cdp"
-        assert result["cdp_port"] == "9234"
-        # launch_isolated_chrome should be called with preferred port 9234
+        assert result["cdp_port"] == "9230"
+        # launch_isolated_chrome should be called with preferred port 9230
         mock_launch.assert_called_once()
         call_args = mock_launch.call_args
-        assert call_args[0][1] == 9234  # Second positional arg is cdp_port
+        assert call_args[0][1] == 9230  # Second positional arg is cdp_port
 
     @patch("auth_bootstrap.is_interactive_session")
     @patch("auth_bootstrap.find_system_chrome")
@@ -940,9 +940,9 @@ class TestPortSelectionDuringBootstrap:
     ):
         """When preferred port is occupied, should fallback to next available port."""
 
-        # Setup: preferred port (9234) IS occupied, but 19234 is free
+        # Setup: preferred port (9230) IS occupied, but 19230 is free
         def check_port(port):
-            return port == 9234  # Only 9234 is occupied
+            return port == 9230  # Only 9230 is occupied
 
         mock_is_port_in_use.side_effect = check_port
         mock_check.return_value = False  # No CDP on any port
@@ -963,17 +963,17 @@ class TestPortSelectionDuringBootstrap:
             work_dir = Path(tmpdir)
 
             result = ab.bootstrap_auth_session(
-                work_dir, "9234", allow_browser_launch=True
+                work_dir, "9230", allow_browser_launch=True
             )
 
         # Should succeed with CDP mode on fallback port
         assert result["success"] is True
         assert result["mode"] == "cdp"
-        assert result["cdp_port"] == "19234"
-        # launch_isolated_chrome should be called with fallback port 19234
+        assert result["cdp_port"] == "19230"
+        # launch_isolated_chrome should be called with fallback port 19230
         mock_launch.assert_called_once()
         call_args = mock_launch.call_args
-        assert call_args[0][1] == 19234  # Second positional arg is cdp_port
+        assert call_args[0][1] == 19230  # Second positional arg is cdp_port
 
     @patch("auth_bootstrap.is_interactive_session")
     @patch("auth_bootstrap.find_system_chrome")
@@ -997,11 +997,11 @@ class TestPortSelectionDuringBootstrap:
         is_port_in_use() returns True (port occupied). The code should fallback
         instead of trying to launch Chrome on an occupied port.
         """
-        # Setup: preferred port (9234) is occupied by non-CDP (e.g., another service)
+        # Setup: preferred port (9230) is occupied by non-CDP (e.g., another service)
         # CDP check returns False (no CDP there), but port is in use
         mock_is_port_in_use.side_effect = lambda port: (
-            port == 9234
-        )  # Only 9234 occupied
+            port == 9230
+        )  # Only 9230 occupied
         mock_check.return_value = (
             False  # No CDP on preferred port (it's a non-CDP process)
         )
@@ -1022,17 +1022,17 @@ class TestPortSelectionDuringBootstrap:
             work_dir = Path(tmpdir)
 
             result = ab.bootstrap_auth_session(
-                work_dir, "9234", allow_browser_launch=True
+                work_dir, "9230", allow_browser_launch=True
             )
 
         # Should succeed using fallback port with CDP mode
         assert result["success"] is True
         assert result["mode"] == "cdp"
-        assert result["cdp_port"] == "19234"
+        assert result["cdp_port"] == "19230"
         # Should NOT try to use the occupied preferred port
         mock_launch.assert_called_once()
         call_args = mock_launch.call_args
-        assert call_args[0][1] == 19234  # Fallback port, not 9234
+        assert call_args[0][1] == 19230  # Fallback port, not 9230
 
     @patch("auth_bootstrap.is_interactive_session")
     @patch("auth_bootstrap.find_system_chrome")
@@ -1051,7 +1051,7 @@ class TestPortSelectionDuringBootstrap:
     ):
         """Fallback search should skip ports occupied by any process, not just CDP."""
         # Setup: preferred port and first few fallback ports occupied by non-CDP
-        occupied_ports = {9234, 19234}  # Non-CDP processes
+        occupied_ports = {9230, 19230}  # Non-CDP processes
 
         def check_port(port):
             return port in occupied_ports
@@ -1075,7 +1075,7 @@ class TestPortSelectionDuringBootstrap:
             work_dir = Path(tmpdir)
 
             result = ab.bootstrap_auth_session(
-                work_dir, "9234", allow_browser_launch=True
+                work_dir, "9230", allow_browser_launch=True
             )
 
         # Should succeed using first free port (19235) with CDP mode
@@ -1103,7 +1103,7 @@ class TestPortSelectionDuringBootstrap:
     ):
         """The actual chosen port should be used for auth polling and saved."""
         # Setup: preferred port is free
-        mock_is_port_in_use.side_effect = lambda port: port != 9234
+        mock_is_port_in_use.side_effect = lambda port: port != 9230
         mock_check.return_value = False  # No CDP on preferred port
         mock_find.return_value = "/usr/bin/google-chrome"
         mock_interactive.return_value = True
@@ -1122,18 +1122,18 @@ class TestPortSelectionDuringBootstrap:
             work_dir = Path(tmpdir)
 
             result = ab.bootstrap_auth_session(
-                work_dir, "9234", allow_browser_launch=True
+                work_dir, "9230", allow_browser_launch=True
             )
 
         # Should succeed with CDP mode
         assert result["success"] is True
         assert result["mode"] == "cdp"
-        assert result["cdp_port"] == "9234"
+        assert result["cdp_port"] == "9230"
 
-        # _poll_for_authentication should be called with port 9234
+        # _poll_for_authentication should be called with port 9230
         mock_poll.assert_called_once()
         poll_args = mock_poll.call_args
-        assert poll_args[0][0] == "9234"  # First positional arg is cdp_port
+        assert poll_args[0][0] == "9230"  # First positional arg is cdp_port
 
     @patch("auth_bootstrap.is_interactive_session")
     @patch("auth_bootstrap.find_system_chrome")
@@ -1152,7 +1152,7 @@ class TestPortSelectionDuringBootstrap:
         with tempfile.TemporaryDirectory() as tmpdir:
             work_dir = Path(tmpdir)
             result = ab.bootstrap_auth_session(
-                work_dir, "9234", allow_browser_launch=True
+                work_dir, "9230", allow_browser_launch=True
             )
 
         # Should fail with port error
@@ -1174,7 +1174,7 @@ class TestLoadSavedBrowserMode:
                 json.dumps(
                     {
                         "mode": "cdp",
-                        "cdp_port": "19234",
+                        "cdp_port": "19230",
                         "session_name": None,
                         "auth_file": None,
                         "headed": True,
@@ -1187,7 +1187,7 @@ class TestLoadSavedBrowserMode:
 
             assert result is not None
             assert result["mode"] == "cdp"
-            assert result["cdp_port"] == "19234"
+            assert result["cdp_port"] == "19230"
 
     def test_load_no_file_returns_none(self):
         """Should return None when no browser mode file exists."""
@@ -1250,11 +1250,11 @@ class TestBootstrapAuthSession:
         with tempfile.TemporaryDirectory() as tmpdir:
             work_dir = Path(tmpdir)
             # No allow_browser_launch needed for CDP fast path
-            result = ab.bootstrap_auth_session(work_dir, "9234")
+            result = ab.bootstrap_auth_session(work_dir, "9230")
 
         assert result["success"] is True
         assert result["mode"] == "cdp"
-        assert result["cdp_port"] == "9234"
+        assert result["cdp_port"] == "9230"
         assert result["headed"] is True
         assert "existing authenticated browser" in result["message"]
 
@@ -1280,7 +1280,7 @@ class TestBootstrapAuthSession:
             # Verify probe doesn't exist before bootstrap
             assert not probe_path.exists()
 
-            result = ab.bootstrap_auth_session(work_dir, "9234")
+            result = ab.bootstrap_auth_session(work_dir, "9230")
 
             # Verify probe was created during bootstrap
             assert probe_path.exists()
@@ -1306,13 +1306,13 @@ class TestBootstrapAuthSession:
             probe_path = work_dir / ".permission_probe"
 
             # First bootstrap call
-            result1 = ab.bootstrap_auth_session(work_dir, "9234")
+            result1 = ab.bootstrap_auth_session(work_dir, "9230")
             assert result1["success"] is True
             assert probe_path.exists()
             content1 = probe_path.read_text()
 
             # Second bootstrap call - should not fail
-            result2 = ab.bootstrap_auth_session(work_dir, "9234")
+            result2 = ab.bootstrap_auth_session(work_dir, "9230")
             assert result2["success"] is True
             assert probe_path.exists()
             content2 = probe_path.read_text()
@@ -1341,7 +1341,7 @@ class TestBootstrapAuthSession:
             work_dir = Path(tmpdir)
             # Explicit opt-in required for browser launch path
             result = ab.bootstrap_auth_session(
-                work_dir, "9234", allow_browser_launch=True
+                work_dir, "9230", allow_browser_launch=True
             )
 
         # Should proceed to bootstrap (but Chrome not found in test)
@@ -1363,7 +1363,7 @@ class TestBootstrapAuthSession:
         with tempfile.TemporaryDirectory() as tmpdir:
             work_dir = Path(tmpdir)
             # No allow_browser_launch - should fail closed
-            result = ab.bootstrap_auth_session(work_dir, "9234")
+            result = ab.bootstrap_auth_session(work_dir, "9230")
 
         # Should fail closed - no explicit opt-in
         assert result["success"] is False
@@ -1381,7 +1381,7 @@ class TestBootstrapAuthSession:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             work_dir = Path(tmpdir)
-            result = ab.bootstrap_auth_session(work_dir, "9234")
+            result = ab.bootstrap_auth_session(work_dir, "9230")
 
         # Should fail closed - no Chrome launch attempted
         assert result["success"] is False
@@ -1407,7 +1407,7 @@ class TestBootstrapAuthSession:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             work_dir = Path(tmpdir)
-            result = ab.bootstrap_auth_session(work_dir, "9234")
+            result = ab.bootstrap_auth_session(work_dir, "9230")
 
         # Must fail closed - no browser launch
         assert result["success"] is False
@@ -1433,7 +1433,7 @@ class TestBootstrapAuthSession:
             work_dir = Path(tmpdir)
 
             # No allow_browser_launch - should fail closed
-            result = ab.bootstrap_auth_session(work_dir, "9234")
+            result = ab.bootstrap_auth_session(work_dir, "9230")
 
         # Must fail closed - no browser launch without explicit opt-in
         assert result["success"] is False
@@ -1474,7 +1474,7 @@ class TestBootstrapAuthSession:
         with tempfile.TemporaryDirectory() as tmpdir:
             work_dir = Path(tmpdir)
             result = ab.bootstrap_auth_session(
-                work_dir, "9234", allow_browser_launch=True
+                work_dir, "9230", allow_browser_launch=True
             )
 
         assert result["success"] is True
@@ -1486,18 +1486,18 @@ class TestBootstrapAuthSession:
     def test_saved_fallback_cdp_port_is_reused(self, mock_probe, mock_check):
         """CRITICAL: Saved fallback CDP port should be reused on later runs.
 
-        If bootstrap previously launched Chrome on a non-preferred port (e.g., 19234
-        because 9234 was occupied), subsequent runs should find and reuse that port.
+        If bootstrap previously launched Chrome on a non-preferred port (e.g., 19230
+        because 9230 was occupied), subsequent runs should find and reuse that port.
         """
 
-        # Preferred port (9234) has no CDP, but saved port (19234) is authenticated
+        # Preferred port (9230) has no CDP, but saved port (19230) is authenticated
         def check_cdp_side_effect(port):
-            return port == "19234"  # Only saved port has CDP
+            return port == "19230"  # Only saved port has CDP
 
         mock_check.side_effect = check_cdp_side_effect
 
         def probe_auth_side_effect(port):
-            if port == "19234":
+            if port == "19230":
                 return {
                     "authenticated": True,
                     "url": "https://www.linkedin.com/talent/home",
@@ -1521,7 +1521,7 @@ class TestBootstrapAuthSession:
                 json.dumps(
                     {
                         "mode": "cdp",
-                        "cdp_port": "19234",
+                        "cdp_port": "19230",
                         "session_name": None,
                         "auth_file": None,
                         "headed": True,
@@ -1530,12 +1530,12 @@ class TestBootstrapAuthSession:
                 )
             )
 
-            result = ab.bootstrap_auth_session(work_dir, "9234")
+            result = ab.bootstrap_auth_session(work_dir, "9230")
 
         # Should succeed using the saved fallback port
         assert result["success"] is True
         assert result["mode"] == "cdp"
-        assert result["cdp_port"] == "19234"
+        assert result["cdp_port"] == "19230"
         assert "saved port" in result["message"].lower()
 
     @patch("auth_bootstrap.check_cdp_available")
@@ -1547,14 +1547,14 @@ class TestBootstrapAuthSession:
         should fall back to checking the preferred port.
         """
 
-        # Saved port (19234) is stale/not available, but preferred (9234) is authenticated
+        # Saved port (19230) is stale/not available, but preferred (9230) is authenticated
         def check_cdp_side_effect(port):
-            return port == "9234"  # Only preferred port has CDP
+            return port == "9230"  # Only preferred port has CDP
 
         mock_check.side_effect = check_cdp_side_effect
 
         def probe_auth_side_effect(port):
-            if port == "9234":
+            if port == "9230":
                 return {
                     "authenticated": True,
                     "url": "https://www.linkedin.com/talent/home",
@@ -1578,7 +1578,7 @@ class TestBootstrapAuthSession:
                 json.dumps(
                     {
                         "mode": "cdp",
-                        "cdp_port": "19234",
+                        "cdp_port": "19230",
                         "session_name": None,
                         "auth_file": None,
                         "headed": True,
@@ -1587,12 +1587,12 @@ class TestBootstrapAuthSession:
                 )
             )
 
-            result = ab.bootstrap_auth_session(work_dir, "9234")
+            result = ab.bootstrap_auth_session(work_dir, "9230")
 
         # Should succeed using the preferred port (saved port was stale)
         assert result["success"] is True
         assert result["mode"] == "cdp"
-        assert result["cdp_port"] == "9234"
+        assert result["cdp_port"] == "9230"
 
     @patch("auth_bootstrap.check_cdp_available")
     @patch("auth_bootstrap.probe_recruiter_auth")
@@ -1604,12 +1604,12 @@ class TestBootstrapAuthSession:
 
         # Both saved and preferred ports have CDP, but only preferred is authenticated
         def check_cdp_side_effect(port):
-            return port in ("19234", "9234")  # Both have CDP
+            return port in ("19230", "9230")  # Both have CDP
 
         mock_check.side_effect = check_cdp_side_effect
 
         def probe_auth_side_effect(port):
-            if port == "9234":
+            if port == "9230":
                 return {
                     "authenticated": True,
                     "url": "https://www.linkedin.com/talent/home",
@@ -1633,7 +1633,7 @@ class TestBootstrapAuthSession:
                 json.dumps(
                     {
                         "mode": "cdp",
-                        "cdp_port": "19234",
+                        "cdp_port": "19230",
                         "session_name": None,
                         "auth_file": None,
                         "headed": True,
@@ -1642,12 +1642,12 @@ class TestBootstrapAuthSession:
                 )
             )
 
-            result = ab.bootstrap_auth_session(work_dir, "9234")
+            result = ab.bootstrap_auth_session(work_dir, "9230")
 
         # Should succeed using the preferred port (saved port not authenticated)
         assert result["success"] is True
         assert result["mode"] == "cdp"
-        assert result["cdp_port"] == "9234"
+        assert result["cdp_port"] == "9230"
 
     @patch("auth_bootstrap.is_interactive_session")
     @patch("auth_bootstrap.find_system_chrome")
@@ -1685,13 +1685,13 @@ class TestBootstrapAuthSession:
 
             # Explicit opt-in AND interactive
             result = ab.bootstrap_auth_session(
-                work_dir, "9234", allow_browser_launch=True
+                work_dir, "9230", allow_browser_launch=True
             )
 
         assert result["success"] is True
         assert result["mode"] == "cdp"
         assert result["headed"] is True
-        assert result["cdp_port"] == "9234"
+        assert result["cdp_port"] == "9230"
         # Verify launch_isolated_chrome was called
         mock_launch.assert_called_once()
 
@@ -1705,10 +1705,10 @@ class TestCliBootstrapOutput:
         mock_bootstrap.return_value = {
             "success": True,
             "mode": "cdp",
-            "cdp_port": "9234",
+            "cdp_port": "9230",
             "session_name": None,
             "auth_file": None,
-            "message": "Using existing authenticated browser on port 9234",
+            "message": "Using existing authenticated browser on port 9230",
             "error": None,
         }
 
@@ -1719,7 +1719,7 @@ class TestCliBootstrapOutput:
             work_dir="/tmp/test",
             probe=False,
             bootstrap=True,
-            cdp_port="9234",
+            cdp_port="9230",
         )
 
         # Call the bootstrap path directly with explicit opt-in (as CLI does)
@@ -1782,7 +1782,7 @@ class TestCliBootstrapOutput:
             work_dir = Path(tmpdir)
 
             result = ab.bootstrap_auth_session(
-                work_dir, "9234", allow_browser_launch=True
+                work_dir, "9230", allow_browser_launch=True
             )
 
         captured = capsys.readouterr()
@@ -1833,7 +1833,7 @@ class TestCliBootstrapOutput:
             work_dir = Path(tmpdir)
 
             result = ab.bootstrap_auth_session(
-                work_dir, "9234", allow_browser_launch=True
+                work_dir, "9230", allow_browser_launch=True
             )
 
         captured = capsys.readouterr()

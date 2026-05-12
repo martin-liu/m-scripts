@@ -40,16 +40,16 @@ from zipfile import BadZipFile
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from runtime_manager import RuntimeManager
-from excel_utils import upsert, get_existing_keys, create
 from browser_utils import run_browser_command, safe_get_parsed
-from project_ref_utils import resolve_project_ref
 from config_utils import parse_config_file
+from excel_utils import create, get_existing_keys, upsert
+from project_ref_utils import resolve_project_ref
 from recruiter_url_utils import (
+    build_project_overview_url,
     extract_recruiter_id_from_url,
     is_contextual_search_url,
-    build_project_overview_url,
 )
+from runtime_manager import RuntimeManager
 
 
 def run_browser_probe(*args: Any, **kwargs: Any) -> dict[str, Any]:
@@ -199,7 +199,7 @@ Examples:
     )
     parser.add_argument(
         "--cdp-port",
-        help="Chrome DevTools Protocol port (default: from profile or 9234)",
+        help="Chrome DevTools Protocol port (default: from profile or 9230)",
     )
     parser.add_argument(
         "--dry-run",
@@ -608,8 +608,9 @@ def check_current_page_ready_for_extraction(
             - current_url: str - the current URL
             - state: str - page state classification
     """
+    from browser_utils import run_browser_probe as shared_run_browser_probe
+    from browser_utils import safe_get_parsed
     from recruiter_page_utils import PageStateProbe
-    from browser_utils import run_browser_probe as shared_run_browser_probe, safe_get_parsed
 
     # Get current URL
     result = shared_run_browser_probe(
@@ -695,14 +696,15 @@ def resolve_fresh_search_context(
             - failure_code: str | None - stable failure code if failed
     """
     # Import here to avoid circular imports
+    from urllib.parse import urlparse
+
+    from browser_utils import ActionRequired, FailureCode, safe_get_parsed
     from ensure_recruiter_project import (
+        is_contextual_search_url,
         resolve_search_url,
         validate_project_context,
-        is_contextual_search_url,
     )
     from recruiter_page_utils import RecoveryHelper, ensure_page_ready
-    from urllib.parse import urlparse
-    from browser_utils import safe_get_parsed, FailureCode, ActionRequired
 
     # Extract project ID from configured URL
     project_id = extract_project_id_from_url(configured_url)
@@ -1185,7 +1187,7 @@ def click_next_page_pagination(
     })()
     """
 
-    from browser_utils import safe_get_parsed, FailureCode, ActionRequired
+    from browser_utils import ActionRequired, FailureCode, safe_get_parsed
 
     pagination_state_js = r"""
     (() => {
@@ -1475,7 +1477,7 @@ def get_page_number_from_url(url: str) -> int:
     Returns:
         Page number (1-indexed), defaults to 1 if no start param
     """
-    from urllib.parse import urlparse, parse_qs
+    from urllib.parse import parse_qs, urlparse
 
     parsed = urlparse(url)
     params = parse_qs(parsed.query)
@@ -1513,7 +1515,7 @@ def get_current_page_from_browser(cdp_port: str, project_id: str) -> dict[str, A
     """
     from urllib.parse import urlparse
 
-    from browser_utils import safe_get_parsed, FailureCode, ActionRequired
+    from browser_utils import ActionRequired, FailureCode, safe_get_parsed
 
     result = run_browser_probe(cdp_port, "eval", "({ url: window.location.href })")
     if result.get("error"):
@@ -1590,7 +1592,7 @@ def build_paginated_url(base_url: str, page: int, page_size: int = 25) -> str:
     Returns:
         URL with appropriate pagination parameter
     """
-    from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+    from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
     parsed = urlparse(base_url)
     params = parse_qs(parsed.query, keep_blank_values=True)
@@ -1991,8 +1993,8 @@ def run_preflight(
             - cdp_port: str | None - resolved CDP port
             - work_dir: str | None - working directory for incident reporting
     """
-    from recruiter_page_utils import PageStateProbe
     from browser_utils import ActionRequired, FailureCode
+    from recruiter_page_utils import PageStateProbe
 
     result: dict[str, Any] = {
         "success": False,
@@ -2045,7 +2047,7 @@ def run_preflight(
         cdp_port = config.get("CDP_PORT")
         if not cdp_port:
             profile = manager._resolve_profile()
-            cdp_port = profile.get("CDP_PORT", "9234")
+            cdp_port = profile.get("CDP_PORT", "9230")
     result["cdp_port"] = cdp_port
 
     # Get work_dir for incident reporting

@@ -8,7 +8,7 @@ upstream processing.
 Usage:
     from profile_enricher import enrich_profile, EnrichmentResult
 
-    result = enrich_profile(profile_url, cdp_port=9234)
+    result = enrich_profile(profile_url, cdp_port=9230)
     if result.success:
         print(result.enrichment_notes)
     else:
@@ -254,7 +254,7 @@ def _page_data_is_still_loading(page_data: dict[str, Any]) -> bool:
 
 def enrich_profile(
     profile_url: str,
-    cdp_port: str = "9234",
+    cdp_port: str = "9230",
     timeout: int = 60,
     use_browser: bool = True,
 ) -> EnrichmentResult:
@@ -664,7 +664,7 @@ def _enrich_via_browser(
 
 def enrich_profile_batch(
     profile_urls: list[str],
-    cdp_port: str = "9234",
+    cdp_port: str = "9230",
     timeout: int = 60,
     continue_on_failure: bool = True,
     use_browser: bool = True,
@@ -717,7 +717,7 @@ if __name__ == "__main__":
         sys.exit(1)
 
     url = sys.argv[1]
-    cdp_port = "9234"
+    cdp_port = "9230"
 
     if "--cdp-port" in sys.argv:
         idx = sys.argv.index("--cdp-port")

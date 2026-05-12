@@ -440,7 +440,7 @@ def run_send_macro(
 
     Args:
         project_ref: Project reference (local ID, Recruiter URL, or numeric ID).
-        cdp_port: Optional CDP port (defaults to profile value or 9234).
+        cdp_port: Optional CDP port (defaults to profile value or 9230).
         row_ids: Optional list of specific row IDs to process.
 
     Returns:
@@ -473,7 +473,7 @@ def run_send_macro(
                 sys.path.remove(str(SCRIPT_DIR))
 
         # Get CDP port from context if not provided
-        resolved_cdp_port = cdp_port or ctx.get("profile", {}).get("CDP_PORT", "9234")
+        resolved_cdp_port = cdp_port or ctx.get("profile", {}).get("CDP_PORT", "9230")
 
         print(f"Workbook: {workbook_path}")
         print(f"CDP Port: {resolved_cdp_port}")
@@ -538,7 +538,9 @@ def run_send_macro(
                 if status in ("SENT", "ALREADY_CONTACTED"):
                     success_count += 1
                 else:
-                    failed_rows.append((row_id_value, str(result.get("reason", "unknown"))))
+                    failed_rows.append(
+                        (row_id_value, str(result.get("reason", "unknown")))
+                    )
 
             except BrowserStateError as e:
                 print(f"  FATAL: {e}")
@@ -561,9 +563,14 @@ def run_send_macro(
                         if ar["context"].get("draft_rule"):
                             print()
                             print(f"IMPORTANT: {ar['context']['draft_rule']}")
-                        if ar["context"].get("manual_send_required") and row_id is not None:
+                        if (
+                            ar["context"].get("manual_send_required")
+                            and row_id is not None
+                        ):
                             print()
-                            print("After the send is completed (by agent-browser or user), rerun to reconcile:")
+                            print(
+                                "After the send is completed (by agent-browser or user), rerun to reconcile:"
+                            )
                             print(
                                 f"  python3 {Path(__file__).resolve()} --project {project_ref} --row-id {row_id}"
                             )
@@ -667,7 +674,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--cdp-port",
-        help="Chrome DevTools Protocol port (default: from profile or 9234)",
+        help="Chrome DevTools Protocol port (default: from profile or 9230)",
     )
     parser.add_argument(
         "--row-id",

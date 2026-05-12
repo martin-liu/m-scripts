@@ -272,7 +272,7 @@ class TestSendInmail:
 
         send_script = tmp_path / "send_inmail.sh"
         result = run_send.send_inmail(
-            send_script, "9234", None, "http://test.com", "Subject", "Body"
+            send_script, "9230", None, "http://test.com", "Subject", "Body"
         )
 
         assert result["status"] == "SENT"
@@ -297,7 +297,7 @@ class TestSendInmail:
         send_script = tmp_path / "send_inmail.sh"
         run_send.send_inmail(
             send_script,
-            "9234",
+            "9230",
             None,
             "http://test.com",
             "Subject",
@@ -310,7 +310,7 @@ class TestSendInmail:
         # Should preserve parent environment variables
         assert "HOME" in env or "PATH" in env, "Parent environment should be preserved"
         # Should override CDP_PORT
-        assert env.get("CDP_PORT") == "9234"
+        assert env.get("CDP_PORT") == "9230"
 
     @patch("run_send.subprocess.run")
     def test_passes_work_dir_to_subprocess(self, mock_run, tmp_path):
@@ -329,7 +329,7 @@ class TestSendInmail:
         send_script = tmp_path / "send_inmail.sh"
         run_send.send_inmail(
             send_script,
-            "9234",
+            "9230",
             "/tmp/custom-workdir",
             "http://test.com",
             "Subject",
@@ -349,7 +349,7 @@ class TestSendInmail:
 
         send_script = tmp_path / "send_inmail.sh"
         result = run_send.send_inmail(
-            send_script, "9234", None, "http://test.com", "Subject", "Body"
+            send_script, "9230", None, "http://test.com", "Subject", "Body"
         )
 
         assert result["status"] == "FAILED"
@@ -366,7 +366,7 @@ class TestSendInmail:
 
         send_script = tmp_path / "send_inmail.sh"
         result = run_send.send_inmail(
-            send_script, "9234", None, "http://test.com", "Subject", "Body"
+            send_script, "9230", None, "http://test.com", "Subject", "Body"
         )
 
         assert result["status"] == "FAILED"
@@ -381,7 +381,7 @@ class TestSendInmail:
 
         send_script = tmp_path / "send_inmail.sh"
         result = run_send.send_inmail(
-            send_script, "9234", None, "http://test.com", "Subject", "Body"
+            send_script, "9230", None, "http://test.com", "Subject", "Body"
         )
 
         assert result["status"] == "FAILED"
@@ -533,7 +533,7 @@ class TestRunSendMacro:
         mock_ctx.return_value = {
             "work_dir": "/test",
             "current_link": "/test/current",
-            "profile": {"CDP_PORT": "9234"},
+            "profile": {"CDP_PORT": "9230"},
         }
         mock_script.return_value = Path("/test/send_inmail.sh")
         mock_excel.return_value = Path("/test/excel_utils.py")
@@ -581,7 +581,7 @@ class TestRunSendMacro:
         mock_ctx.return_value = {
             "work_dir": "/test",
             "current_link": "/test/current",
-            "profile": {"CDP_PORT": "9234"},
+            "profile": {"CDP_PORT": "9230"},
         }
         mock_script.return_value = Path("/test/send_inmail.sh")
         mock_excel.return_value = Path("/test/excel_utils.py")
@@ -630,7 +630,7 @@ class TestRunSendMacro:
         mock_ctx.return_value = {
             "work_dir": "/test",
             "current_link": "/test/current",
-            "profile": {"CDP_PORT": "9234"},
+            "profile": {"CDP_PORT": "9230"},
         }
         mock_script.return_value = Path("/test/send_inmail.sh")
         mock_excel.return_value = Path("/test/excel_utils.py")
@@ -679,7 +679,7 @@ class TestRunSendMacro:
         mock_ctx.return_value = {
             "work_dir": "/test",
             "current_link": "/test/current",
-            "profile": {"CDP_PORT": "9234"},
+            "profile": {"CDP_PORT": "9230"},
         }
         mock_script.return_value = Path("/test/send_inmail.sh")
         mock_excel.return_value = Path("/test/excel_utils.py")
@@ -723,7 +723,7 @@ class TestRunSendMacro:
         mock_ctx.return_value = {
             "work_dir": "/test",
             "current_link": "/test/current",
-            "profile": {"CDP_PORT": "9234"},
+            "profile": {"CDP_PORT": "9230"},
         }
         mock_script.return_value = Path("/test/send_inmail.sh")
         mock_excel.return_value = Path("/test/excel_utils.py")
@@ -746,7 +746,7 @@ class TestRunSendMacro:
         mock_ctx.return_value = {
             "work_dir": "/test",
             "current_link": "/test/current",
-            "profile": {"CDP_PORT": "9234"},
+            "profile": {"CDP_PORT": "9230"},
         }
         mock_script.return_value = Path("/test/send_inmail.sh")
         mock_excel.return_value = Path("/test/excel_utils.py")
@@ -781,7 +781,7 @@ class TestRunSendMacro:
         mock_ctx.return_value = {
             "work_dir": "/test",
             "current_link": "/test/current",
-            "profile": {"CDP_PORT": "9234"},
+            "profile": {"CDP_PORT": "9230"},
         }
         mock_script.return_value = Path("/test/send_inmail.sh")
         mock_excel.return_value = Path("/test/excel_utils.py")
@@ -810,7 +810,7 @@ class TestRunSendMacro:
         mock_ctx.return_value = {
             "work_dir": "/test",
             "current_link": "/test/current",
-            "profile": {"CDP_PORT": "9234"},
+            "profile": {"CDP_PORT": "9230"},
         }
         mock_script.return_value = Path("/test/send_inmail.sh")
         mock_excel.return_value = Path("/test/excel_utils.py")
@@ -840,7 +840,7 @@ class TestRunSendMacro:
         mock_ctx.return_value = {
             "work_dir": "/test",
             "current_link": "/test/current",
-            "profile": {"CDP_PORT": "9234"},
+            "profile": {"CDP_PORT": "9230"},
         }
         mock_script.return_value = Path("/test/send_inmail.sh")
         mock_excel.return_value = Path("/test/excel_utils.py")
@@ -919,7 +919,7 @@ class TestProjectRefResolution:
         mock_ctx.return_value = {
             "work_dir": "/test",
             "current_link": "/test/current",
-            "profile": {"CDP_PORT": "9234"},
+            "profile": {"CDP_PORT": "9230"},
         }
         mock_script.return_value = Path("/test/send_inmail.sh")
         mock_excel.return_value = Path("/test/excel_utils.py")
@@ -1133,7 +1133,7 @@ class TestRunSendMacroWithActionRequired:
         mock_ctx.return_value = {
             "work_dir": "/test",
             "current_link": "/test/current",
-            "profile": {"CDP_PORT": "9234"},
+            "profile": {"CDP_PORT": "9230"},
         }
         mock_script.return_value = Path("/test/send_inmail.sh")
         mock_excel.return_value = Path("/test/excel_utils.py")
@@ -1191,7 +1191,7 @@ class TestRunSendMacroWithActionRequired:
         mock_ctx.return_value = {
             "work_dir": "/test",
             "current_link": "/test/current",
-            "profile": {"CDP_PORT": "9234"},
+            "profile": {"CDP_PORT": "9230"},
         }
         mock_script.return_value = Path("/test/send_inmail.sh")
         mock_excel.return_value = Path("/test/excel_utils.py")
@@ -1234,7 +1234,10 @@ class TestRunSendMacroWithActionRequired:
         captured = capsys.readouterr()
 
         assert result == 2
-        assert "After the send is completed (by agent-browser or user), rerun to reconcile:" in captured.out
+        assert (
+            "After the send is completed (by agent-browser or user), rerun to reconcile:"
+            in captured.out
+        )
         assert "--project 1691575116 --row-id 4" in captured.out
 
     @patch("run_send.load_runtime_context")
@@ -1257,7 +1260,7 @@ class TestRunSendMacroWithActionRequired:
         mock_ctx.return_value = {
             "work_dir": "/test",
             "current_link": "/test/current",
-            "profile": {"CDP_PORT": "9234"},
+            "profile": {"CDP_PORT": "9230"},
         }
         mock_script.return_value = Path("/test/send_inmail.sh")
         mock_excel.return_value = Path("/test/excel_utils.py")

@@ -60,7 +60,7 @@ class TestPageStateProbe:
             "error": None,
         }
 
-        probe = PageStateProbe("9234")
+        probe = PageStateProbe("9230")
         result = probe.classify_state()
 
         assert result["state"] == "ready"
@@ -76,7 +76,7 @@ class TestPageStateProbe:
             "message": "Session expired",
         }
 
-        probe = PageStateProbe("9234")
+        probe = PageStateProbe("9230")
         result = probe.classify_state()
 
         assert result["state"] == "dialog_blocked"
@@ -102,7 +102,7 @@ class TestPageStateProbe:
             "error": None,
         }
 
-        probe = PageStateProbe("9234")
+        probe = PageStateProbe("9230")
         result = probe.classify_state()
 
         assert result["state"] == "bad_page"
@@ -126,7 +126,7 @@ class TestPageStateProbe:
             "error": None,
         }
 
-        probe = PageStateProbe("9234")
+        probe = PageStateProbe("9230")
         result = probe.classify_state()
 
         assert result["state"] == "blocked_or_captcha"
@@ -150,7 +150,7 @@ class TestPageStateProbe:
             "error": None,
         }
 
-        probe = PageStateProbe("9234")
+        probe = PageStateProbe("9230")
         result = probe.classify_state()
 
         assert result["state"] == "logged_out_or_wrong_product"
@@ -175,7 +175,7 @@ class TestPageStateProbe:
             "error": None,
         }
 
-        probe = PageStateProbe("9234")
+        probe = PageStateProbe("9230")
         result = probe.classify_state()
 
         assert result["state"] == "loading"
@@ -187,7 +187,7 @@ class TestPageStateProbe:
         mock_dialog.return_value = {"has_dialog": False}
         mock_run.return_value = {"error": "Connection refused", "parsed": None}
 
-        probe = PageStateProbe("9234")
+        probe = PageStateProbe("9230")
         result = probe.classify_state()
 
         assert result["state"] == "unknown"
@@ -210,7 +210,7 @@ class TestPageStateProbe:
             "error": None,
         }
 
-        probe = PageStateProbe("9234")
+        probe = PageStateProbe("9230")
         assert probe.is_ready() is True
 
     @patch("recruiter_page_utils.check_dialog_status")
@@ -230,7 +230,7 @@ class TestPageStateProbe:
             "error": None,
         }
 
-        probe = PageStateProbe("9234")
+        probe = PageStateProbe("9230")
         assert probe.is_blocked() is True
 
 
@@ -255,7 +255,7 @@ class TestRecoveryHelper:
             "error": None,
         }
 
-        helper = RecoveryHelper("9234")
+        helper = RecoveryHelper("9230")
         result = helper.attempt_recovery()
 
         assert result["success"] is True
@@ -333,7 +333,7 @@ class TestRecoveryHelper:
             },
         ]
 
-        helper = RecoveryHelper("9234", max_attempts=2)
+        helper = RecoveryHelper("9230", max_attempts=2)
         result = helper.attempt_recovery(
             target_url="https://linkedin.com/talent/projects"
         )
@@ -361,7 +361,7 @@ class TestRecoveryHelper:
             "error": None,
         }
 
-        helper = RecoveryHelper("9234")
+        helper = RecoveryHelper("9230")
         result = helper.attempt_recovery()
 
         assert result["success"] is False
@@ -377,7 +377,7 @@ class TestRecoveryHelper:
             "message": "Are you sure?",
         }
 
-        helper = RecoveryHelper("9234")
+        helper = RecoveryHelper("9230")
         result = helper.attempt_recovery()
 
         assert result["success"] is False
@@ -408,7 +408,7 @@ class TestRecoveryHelper:
         }
         mock_subprocess.return_value = Mock(returncode=0)
 
-        helper = RecoveryHelper("9234", max_attempts=2)
+        helper = RecoveryHelper("9230", max_attempts=2)
         result = helper.attempt_recovery()
 
         assert result["success"] is False
@@ -425,7 +425,7 @@ class TestRecoveryHelper:
             "error": "Browser not available in cdp mode",
         }
 
-        helper = RecoveryHelper("9234")
+        helper = RecoveryHelper("9230")
         result = helper.attempt_recovery()
 
         assert result["success"] is False
@@ -469,7 +469,7 @@ class TestBrowserUnavailableReadiness:
             },
         }
 
-        result = rpu.ensure_page_ready("9234")
+        result = rpu.ensure_page_ready("9230")
 
         assert result["ready"] is False
         assert result["failure_code"] == "browser_unavailable"
@@ -514,7 +514,7 @@ class TestBrowserUnavailableReadiness:
             ready_state,  # Final check
         ]
 
-        helper = RecoveryHelper("9234", max_attempts=2)
+        helper = RecoveryHelper("9230", max_attempts=2)
         result = helper.attempt_recovery()
 
         assert result["success"] is True
@@ -541,7 +541,7 @@ class TestBrowserUnavailableReadiness:
                 "error": None,
             }
 
-            helper = RecoveryHelper("9234", work_dir=tmp_path)
+            helper = RecoveryHelper("9230", work_dir=tmp_path)
             result = helper.attempt_recovery(context="test_context")
 
             # Check incident was written
@@ -577,7 +577,7 @@ class TestConvenienceFunctions:
             "error": None,
         }
 
-        result = rpu.with_recovery("9234")
+        result = rpu.with_recovery("9230")
 
         assert result["success"] is True
         assert result["final_state"] == "ready"
@@ -599,7 +599,7 @@ class TestConvenienceFunctions:
             "error": None,
         }
 
-        result = rpu.ensure_page_ready("9234")
+        result = rpu.ensure_page_ready("9230")
 
         assert result["ready"] is True
         assert result["state"] == "ready"
@@ -622,7 +622,7 @@ class TestConvenienceFunctions:
             "error": None,
         }
 
-        result = rpu.ensure_page_ready("9234")
+        result = rpu.ensure_page_ready("9230")
 
         assert result["ready"] is False
         assert result["state"] == "logged_out_or_wrong_product"
@@ -664,7 +664,7 @@ class TestContractChooserDetection:
             "error": None,
         }
 
-        probe = PageStateProbe("9234")
+        probe = PageStateProbe("9230")
         result = probe.classify_state()
 
         assert result["state"] == "contract_chooser", (
@@ -693,7 +693,7 @@ class TestContractChooserDetection:
             "error": None,
         }
 
-        probe = PageStateProbe("9234")
+        probe = PageStateProbe("9230")
         result = probe.classify_state()
 
         assert result["state"] == "contract_chooser"
@@ -719,7 +719,7 @@ class TestContractChooserDetection:
             "error": None,
         }
 
-        probe = PageStateProbe("9234")
+        probe = PageStateProbe("9230")
         result = probe.classify_state()
 
         assert result["state"] == "contract_chooser"
@@ -781,7 +781,7 @@ class TestContractChooserDetection:
             ready_state,  # Final check
         ]
 
-        helper = RecoveryHelper("9234", max_attempts=2)
+        helper = RecoveryHelper("9230", max_attempts=2)
         result = helper.attempt_recovery()
 
         assert result["success"] is True
@@ -845,7 +845,7 @@ class TestContractChooserDetection:
             ready_state,  # Final check
         ]
 
-        helper = RecoveryHelper("9234", max_attempts=2)
+        helper = RecoveryHelper("9230", max_attempts=2)
         result = helper.attempt_recovery()
 
         assert result["success"] is True
@@ -1005,7 +1005,7 @@ class TestLoadingWrapperRegression:
             "error": None,
         }
 
-        probe = PageStateProbe("9234")
+        probe = PageStateProbe("9230")
         result = probe.classify_state()
 
         assert result["state"] == "ready", (
@@ -1048,7 +1048,7 @@ class TestLoadingWrapperRegression:
             "error": None,
         }
 
-        probe = PageStateProbe("9234")
+        probe = PageStateProbe("9230")
         result = probe.classify_state()
 
         assert result["state"] == "loading", (
@@ -1085,7 +1085,7 @@ class TestLoadingWrapperRegression:
             "error": None,
         }
 
-        probe = PageStateProbe("9234")
+        probe = PageStateProbe("9230")
         result = probe.classify_state()
 
         assert result["state"] == "loading", (
@@ -1126,7 +1126,7 @@ class TestLoadingWrapperRegression:
             "error": None,
         }
 
-        probe = PageStateProbe("9234")
+        probe = PageStateProbe("9230")
         result = probe.classify_state()
 
         assert result["state"] == "ready", (
@@ -1191,7 +1191,7 @@ class TestPageIdentityAssertions:
         }
 
         result = _validate_target_url_match(
-            "9234",
+            "9230",
             target_url="https://linkedin.com/search/results/people/?keywords=python&start=25",
         )
 
@@ -1212,7 +1212,7 @@ class TestPageIdentityAssertions:
         }
 
         result = _validate_target_url_match(
-            "9234",
+            "9230",
             target_url="https://linkedin.com/search/results/people/?keywords=python&start=25",
         )
 
@@ -1230,7 +1230,7 @@ class TestPageIdentityAssertions:
         }
 
         result = _validate_target_url_match(
-            "9234",
+            "9230",
             target_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch",
         )
 
@@ -1248,7 +1248,7 @@ class TestPageIdentityAssertions:
         }
 
         result = _validate_target_url_match(
-            "9234",
+            "9230",
             target_url="https://linkedin.com/talent/projects",
         )
 
@@ -1277,7 +1277,7 @@ class TestPageIdentityAssertions:
 
         # Target URL doesn't have the volatile params (they're generated per-session)
         result = _validate_target_url_match(
-            "9234",
+            "9230",
             target_url="https://linkedin.com/talent/hire/1692252652/discover/recruiterSearch",
         )
 
@@ -1300,7 +1300,7 @@ class TestPageIdentityAssertions:
         }
 
         result = _validate_target_url_match(
-            "9234",
+            "9230",
             target_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch?start=25",
         )
 
@@ -1324,7 +1324,7 @@ class TestPageIdentityAssertions:
 
         # Target URL is page 2 (has start=25)
         result = _validate_target_url_match(
-            "9234",
+            "9230",
             target_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch?start=25",
         )
 
@@ -1342,7 +1342,7 @@ class TestPageIdentityAssertions:
         }
 
         result = rpu.assert_page_identity(
-            "9234",
+            "9230",
             expected_url_patterns=["/talent/hire/", "/discover/recruiterSearch"],
         )
 
@@ -1362,7 +1362,7 @@ class TestPageIdentityAssertions:
         }
 
         result = rpu.assert_page_identity(
-            "9234",
+            "9230",
             expected_url_patterns=["/discover/recruiterSearch"],
             context="test_context",
         )
@@ -1377,7 +1377,7 @@ class TestPageIdentityAssertions:
         mock_run.return_value = {"error": "Connection refused", "parsed": None}
 
         result = rpu.assert_page_identity(
-            "9234",
+            "9230",
             expected_url_patterns=["/talent/"],
         )
 
@@ -1393,7 +1393,7 @@ class TestPageIdentityAssertions:
         }
 
         result = rpu.assert_page_identity(
-            "9234",
+            "9230",
             expected_path_patterns=["/talent/hire/"],
         )
 
@@ -1444,7 +1444,7 @@ class TestEnsurePageReadyWithIdentity:
         }
 
         result = rpu.ensure_page_ready(
-            "9234",
+            "9230",
             target_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch",
             require_page_identity=True,
         )
@@ -1486,7 +1486,7 @@ class TestEnsurePageReadyWithIdentity:
         }
 
         result = rpu.ensure_page_ready(
-            "9234",
+            "9230",
             target_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch",
             require_page_identity=True,
         )
@@ -1532,7 +1532,7 @@ class TestEnsurePageReadyWithIdentity:
         )
 
         result = rpu.ensure_page_ready(
-            "9234",
+            "9230",
             target_url=target_url,
             require_page_identity=True,
         )
@@ -1574,7 +1574,7 @@ class TestEnsurePageReadyWithIdentity:
         )
 
         result = rpu.ensure_page_ready(
-            "9234",
+            "9230",
             target_url=target_url,
             require_page_identity=True,
         )
@@ -1611,7 +1611,7 @@ class TestEnsurePageReadyWithIdentity:
 
         # When explicit patterns are provided, they should be used
         result = rpu.ensure_page_ready(
-            "9234",
+            "9230",
             target_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch",
             expected_url_patterns=["/discover/recruiterSearch"],
             require_page_identity=True,
@@ -1651,7 +1651,7 @@ class TestEnsurePageReadyWithIdentity:
 
         # But we expect to be on recruiterSearch page
         result = rpu.ensure_page_ready(
-            "9234",
+            "9230",
             target_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch",
             expected_url_patterns=["/discover/recruiterSearch"],
             require_page_identity=True,
@@ -1708,7 +1708,7 @@ class TestEnsurePageReadyWithIdentity:
 
         # We want to navigate to page 2 (has start=25)
         result = rpu.ensure_page_ready(
-            "9234",
+            "9230",
             target_url="https://linkedin.com/search/results/people/?keywords=python&start=25",
             require_page_identity=True,
         )
@@ -1752,7 +1752,7 @@ class TestEnsurePageReadyWithIdentity:
 
         # Target URL is page 2 without the extra params
         result = rpu.ensure_page_ready(
-            "9234",
+            "9230",
             target_url="https://linkedin.com/search/results/people/?keywords=python&start=25",
             require_page_identity=True,
         )
@@ -1806,7 +1806,7 @@ class TestEnsurePageReadyWithIdentity:
 
         # Target is page 2, but we're on page 1
         result = rpu.ensure_page_ready(
-            "9234",
+            "9230",
             target_url="https://linkedin.com/search?start=25",
             require_page_identity=True,
         )
@@ -1847,7 +1847,7 @@ class TestEnsurePageReadyWithIdentity:
 
         # No target_url provided, so can't navigate
         result = rpu.ensure_page_ready(
-            "9234",
+            "9230",
             expected_url_patterns=["/discover/recruiterSearch"],
             require_page_identity=True,
             target_url=None,  # Explicitly no target URL
@@ -1903,7 +1903,7 @@ class TestIntegrationPatterns:
         ]
         mock_subprocess.return_value = Mock(returncode=0)
 
-        helper = RecoveryHelper("9234")
+        helper = RecoveryHelper("9230")
         result = helper.attempt_recovery(
             target_url="https://linkedin.com/talent/projects",
             context="test_recovery",
@@ -1932,7 +1932,7 @@ class TestIntegrationPatterns:
             "error": None,
         }
 
-        probe = PageStateProbe("9234")
+        probe = PageStateProbe("9230")
         state = probe.classify_state()
 
         assert state["state"] == "logged_out_or_wrong_product"
@@ -1960,7 +1960,7 @@ class TestBackwardsCompatibility:
         }
 
         # Using cdp_port= as keyword argument (old API)
-        result = rpu.ensure_page_ready(cdp_port="9234")
+        result = rpu.ensure_page_ready(cdp_port="9230")
 
         assert result["ready"] is True
         assert result["state"] == "ready"
@@ -1985,7 +1985,7 @@ class TestBackwardsCompatibility:
         }
 
         # Both provided - browser_mode should be used
-        result = rpu.ensure_page_ready(browser_mode="9234", cdp_port="9999")
+        result = rpu.ensure_page_ready(browser_mode="9230", cdp_port="9999")
 
         assert result["ready"] is True
 
@@ -2017,7 +2017,7 @@ class TestActionRequiredInRecovery:
             "error": None,
         }
 
-        helper = RecoveryHelper("9234")
+        helper = RecoveryHelper("9230")
         result = helper.attempt_recovery()
 
         assert result["success"] is False
@@ -2047,7 +2047,7 @@ class TestActionRequiredInRecovery:
             "error": None,
         }
 
-        helper = RecoveryHelper("9234")
+        helper = RecoveryHelper("9230")
         result = helper.attempt_recovery()
 
         assert result["success"] is False
@@ -2066,7 +2066,7 @@ class TestActionRequiredInRecovery:
             "message": "Are you sure you want to leave?",
         }
 
-        helper = RecoveryHelper("9234")
+        helper = RecoveryHelper("9230")
         result = helper.attempt_recovery()
 
         assert result["success"] is False
@@ -2100,7 +2100,7 @@ class TestActionRequiredInRecovery:
         }
         mock_subprocess.return_value = Mock(returncode=0)
 
-        helper = RecoveryHelper("9234", max_attempts=2)
+        helper = RecoveryHelper("9230", max_attempts=2)
         result = helper.attempt_recovery(target_url="https://linkedin.com/talent/home")
 
         assert result["success"] is False
@@ -2131,7 +2131,7 @@ class TestActionRequiredInEnsurePageReady:
             "error": None,
         }
 
-        result = rpu.ensure_page_ready("9234")
+        result = rpu.ensure_page_ready("9230")
 
         assert result["ready"] is False
         assert result["action_required"] is not None
@@ -2158,7 +2158,7 @@ class TestActionRequiredInEnsurePageReady:
             "error": None,
         }
 
-        result = rpu.ensure_page_ready("9234")
+        result = rpu.ensure_page_ready("9230")
 
         assert result["ready"] is False
         assert result["action_required"] is not None
@@ -2189,7 +2189,7 @@ class TestActionRequiredInEnsurePageReady:
         mock_probe.return_value = mock_probe_instance
 
         result = rpu.ensure_page_ready(
-            "9234",
+            "9230",
             target_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch",
             require_page_identity=True,
         )

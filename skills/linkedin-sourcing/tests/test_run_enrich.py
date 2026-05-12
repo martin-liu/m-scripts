@@ -170,7 +170,7 @@ class TestEnrichSingleRow:
         mock_enrich.return_value = mock_result
 
         row = {"row_id": 1, "profile_url": "https://linkedin.com/in/test"}
-        success, notes, action = run_enrich.enrich_single_row(row, "9234")
+        success, notes, action = run_enrich.enrich_single_row(row, "9230")
 
         assert success is True
         assert notes == "Skills: Python"
@@ -186,14 +186,14 @@ class TestEnrichSingleRow:
         mock_enrich.return_value = mock_result
 
         row = {"row_id": 1, "profile_url": "https://linkedin.com/in/test"}
-        success, notes, action_result = run_enrich.enrich_single_row(row, "9234")
+        success, notes, action_result = run_enrich.enrich_single_row(row, "9230")
 
         assert success is False
         assert action_result == action
 
     def test_missing_profile_url(self):
         row = {"row_id": 1, "profile_url": ""}
-        success, notes, action = run_enrich.enrich_single_row(row, "9234")
+        success, notes, action = run_enrich.enrich_single_row(row, "9230")
 
         assert success is False
         assert action is not None
@@ -201,7 +201,7 @@ class TestEnrichSingleRow:
 
     def test_dry_run_mode(self):
         row = {"row_id": 1, "profile_url": "https://linkedin.com/in/test"}
-        success, notes, action = run_enrich.enrich_single_row(row, "9234", dry_run=True)
+        success, notes, action = run_enrich.enrich_single_row(row, "9230", dry_run=True)
 
         assert success is True
         assert "DRY RUN" in notes
@@ -226,7 +226,7 @@ class TestRunEnrichPhase:
     ):
         mock_ctx.return_value = {
             "work_dir": "/test",
-            "profile": {"CDP_PORT": "9234"},
+            "profile": {"CDP_PORT": "9230"},
         }
         mock_resolve.return_value = (
             Path("/test/config.sh"),
@@ -256,7 +256,7 @@ class TestRunEnrichPhase:
         mock_resolve,
         mock_ctx,
     ):
-        mock_ctx.return_value = {"work_dir": "/test", "profile": {"CDP_PORT": "9234"}}
+        mock_ctx.return_value = {"work_dir": "/test", "profile": {"CDP_PORT": "9230"}}
         mock_resolve.return_value = (
             Path("/test/config.sh"),
             Path("/test/workbook.xlsx"),
@@ -280,13 +280,17 @@ class TestRunEnrichPhase:
         mock_resolve,
         mock_ctx,
     ):
-        mock_ctx.return_value = {"work_dir": "/test", "profile": {"CDP_PORT": "9234"}}
+        mock_ctx.return_value = {"work_dir": "/test", "profile": {"CDP_PORT": "9230"}}
         mock_resolve.return_value = (
             Path("/test/config.sh"),
             Path("/test/workbook.xlsx"),
         )
         mock_read.return_value = [
-            {"row_id": 5, "name": "Test User", "profile_url": "https://linkedin.com/in/test"}
+            {
+                "row_id": 5,
+                "name": "Test User",
+                "profile_url": "https://linkedin.com/in/test",
+            }
         ]
         mock_enrich.return_value = (True, "Skills: Python", None)
 
@@ -316,7 +320,7 @@ class TestRunEnrichPhase:
         mock_resolve,
         mock_ctx,
     ):
-        mock_ctx.return_value = {"work_dir": "/test", "profile": {"CDP_PORT": "9234"}}
+        mock_ctx.return_value = {"work_dir": "/test", "profile": {"CDP_PORT": "9230"}}
         mock_resolve.return_value = (
             Path("/test/config.sh"),
             Path("/test/workbook.xlsx"),
@@ -355,7 +359,7 @@ class TestRunEnrichPhase:
         mock_resolve,
         mock_ctx,
     ):
-        mock_ctx.return_value = {"work_dir": "/test", "profile": {"CDP_PORT": "9234"}}
+        mock_ctx.return_value = {"work_dir": "/test", "profile": {"CDP_PORT": "9230"}}
         mock_resolve.return_value = (
             Path("/test/config.sh"),
             Path("/test/workbook.xlsx"),
@@ -400,7 +404,7 @@ class TestRunEnrichPhase:
         code set itself, not retryability. agent_browser_not_found has can_retry=False
         but must still result in exit code 2.
         """
-        mock_ctx.return_value = {"work_dir": "/test", "profile": {"CDP_PORT": "9234"}}
+        mock_ctx.return_value = {"work_dir": "/test", "profile": {"CDP_PORT": "9230"}}
         mock_resolve.return_value = (
             Path("/test/config.sh"),
             Path("/test/workbook.xlsx"),
@@ -444,7 +448,7 @@ class TestRunEnrichPhase:
         Exit code 2 is reserved for browser/manual intervention only.
         Missing profile_url is a data validation issue, not a browser issue.
         """
-        mock_ctx.return_value = {"work_dir": "/test", "profile": {"CDP_PORT": "9234"}}
+        mock_ctx.return_value = {"work_dir": "/test", "profile": {"CDP_PORT": "9230"}}
         mock_resolve.return_value = (
             Path("/test/config.sh"),
             Path("/test/workbook.xlsx"),

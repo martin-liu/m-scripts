@@ -37,11 +37,10 @@ SKILL_DIR = SCRIPT_DIR.parent
 
 # Import shared browser utilities
 sys.path.insert(0, str(SCRIPT_DIR))
-from browser_utils import run_browser_command as _run_browser_command
 from browser_utils import format_timeout_error
-from recruiter_page_utils import RecoveryHelper, PageStateProbe, ensure_page_ready
+from browser_utils import run_browser_command as _run_browser_command
 from config_utils import parse_config_file
-
+from recruiter_page_utils import PageStateProbe, RecoveryHelper, ensure_page_ready
 
 # Loading state detection patterns
 LOADING_TEXT_PATTERNS = [
@@ -70,7 +69,7 @@ def read_cdp_port() -> str:
 
     manager = RuntimeManager()
     profile = manager._resolve_profile()
-    return profile.get("CDP_PORT", "9234")
+    return profile.get("CDP_PORT", "9230")
 
 
 def resolve_target_url(args: argparse.Namespace) -> str | None:
@@ -537,8 +536,8 @@ def verify_target_url_match(
             - error: str | None - error message if mismatch
     """
     from recruiter_page_utils import (
-        normalize_url_for_comparison,
         assert_page_identity,
+        normalize_url_for_comparison,
     )
 
     # Get current URL

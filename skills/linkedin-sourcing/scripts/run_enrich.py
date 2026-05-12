@@ -268,7 +268,7 @@ def run_enrich_phase(
 
     Args:
         project_ref: Project reference (ID, URL, or config path)
-        cdp_port: Optional CDP port (defaults to profile value or 9234)
+        cdp_port: Optional CDP port (defaults to profile value or 9230)
         dry_run: If True, show what would be enriched without doing it
         row_ids: Optional list of specific row IDs to process
 
@@ -283,7 +283,7 @@ def run_enrich_phase(
 
         # Get CDP port from context if not provided
         if cdp_port is None:
-            cdp_port = ctx.get("profile", {}).get("CDP_PORT", "9234")
+            cdp_port = ctx.get("profile", {}).get("CDP_PORT", "9230")
 
         # Resolve project and workbook
         config_path, workbook_path = resolve_project_and_workbook(project_ref)
@@ -482,7 +482,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--cdp-port",
-        help="Chrome DevTools Protocol port (default: from profile or 9234)",
+        help="Chrome DevTools Protocol port (default: from profile or 9230)",
     )
     parser.add_argument(
         "--dry-run",

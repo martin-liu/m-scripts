@@ -33,7 +33,7 @@ fi
 CHECK_ONLY=false
 JSON_OUTPUT=false
 AUTO_BOOTSTRAP=true
-PREFERRED_PORT="${CDP_PORT:-9234}"
+PREFERRED_PORT="${CDP_PORT:-9230}"
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do

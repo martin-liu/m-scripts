@@ -990,7 +990,7 @@ def _load_saved_browser_mode(work_dir: Path) -> dict[str, Any] | None:
 
 def bootstrap_auth_session(
     work_dir: Path,
-    preferred_cdp_port: str = "9234",
+    preferred_cdp_port: str = "9230",
     chrome_profile: Path | str | None = None,
     allow_browser_launch: bool = False,
 ) -> dict[str, Any]:
@@ -1008,7 +1008,7 @@ def bootstrap_auth_session(
 
     Args:
         work_dir: Working directory for runtime data
-        preferred_cdp_port: Preferred CDP port (default "9234")
+        preferred_cdp_port: Preferred CDP port (default "9230")
         chrome_profile: Path to Chrome profile directory (default: $WORK_DIR/chrome-profile)
         allow_browser_launch: Explicit opt-in required for ANY browser launch.
             Default False ensures tests/CI cannot accidentally launch Chrome.
@@ -1120,7 +1120,7 @@ def bootstrap_auth_session(
         actual_cdp_port = preferred_port_int
     else:
         # Preferred port is occupied - search for an available fallback port
-        actual_cdp_port = 19234
+        actual_cdp_port = 19230
         while is_port_in_use(actual_cdp_port) and actual_cdp_port < 19300:
             actual_cdp_port += 1
 
@@ -1218,7 +1218,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--cdp-port",
-        default="9234",
+        default="9230",
         help="Preferred CDP port",
     )
     parser.add_argument(

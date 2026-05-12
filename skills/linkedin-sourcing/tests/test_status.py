@@ -113,7 +113,7 @@ class TestGetLoopResumeGuidance:
             "summary": "Chrome browser is not available",
             "context": {
                 "recovery_command": 'bash "/path/to/connect_browser.sh"',
-                "cdp_port": "9234",
+                "cdp_port": "9230",
             },
         }
         guidance = status.get_loop_resume_guidance(action_required, "my_project")
@@ -126,7 +126,7 @@ class TestGetLoopResumeGuidance:
         action_required = {
             "code": "browser_unavailable",
             "summary": "Chrome browser is not available",
-            "context": {"cdp_port": "9234"},
+            "context": {"cdp_port": "9230"},
         }
         guidance = status.get_loop_resume_guidance(action_required, "my_project")
         assert "Chrome/CDP is not connected" in guidance["resolve_now"]
@@ -431,7 +431,7 @@ class TestGetWorkbookSummary:
     def test_returns_summary_for_existing_workbook(self, tmp_path):
         """Should return summary for existing workbook."""
         # Create a test workbook
-        from excel_utils import create, append
+        from excel_utils import append, create
 
         workbook_path = tmp_path / "test.xlsx"
         create(str(workbook_path))
@@ -474,7 +474,7 @@ class TestGetWorkbookSummary:
 
     def test_counts_by_next_action(self, tmp_path):
         """Should correctly count rows by next_action."""
-        from excel_utils import create, append
+        from excel_utils import append, create
 
         workbook_path = tmp_path / "test.xlsx"
         create(str(workbook_path))
@@ -500,12 +500,14 @@ class TestConfirmSearchFilterSummary:
         config_file = project_dir / "config.sh"
         config_file.write_text('PROJECT_ID="test_project"\n')
 
-        from project_state import save_project_state, create_initial_state
+        from project_state import create_initial_state, save_project_state
 
         state = create_initial_state(
             "test_project", current_phase="create_search", status="completed"
         )
-        state["last_result_summary"] = "Recruiter search verified; Issue: Missing companies: amazon; Malformed titles: EngineerManager"
+        state["last_result_summary"] = (
+            "Recruiter search verified; Issue: Missing companies: amazon; Malformed titles: EngineerManager"
+        )
         save_project_state(project_dir, state)
 
         result = status.get_status("test_project", tmp_path)
@@ -532,12 +534,14 @@ class TestConfirmSearchFilterSummary:
 
         create(str(workbook_path))
 
-        from project_state import save_project_state, create_initial_state
+        from project_state import create_initial_state, save_project_state
 
         state = create_initial_state(
             "test_project", current_phase="create_search", status="completed"
         )
-        state["last_result_summary"] = "Recruiter search verified; Issue: Missing companies: amazon; Malformed titles: EngineerManager"
+        state["last_result_summary"] = (
+            "Recruiter search verified; Issue: Missing companies: amazon; Malformed titles: EngineerManager"
+        )
         save_project_state(project_dir, state)
 
         result = status.get_status("test_project", tmp_path)
@@ -558,7 +562,7 @@ class TestConfirmSearchFilterSummary:
 
         # Create workbook with rows to move past confirm_search
         workbook_path = project_dir / "workbook.xlsx"
-        from excel_utils import create, append
+        from excel_utils import append, create
 
         create(str(workbook_path))
         append(
@@ -566,7 +570,7 @@ class TestConfirmSearchFilterSummary:
             {"name": "John", "next_action": "filter", "status": "Extracted"},
         )
 
-        from project_state import save_project_state, create_initial_state
+        from project_state import create_initial_state, save_project_state
 
         state = create_initial_state(
             "test_project", current_phase="extract", status="completed"
@@ -594,7 +598,7 @@ class TestConfirmSearchFilterSummary:
 
         create(str(workbook_path))
 
-        from project_state import save_project_state, create_initial_state
+        from project_state import create_initial_state, save_project_state
 
         state = create_initial_state(
             "test_project", current_phase="create_search", status="completed"
@@ -618,7 +622,10 @@ class TestConfirmSearchFilterSummary:
         assert result.get("confirm_search_summary") is not None
         assert "Auto-added companies: Amazon" in result["confirm_search_summary"]
         assert "Failed to add companies: Netflix" in result["confirm_search_summary"]
-        assert "Auto-removed malformed titles: EngineerManager" in result["confirm_search_summary"]
+        assert (
+            "Auto-removed malformed titles: EngineerManager"
+            in result["confirm_search_summary"]
+        )
 
     def test_confirm_search_summary_uses_structured_data_when_available(self, tmp_path):
         """Status should prefer structured create_search_summary over legacy string."""
@@ -633,7 +640,7 @@ class TestConfirmSearchFilterSummary:
 
         create(str(workbook_path))
 
-        from project_state import save_project_state, create_initial_state
+        from project_state import create_initial_state, save_project_state
 
         state = create_initial_state(
             "test_project", current_phase="create_search", status="completed"
@@ -671,7 +678,10 @@ class TestConfirmSearchFilterSummary:
         # Should expose normalized entries for pretty rendering
         entries = result.get("confirm_search_entries") or []
         assert ("success", "Auto-added companies: Meta") in entries
-        assert any(kind == "warning" and "Missing companies: meta" in text for kind, text in entries)
+        assert any(
+            kind == "warning" and "Missing companies: meta" in text
+            for kind, text in entries
+        )
 
     def test_confirm_search_summary_includes_keyword_results(self, tmp_path):
         """Structured confirm-search summary should include keyword add/missing details."""
@@ -681,10 +691,11 @@ class TestConfirmSearchFilterSummary:
         config_file.write_text('PROJECT_ID="test_project"\n')
 
         from excel_utils import create
+
         workbook_path = project_dir / "workbook.xlsx"
         create(str(workbook_path))
 
-        from project_state import save_project_state, create_initial_state
+        from project_state import create_initial_state, save_project_state
 
         state = create_initial_state(
             "test_project", current_phase="create_search", status="completed"
@@ -723,7 +734,7 @@ class TestCreateSearchToConfirmSearchRouting:
 
         # NO workbook created - extraction hasn't run yet
 
-        from project_state import save_project_state, create_initial_state
+        from project_state import create_initial_state, save_project_state
 
         state = create_initial_state(
             "test_project", current_phase="create_search", status="completed"
@@ -736,7 +747,9 @@ class TestCreateSearchToConfirmSearchRouting:
         assert result["next_phase"] == "confirm_search"
         assert result["ready"] is True
         assert "confirm filters" in result["message"].lower()
-        assert "error" not in result["workbook_summary"], "Workbook summary should be normalized for confirm_search handoff"
+        assert "error" not in result["workbook_summary"], (
+            "Workbook summary should be normalized for confirm_search handoff"
+        )
 
     def test_blocks_on_missing_workbook_for_other_phases(self, tmp_path):
         """Missing workbook should still block phases other than create_search->confirm_search."""
@@ -747,7 +760,7 @@ class TestCreateSearchToConfirmSearchRouting:
 
         # NO workbook created
 
-        from project_state import save_project_state, create_initial_state
+        from project_state import create_initial_state, save_project_state
 
         state = create_initial_state(
             "test_project", current_phase="extract", status="completed"
@@ -761,7 +774,9 @@ class TestCreateSearchToConfirmSearchRouting:
         assert result["ready"] is False
         assert "Workbook unreadable" in result["message"]
 
-    def test_structured_confirm_search_summary_keeps_issue_and_error_details(self, tmp_path):
+    def test_structured_confirm_search_summary_keeps_issue_and_error_details(
+        self, tmp_path
+    ):
         """Structured confirm-search summary should keep operator-facing issue details."""
         project_dir = tmp_path / "projects" / "test_project"
         project_dir.mkdir(parents=True)
@@ -769,10 +784,11 @@ class TestCreateSearchToConfirmSearchRouting:
         config_file.write_text('PROJECT_ID="test_project"\n')
 
         from excel_utils import create
+
         workbook_path = project_dir / "workbook.xlsx"
         create(str(workbook_path))
 
-        from project_state import save_project_state, create_initial_state
+        from project_state import create_initial_state, save_project_state
 
         state = create_initial_state(
             "test_project", current_phase="create_search", status="completed"
@@ -798,7 +814,10 @@ class TestCreateSearchToConfirmSearchRouting:
         assert ("info", "Issues: 1") in entries
         assert ("warning", "Missing expected companies: meta") in entries
         assert ("warning", "Failed to remove titles: BadTitle") in entries
-        assert ("warning", "Reconciliation errors: Could not open Companies filter") in entries
+        assert (
+            "warning",
+            "Reconciliation errors: Could not open Companies filter",
+        ) in entries
 
 
 class TestGetStatus:
@@ -832,7 +851,7 @@ class TestGetStatus:
         config_file = project_dir / "config.sh"
         config_file.write_text('PROJECT_ID="test_project"\n')
 
-        from project_state import save_project_state, create_initial_state
+        from project_state import create_initial_state, save_project_state
 
         state = create_initial_state(
             "test_project", current_phase="filter", status="completed"
@@ -852,7 +871,7 @@ class TestGetStatus:
         config_file = project_dir / "config.sh"
         config_file.write_text('PROJECT_ID="test_project"\n')
 
-        from project_state import save_project_state, create_initial_state
+        from project_state import create_initial_state, save_project_state
 
         state = create_initial_state(
             "test_project",
@@ -881,7 +900,7 @@ class TestGetStatus:
 
         # Create workbook with rows waiting for filter
         workbook_path = project_dir / "workbook.xlsx"
-        from excel_utils import create, append
+        from excel_utils import append, create
 
         create(str(workbook_path))
         append(
@@ -889,7 +908,7 @@ class TestGetStatus:
             {"name": "John", "next_action": "filter", "status": "Extracted"},
         )
 
-        from project_state import save_project_state, create_initial_state
+        from project_state import create_initial_state, save_project_state
 
         state = create_initial_state(
             "test_project", current_phase="filter", status="completed"
@@ -910,7 +929,7 @@ class TestGetStatus:
 
         # Create workbook with rows waiting for filter
         workbook_path = project_dir / "workbook.xlsx"
-        from excel_utils import create, append
+        from excel_utils import append, create
 
         create(str(workbook_path))
         append(
@@ -918,7 +937,7 @@ class TestGetStatus:
             {"name": "John", "next_action": "filter", "status": "Extracted"},
         )
 
-        from project_state import save_project_state, create_initial_state
+        from project_state import create_initial_state, save_project_state
 
         state = create_initial_state(
             "test_project", current_phase="filter", status="completed"
@@ -942,7 +961,7 @@ class TestGetStatus:
         )
 
         workbook_path = project_dir / "workbook.xlsx"
-        from excel_utils import create, append
+        from excel_utils import append, create
 
         create(str(workbook_path))
         append(
@@ -950,7 +969,7 @@ class TestGetStatus:
             {"name": "John", "next_action": "draft", "status": "Enriched"},
         )
 
-        from project_state import save_project_state, create_initial_state
+        from project_state import create_initial_state, save_project_state
 
         state = create_initial_state(
             "test_project", current_phase="enrich", status="completed"
@@ -989,7 +1008,7 @@ class TestStatusIntegration:
         create(str(workbook_path))
 
         # Create state
-        from project_state import save_project_state, create_initial_state
+        from project_state import create_initial_state, save_project_state
 
         state = create_initial_state(
             "my_project", current_phase="extract", status="completed"

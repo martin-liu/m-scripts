@@ -31,7 +31,7 @@ class TestProfileResolution:
 
         assert "WORK_DIR" in profile
         assert "CDP_PORT" in profile
-        assert profile["CDP_PORT"] == "9234"
+        assert profile["CDP_PORT"] == "9230"
         assert "CHROME_PROFILE" in profile
 
     def test_profile_from_file(self, tmp_path):
@@ -504,7 +504,7 @@ class TestBrowserMode:
 
         manager.save_browser_mode(
             mode="cdp",
-            cdp_port="9234",
+            cdp_port="9230",
             auth_file=None,
             headed=True,
         )
@@ -513,7 +513,7 @@ class TestBrowserMode:
 
         assert result is not None
         assert result["mode"] == "cdp"
-        assert result["cdp_port"] == "9234"
+        assert result["cdp_port"] == "9230"
         assert result["headed"] is True
         assert "updated_at" in result
 
@@ -523,7 +523,7 @@ class TestBrowserMode:
 
         manager.save_browser_mode(
             mode="agent-browser",
-            cdp_port="9234",
+            cdp_port="9230",
             auth_file=str(tmp_path / "auth.json"),
         )
 
@@ -533,7 +533,7 @@ class TestBrowserMode:
         """Should clear browser mode."""
         manager = RuntimeManager(work_dir=tmp_path, skill_dir=tmp_path)
 
-        manager.save_browser_mode(mode="cdp", cdp_port="9234")
+        manager.save_browser_mode(mode="cdp", cdp_port="9230")
         assert manager.get_browser_mode() is not None
 
         manager.clear_browser_mode()

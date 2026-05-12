@@ -529,7 +529,7 @@ class TestRunExtraction:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.dry_run = False
         args.start_page = 1
         args.max_pages = 1
@@ -583,7 +583,7 @@ class TestRunExtraction:
         args.config = "/path/to/config.sh"
         args.workbook = None
         args.dry_run = False
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
 
         result = re.run_extraction(args)
 
@@ -625,7 +625,7 @@ class TestRunExtraction:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.dry_run = False
         args.start_page = 1
         args.max_pages = 1
@@ -673,7 +673,7 @@ class TestRunExtraction:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.dry_run = False
         args.start_page = 1
         args.max_pages = 1
@@ -721,7 +721,7 @@ class TestRunExtraction:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.dry_run = False
         args.start_page = 1
         args.max_pages = 1
@@ -769,7 +769,7 @@ class TestRunExtraction:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.dry_run = False
         args.start_page = 1
         args.max_pages = 1
@@ -837,7 +837,7 @@ class TestRunExtraction:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.dry_run = False
         args.start_page = 1
         args.max_pages = 2
@@ -907,7 +907,7 @@ class TestRunExtraction:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.dry_run = False
         args.start_page = 1
         args.max_pages = 5  # Request more pages than available
@@ -979,7 +979,7 @@ class TestRunExtraction:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.dry_run = False
         args.start_page = 1
         args.max_pages = 5
@@ -1033,7 +1033,7 @@ class TestRunExtraction:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.dry_run = False
         args.start_page = 1
         args.max_pages = 1
@@ -1094,7 +1094,7 @@ class TestRunExtraction:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.dry_run = False
         args.start_page = 1
         args.max_pages = 1
@@ -1147,7 +1147,7 @@ class TestRunExtraction:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.dry_run = False
         args.start_page = 1
         args.max_pages = 1
@@ -1199,7 +1199,7 @@ class TestRunExtraction:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.dry_run = False
         args.start_page = 1
         args.max_pages = 1
@@ -1250,7 +1250,7 @@ class TestRunExtraction:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.dry_run = False
         args.start_page = 1
         args.max_pages = 1
@@ -1302,7 +1302,7 @@ class TestRunExtraction:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.dry_run = False
         args.start_page = 3  # Start from page 3
         args.max_pages = 1
@@ -1521,7 +1521,7 @@ class TestFreshContextResolution:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.dry_run = False
         args.start_page = 1
         args.max_pages = 1
@@ -1572,7 +1572,7 @@ class TestFreshContextResolution:
         mock_preflight.return_value = {
             "success": True,
             "project_id": "123",
-            "cdp_port": "9234",
+            "cdp_port": "9230",
             "work_dir": str(tmp_path),
             "workbook_path": tmp_path / "workbook.xlsx",
             "existing_urls": set(),
@@ -1581,7 +1581,7 @@ class TestFreshContextResolution:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.dry_run = False
         args.start_page = 1
         args.max_pages = 1
@@ -1677,7 +1677,7 @@ class TestPaginationControls:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.dry_run = False
         args.start_page = 1
         args.max_pages = 2
@@ -1757,7 +1757,7 @@ class TestPaginationControls:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.dry_run = False
         args.start_page = 1
         args.max_pages = 2
@@ -1832,7 +1832,7 @@ class TestPaginationControls:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.dry_run = False
         args.start_page = 1
         args.max_pages = 2
@@ -1916,7 +1916,7 @@ class TestLastPageHandling:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.dry_run = False
         args.start_page = 1
         args.max_pages = 5  # Request more pages than available
@@ -1980,7 +1980,7 @@ class TestLastPageHandling:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.dry_run = False
         args.start_page = 1
         args.max_pages = 10
@@ -2041,7 +2041,7 @@ class TestFreshContextResolutionBlocker:
 
         # Attempt to resolve fresh context
         result = re.resolve_fresh_search_context(
-            cdp_port="9234",
+            cdp_port="9230",
             configured_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=old",
             work_dir=None,
         )
@@ -2083,7 +2083,7 @@ class TestFreshContextResolutionBlocker:
         mock_recovery_class.return_value = mock_recovery_instance
 
         result = re.resolve_fresh_search_context(
-            cdp_port="9234",
+            cdp_port="9230",
             configured_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=stale",
             work_dir=None,
         )
@@ -2123,7 +2123,7 @@ class TestFreshContextResolutionBlocker:
         mock_recovery_class.return_value = mock_recovery_instance
 
         result = re.resolve_fresh_search_context(
-            cdp_port="9234",
+            cdp_port="9230",
             configured_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=stale",
             work_dir=None,
         )
@@ -2136,7 +2136,7 @@ class TestFreshContextResolutionBlocker:
         )
         # Should call resolve_search_url from confirmed overview page
         mock_resolve_search.assert_called_once_with(
-            "9234", "https://linkedin.com/talent/hire/123/overview"
+            "9230", "https://linkedin.com/talent/hire/123/overview"
         )
 
     @patch("ensure_recruiter_project.resolve_search_url")
@@ -2169,7 +2169,7 @@ class TestFreshContextResolutionBlocker:
         mock_recovery_class.return_value = mock_recovery_instance
 
         result = re.resolve_fresh_search_context(
-            cdp_port="9234",
+            cdp_port="9230",
             configured_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=stale",
             work_dir=None,
         )
@@ -2199,7 +2199,7 @@ class TestFreshContextResolutionBlocker:
         mock_recovery_class.return_value = mock_recovery_instance
 
         result = re.resolve_fresh_search_context(
-            cdp_port="9234",
+            cdp_port="9230",
             configured_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=stale",
             work_dir=None,
         )
@@ -2240,7 +2240,7 @@ class TestFreshContextResolutionBlocker:
         mock_recovery_class.return_value = mock_recovery_instance
 
         result = re.resolve_fresh_search_context(
-            cdp_port="9234",
+            cdp_port="9230",
             configured_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=stale",
             work_dir=None,
         )
@@ -2256,7 +2256,7 @@ class TestFreshContextResolutionBlocker:
             "validate_project_context must be called with 'browser_mode' parameter. "
             "Using 'cdp_port' will cause TypeError due to signature mismatch."
         )
-        assert call_kwargs["browser_mode"] == "9234"
+        assert call_kwargs["browser_mode"] == "9230"
         assert "expected_project_id" in call_kwargs
         assert call_kwargs["expected_project_id"] == "123"
 
@@ -2365,7 +2365,7 @@ class TestContextualPageOptimization:
         }
 
         result = re.resolve_fresh_search_context(
-            cdp_port="9234",
+            cdp_port="9230",
             configured_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch",
             work_dir=None,
         )
@@ -2411,7 +2411,7 @@ class TestContextualPageOptimization:
         mock_recovery_class.return_value = mock_recovery_instance
 
         result = re.resolve_fresh_search_context(
-            cdp_port="9234",
+            cdp_port="9230",
             configured_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch",
             work_dir=None,
         )
@@ -2455,7 +2455,7 @@ class TestContextualPageOptimization:
         mock_recovery_class.return_value = mock_recovery_instance
 
         result = re.resolve_fresh_search_context(
-            cdp_port="9234",
+            cdp_port="9230",
             configured_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch",
             work_dir=None,
         )
@@ -2507,7 +2507,7 @@ class TestContextualPageOptimization:
         mock_recovery_class.return_value = mock_recovery_instance
 
         result = re.resolve_fresh_search_context(
-            cdp_port="9234",
+            cdp_port="9230",
             configured_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch",
             work_dir=None,
         )
@@ -2558,7 +2558,7 @@ class TestContextualPageOptimization:
         mock_recovery_class.return_value = mock_recovery_instance
 
         result = re.resolve_fresh_search_context(
-            cdp_port="9234",
+            cdp_port="9230",
             configured_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch",
             work_dir=None,
         )
@@ -2607,7 +2607,7 @@ class TestContextualPageOptimization:
         mock_recovery_class.return_value = mock_recovery_instance
 
         result = re.resolve_fresh_search_context(
-            cdp_port="9234",
+            cdp_port="9230",
             configured_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch",
             work_dir=None,
         )
@@ -2703,7 +2703,7 @@ class TestGetCurrentPageFromBrowser:
         page1_url = "https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=abc"
         mock_run_browser.return_value = {"parsed": {"url": page1_url}}
 
-        result = re.get_current_page_from_browser("9234", "123")
+        result = re.get_current_page_from_browser("9230", "123")
 
         assert result["current_page"] == 1
         assert result["current_url"] == page1_url
@@ -2716,7 +2716,7 @@ class TestGetCurrentPageFromBrowser:
         page3_url = "https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=abc&start=50"
         mock_run_browser.return_value = {"parsed": {"url": page3_url}}
 
-        result = re.get_current_page_from_browser("9234", "123")
+        result = re.get_current_page_from_browser("9230", "123")
 
         assert result["current_page"] == 3
         assert result["is_contextual"] is True
@@ -2728,7 +2728,7 @@ class TestGetCurrentPageFromBrowser:
         wrong_project_url = "https://linkedin.com/talent/hire/999/discover/recruiterSearch?searchContextId=abc&start=25"
         mock_run_browser.return_value = {"parsed": {"url": wrong_project_url}}
 
-        result = re.get_current_page_from_browser("9234", "123")
+        result = re.get_current_page_from_browser("9230", "123")
 
         # For wrong project, is_contextual=False (context check includes project match)
         # so current_page defaults to 1
@@ -2742,7 +2742,7 @@ class TestGetCurrentPageFromBrowser:
         overview_url = "https://linkedin.com/talent/hire/123/overview"
         mock_run_browser.return_value = {"parsed": {"url": overview_url}}
 
-        result = re.get_current_page_from_browser("9234", "123")
+        result = re.get_current_page_from_browser("9230", "123")
 
         assert result["current_page"] == 1  # Defaults to 1
         assert result["is_contextual"] is False
@@ -2754,7 +2754,7 @@ class TestGetCurrentPageFromBrowser:
         bare_url = "https://linkedin.com/talent/hire/123/discover/recruiterSearch"
         mock_run_browser.return_value = {"parsed": {"url": bare_url}}
 
-        result = re.get_current_page_from_browser("9234", "123")
+        result = re.get_current_page_from_browser("9230", "123")
 
         assert result["current_page"] == 1
         assert result["is_contextual"] is False  # No context params
@@ -2765,7 +2765,7 @@ class TestGetCurrentPageFromBrowser:
         """Malformed browser output should fail closed with structured guidance."""
         mock_run_browser.return_value = {"parsed": None}
 
-        result = re.get_current_page_from_browser("9234", "123")
+        result = re.get_current_page_from_browser("9230", "123")
 
         assert result["success"] is False
         assert result["failure_code"] == "ambiguous_state"
@@ -2777,7 +2777,7 @@ class TestGetCurrentPageFromBrowser:
         """Non-string URL payloads should fail closed."""
         mock_run_browser.return_value = {"parsed": {"url": 123}}
 
-        result = re.get_current_page_from_browser("9234", "123")
+        result = re.get_current_page_from_browser("9230", "123")
 
         assert result["success"] is False
         assert result["failure_code"] == "ambiguous_state"
@@ -2788,7 +2788,7 @@ class TestGetCurrentPageFromBrowser:
         """Malformed truthy URL strings should fail closed."""
         mock_run_browser.return_value = {"parsed": {"url": "not a url"}}
 
-        result = re.get_current_page_from_browser("9234", "123")
+        result = re.get_current_page_from_browser("9230", "123")
 
         assert result["success"] is False
         assert result["failure_code"] == "ambiguous_state"
@@ -2842,7 +2842,7 @@ class TestSequentialPaginationNavigation:
         mock_ensure_ready.return_value = {"ready": True, "state": "ready"}
 
         result = re.navigate_to_page(
-            cdp_port="9234",
+            cdp_port="9230",
             base_url=base_url,
             page=3,
             work_dir=None,
@@ -2896,7 +2896,7 @@ class TestSequentialPaginationNavigation:
         mock_ensure_ready.return_value = {"ready": True, "state": "ready"}
 
         result = re.navigate_to_page(
-            cdp_port="9234",
+            cdp_port="9230",
             base_url=base_url,
             page=5,
             work_dir=None,
@@ -2945,7 +2945,7 @@ class TestSequentialPaginationNavigation:
         mock_ensure_ready.return_value = {"ready": True, "state": "ready"}
 
         result = re.navigate_to_page(
-            cdp_port="9234",
+            cdp_port="9230",
             base_url=base_url,
             page=3,
             work_dir=None,
@@ -2996,7 +2996,7 @@ class TestSequentialPaginationNavigation:
         mock_ensure_ready.return_value = {"ready": True, "state": "ready"}
 
         result = re.navigate_to_page(
-            cdp_port="9234",
+            cdp_port="9230",
             base_url=base_url,
             page=3,
             work_dir=None,
@@ -3047,7 +3047,7 @@ class TestSequentialPaginationNavigation:
         mock_ensure_ready.return_value = {"ready": True, "state": "ready"}
 
         result = re.navigate_to_page(
-            cdp_port="9234",
+            cdp_port="9230",
             base_url=base_url,
             page=3,
             work_dir=None,
@@ -3102,7 +3102,7 @@ class TestSequentialPaginationNavigation:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.dry_run = False
         args.start_page = 3  # Resume from page 3
         args.max_pages = 1
@@ -3143,7 +3143,7 @@ class TestNavigateToPageCurrentContextDetection:
         mock_ensure_ready.return_value = {"ready": True, "state": "ready"}
 
         result = re.navigate_to_page(
-            cdp_port="9234",
+            cdp_port="9230",
             base_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=abc",
             page=3,
             work_dir=None,
@@ -3183,7 +3183,7 @@ class TestNavigateToPageCurrentContextDetection:
         mock_ensure_ready.return_value = {"ready": True, "state": "ready"}
 
         result = re.navigate_to_page(
-            cdp_port="9234",
+            cdp_port="9230",
             base_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=abc",
             page=3,
             work_dir=None,
@@ -3240,7 +3240,7 @@ class TestNavigateToPageCurrentContextDetection:
         mock_ensure_ready.return_value = {"ready": True, "state": "ready"}
 
         result = re.navigate_to_page(
-            cdp_port="9234",
+            cdp_port="9230",
             base_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=abc",
             page=5,
             work_dir=None,
@@ -3292,7 +3292,7 @@ class TestNavigateToPageCurrentContextDetection:
         mock_ensure_ready.return_value = {"ready": True, "state": "ready"}
 
         result = re.navigate_to_page(
-            cdp_port="9234",
+            cdp_port="9230",
             base_url=base_url,
             page=3,
             work_dir=None,
@@ -3338,7 +3338,7 @@ class TestNavigateToPageCurrentContextDetection:
         mock_ensure_ready.return_value = {"ready": True, "state": "ready"}
 
         result = re.navigate_to_page(
-            cdp_port="9234",
+            cdp_port="9230",
             base_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=abc",
             page=3,
             work_dir=None,
@@ -3383,7 +3383,7 @@ class TestNavigateToPageCurrentContextDetection:
         mock_ensure_ready.return_value = {"ready": True, "state": "ready"}
 
         result = re.navigate_to_page(
-            cdp_port="9234",
+            cdp_port="9230",
             base_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=abc",
             page=3,
             work_dir=None,
@@ -3422,7 +3422,7 @@ class TestNavigateToPageCurrentContextDetection:
         }
 
         result = re.navigate_to_page(
-            cdp_port="9234",
+            cdp_port="9230",
             base_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=abc",
             page=3,
             work_dir=None,
@@ -3456,7 +3456,7 @@ class TestNavigateToPageCurrentContextDetection:
         }
 
         result = re.navigate_to_page(
-            cdp_port="9234",
+            cdp_port="9230",
             base_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=abc",
             page=3,
             work_dir=None,
@@ -3503,7 +3503,7 @@ class TestNavigateToPageCurrentContextDetection:
         mock_ensure_ready.return_value = {"ready": True, "state": "ready"}
 
         result = re.navigate_to_page(
-            cdp_port="9234",
+            cdp_port="9230",
             base_url=base_url,
             page=3,
             work_dir=None,
@@ -3537,7 +3537,7 @@ class TestNavigateToPageCurrentContextDetection:
         mock_ensure_ready.return_value = {"ready": False, "state": "loading"}
 
         result = re.navigate_to_page(
-            cdp_port="9234",
+            cdp_port="9230",
             base_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=abc",
             page=3,
             work_dir=None,
@@ -3577,7 +3577,7 @@ class TestNavigateToPageCurrentContextDetection:
         }
 
         result = re.navigate_to_page(
-            cdp_port="9234",
+            cdp_port="9230",
             base_url="https://linkedin.com/talent/hire/123/discover/recruiterSearch?searchContextId=abc",
             page=3,
             work_dir=None,
@@ -3626,7 +3626,7 @@ class TestNavigateToPageCurrentContextDetection:
         }
 
         result = re.navigate_to_page(
-            cdp_port="9234",
+            cdp_port="9230",
             base_url=base_url,
             page=2,
             work_dir=None,
@@ -3661,7 +3661,7 @@ class TestDelayedPaginationTransition:
         ]
 
         result = re.click_next_page_pagination(
-            cdp_port="9234",
+            cdp_port="9230",
             expected_start=25,
             max_wait_seconds=2.0,
             poll_interval=0.1,
@@ -3688,7 +3688,7 @@ class TestDelayedPaginationTransition:
         ]
 
         result = re.click_next_page_pagination(
-            cdp_port="9234",
+            cdp_port="9230",
             expected_start=25,
             max_wait_seconds=0.3,  # Short timeout for test
             poll_interval=0.1,
@@ -3713,7 +3713,7 @@ class TestDelayedPaginationTransition:
         ]
 
         result = re.click_next_page_pagination(
-            cdp_port="9234",
+            cdp_port="9230",
             expected_start=None,  # No expected start
             max_wait_seconds=1.0,
             poll_interval=0.1,
@@ -3738,7 +3738,7 @@ class TestDelayedPaginationTransition:
         }
 
         result = re.click_next_page_pagination(
-            cdp_port="9234",
+            cdp_port="9230",
             expected_start=25,
             max_wait_seconds=1.0,
             poll_interval=0.1,
@@ -3782,7 +3782,7 @@ class TestDelayedPaginationTransition:
         ]
 
         result = re.click_next_page_pagination(
-            cdp_port="9234",
+            cdp_port="9230",
             expected_start=25,
             max_wait_seconds=1.0,
             poll_interval=0.1,
@@ -3833,7 +3833,7 @@ class TestDelayedPaginationTransition:
         }
 
         result = re.click_next_page_pagination(
-            cdp_port="9234",
+            cdp_port="9230",
             expected_start=25,
             max_wait_seconds=1.0,
             poll_interval=0.1,
@@ -3889,7 +3889,7 @@ class TestDelayedPaginationTransition:
         ]
 
         result = re.click_next_page_pagination(
-            cdp_port="9234",
+            cdp_port="9230",
             expected_start=25,
             max_wait_seconds=1.0,
             poll_interval=0.1,
@@ -3945,7 +3945,7 @@ class TestDelayedPaginationTransition:
         ]
 
         result = re.click_next_page_pagination(
-            cdp_port="9234",
+            cdp_port="9230",
             expected_start=25,
             max_wait_seconds=1.0,
             poll_interval=0.1,
@@ -3984,7 +3984,7 @@ class TestDelayedPaginationTransition:
         ]
 
         re.click_next_page_pagination(
-            cdp_port="9234",
+            cdp_port="9230",
             expected_start=25,
             max_wait_seconds=1.0,
             poll_interval=0.1,
@@ -4006,7 +4006,7 @@ class TestDelayedPaginationTransition:
 
         start = time.time()
         result = re.click_next_page_pagination(
-            cdp_port="9234",
+            cdp_port="9230",
             expected_start=25,
             max_wait_seconds=0.5,  # 500ms timeout
             poll_interval=0.1,
@@ -4036,7 +4036,7 @@ class TestDelayedPaginationTransition:
         ]
 
         result = re.click_next_page_pagination(
-            cdp_port="9234",
+            cdp_port="9230",
             expected_start=25,
             max_wait_seconds=1.0,
             poll_interval=0.1,
@@ -4066,7 +4066,7 @@ class TestDelayedPaginationTransition:
         ]
 
         result = re.click_next_page_pagination(
-            cdp_port="9234",
+            cdp_port="9230",
             expected_start=25,
             max_wait_seconds=1.0,
             poll_interval=0.1,
@@ -4096,7 +4096,7 @@ class TestCheckCurrentPageReady:
         }
         mock_probe_class.return_value = mock_probe
 
-        result = re.check_current_page_ready_for_extraction("9234", "123")
+        result = re.check_current_page_ready_for_extraction("9230", "123")
 
         assert result["ready"] is True
         assert result["current_url"] == contextual_url
@@ -4109,7 +4109,7 @@ class TestCheckCurrentPageReady:
             "parsed": {"url": "https://linkedin.com/talent/hire/123/overview"}
         }
 
-        result = re.check_current_page_ready_for_extraction("9234", "123")
+        result = re.check_current_page_ready_for_extraction("9230", "123")
 
         assert result["ready"] is False
         assert result["state"] == "not_contextual_search"
@@ -4123,7 +4123,7 @@ class TestCheckCurrentPageReady:
             }
         }
 
-        result = re.check_current_page_ready_for_extraction("9234", "123")
+        result = re.check_current_page_ready_for_extraction("9230", "123")
 
         assert result["ready"] is False
         assert result["state"] == "not_contextual_search"
@@ -4140,7 +4140,7 @@ class TestCheckCurrentPageReady:
         mock_probe.classify_state.return_value = {"state": "loading"}
         mock_probe_class.return_value = mock_probe
 
-        result = re.check_current_page_ready_for_extraction("9234", "123")
+        result = re.check_current_page_ready_for_extraction("9230", "123")
 
         assert result["ready"] is False
         assert result["state"] == "loading"
@@ -4167,7 +4167,7 @@ class TestCheckCurrentPageReady:
         }
         mock_probe_class.return_value = mock_probe
 
-        result = re.check_current_page_ready_for_extraction("9234", "123")
+        result = re.check_current_page_ready_for_extraction("9230", "123")
 
         assert result["ready"] is False
         assert result["state"] == "no_search_results_content"
@@ -4190,7 +4190,7 @@ class TestCheckCurrentPageReady:
         }
         mock_probe_class.return_value = mock_probe
 
-        result = re.check_current_page_ready_for_extraction("9234", "123")
+        result = re.check_current_page_ready_for_extraction("9230", "123")
 
         assert result["ready"] is False
         assert result["state"] == "search_not_configured"
@@ -4238,7 +4238,7 @@ class TestKeyboardInterruptHandling:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.dry_run = False
         args.start_page = 1
         args.max_pages = 5
@@ -4307,7 +4307,7 @@ class TestKeyboardInterruptHandling:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.dry_run = False
         args.start_page = 1
         args.max_pages = 5
@@ -4361,7 +4361,7 @@ class TestKeyboardInterruptHandling:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.dry_run = False
         args.start_page = 1
         args.max_pages = 5
@@ -4389,7 +4389,7 @@ class TestRunPreflight:
         """Config project ID mismatch should fail before fresh-context resolution."""
         mock_manager = MagicMock()
         mock_manager.work_dir = tmp_path / "work"
-        mock_manager._resolve_profile.return_value = {"CDP_PORT": "9234"}
+        mock_manager._resolve_profile.return_value = {"CDP_PORT": "9230"}
         mock_manager_class.return_value = mock_manager
 
         mock_probe = Mock()
@@ -4405,7 +4405,7 @@ class TestRunPreflight:
         args = Mock()
         args.workbook = None
         args.dry_run = False
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
 
         result = re.run_preflight(config, args)
 
@@ -4424,7 +4424,7 @@ class TestRunPreflight:
         """Slug-style PROJECT_ID should not be treated as Recruiter project ID."""
         mock_manager = MagicMock()
         mock_manager.work_dir = tmp_path / "work"
-        mock_manager._resolve_profile.return_value = {"CDP_PORT": "9234"}
+        mock_manager._resolve_profile.return_value = {"CDP_PORT": "9230"}
         mock_manager_class.return_value = mock_manager
 
         mock_probe = Mock()
@@ -4445,7 +4445,7 @@ class TestRunPreflight:
         args = Mock()
         args.workbook = str(wb_path)
         args.dry_run = False
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
 
         result = re.run_preflight(config, args)
 
@@ -4460,7 +4460,7 @@ class TestRunPreflight:
         """Dialog blocked state should fail before fresh-context resolution."""
         mock_manager = MagicMock()
         mock_manager.work_dir = tmp_path / "work"
-        mock_manager._resolve_profile.return_value = {"CDP_PORT": "9234"}
+        mock_manager._resolve_profile.return_value = {"CDP_PORT": "9230"}
         mock_manager_class.return_value = mock_manager
 
         mock_probe = Mock()
@@ -4475,7 +4475,7 @@ class TestRunPreflight:
         args = Mock()
         args.workbook = None
         args.dry_run = True  # Skip workbook checks
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
 
         result = re.run_preflight(config, args)
 
@@ -4493,7 +4493,7 @@ class TestRunPreflight:
         """Logged out state should fail before fresh-context resolution."""
         mock_manager = MagicMock()
         mock_manager.work_dir = tmp_path / "work"
-        mock_manager._resolve_profile.return_value = {"CDP_PORT": "9234"}
+        mock_manager._resolve_profile.return_value = {"CDP_PORT": "9230"}
         mock_manager_class.return_value = mock_manager
 
         mock_probe = Mock()
@@ -4510,7 +4510,7 @@ class TestRunPreflight:
         args = Mock()
         args.workbook = None
         args.dry_run = True
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
 
         result = re.run_preflight(config, args)
 
@@ -4528,7 +4528,7 @@ class TestRunPreflight:
         """Blocked or CAPTCHA state should fail before fresh-context resolution."""
         mock_manager = MagicMock()
         mock_manager.work_dir = tmp_path / "work"
-        mock_manager._resolve_profile.return_value = {"CDP_PORT": "9234"}
+        mock_manager._resolve_profile.return_value = {"CDP_PORT": "9230"}
         mock_manager_class.return_value = mock_manager
 
         mock_probe = Mock()
@@ -4543,7 +4543,7 @@ class TestRunPreflight:
         args = Mock()
         args.workbook = None
         args.dry_run = True
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
 
         result = re.run_preflight(config, args)
 
@@ -4561,7 +4561,7 @@ class TestRunPreflight:
         """Bad page state should fail before fresh-context resolution."""
         mock_manager = MagicMock()
         mock_manager.work_dir = tmp_path / "work"
-        mock_manager._resolve_profile.return_value = {"CDP_PORT": "9234"}
+        mock_manager._resolve_profile.return_value = {"CDP_PORT": "9230"}
         mock_manager_class.return_value = mock_manager
 
         mock_probe = Mock()
@@ -4576,7 +4576,7 @@ class TestRunPreflight:
         args = Mock()
         args.workbook = None
         args.dry_run = True
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
 
         result = re.run_preflight(config, args)
 
@@ -4594,13 +4594,13 @@ class TestRunPreflight:
         """Unknown state with browser/CDP error should fail and include error text."""
         mock_manager = MagicMock()
         mock_manager.work_dir = tmp_path / "work"
-        mock_manager._resolve_profile.return_value = {"CDP_PORT": "9234"}
+        mock_manager._resolve_profile.return_value = {"CDP_PORT": "9230"}
         mock_manager_class.return_value = mock_manager
 
         mock_probe = Mock()
         mock_probe.classify_state.return_value = {
             "state": "unknown",
-            "details": {"error": "CDP connection refused: localhost:9234"},
+            "details": {"error": "CDP connection refused: localhost:9230"},
         }
         mock_probe_class.return_value = mock_probe
 
@@ -4612,7 +4612,7 @@ class TestRunPreflight:
         args = Mock()
         args.workbook = None
         args.dry_run = True
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
 
         result = re.run_preflight(config, args)
 
@@ -4666,7 +4666,7 @@ class TestRunPreflight:
 
         mock_manager = MagicMock()
         mock_manager.work_dir = tmp_path / "work"
-        mock_manager._resolve_profile.return_value = {"CDP_PORT": "9234"}
+        mock_manager._resolve_profile.return_value = {"CDP_PORT": "9230"}
         mock_manager_class.return_value = mock_manager
 
         mock_probe = Mock()
@@ -4688,7 +4688,7 @@ class TestRunPreflight:
         args = Mock()
         args.workbook = str(wb_path)
         args.dry_run = False
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
 
         result = re.run_preflight(config, args)
 
@@ -4706,7 +4706,7 @@ class TestRunPreflight:
         """existing_urls loaded during preflight should be reused (no second get_existing_keys call)."""
         mock_manager = MagicMock()
         mock_manager.work_dir = tmp_path / "work"
-        mock_manager._resolve_profile.return_value = {"CDP_PORT": "9234"}
+        mock_manager._resolve_profile.return_value = {"CDP_PORT": "9230"}
         mock_manager_class.return_value = mock_manager
 
         mock_probe = Mock()
@@ -4729,7 +4729,7 @@ class TestRunPreflight:
         args = Mock()
         args.workbook = str(wb_path)
         args.dry_run = False
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
 
         result = re.run_preflight(config, args)
 
@@ -4747,7 +4747,7 @@ class TestRunPreflight:
         """Preflight should succeed when page state is ready."""
         mock_manager = MagicMock()
         mock_manager.work_dir = tmp_path / "work"
-        mock_manager._resolve_profile.return_value = {"CDP_PORT": "9234"}
+        mock_manager._resolve_profile.return_value = {"CDP_PORT": "9230"}
         mock_manager_class.return_value = mock_manager
 
         mock_probe = Mock()
@@ -4764,14 +4764,14 @@ class TestRunPreflight:
         args = Mock()
         args.workbook = str(tmp_path / "workbook.xlsx")
         args.dry_run = False
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
 
         result = re.run_preflight(config, args)
 
         assert result["success"] is True
         assert result["exit_code"] is None
         assert result["project_id"] == "123"
-        assert result["cdp_port"] == "9234"
+        assert result["cdp_port"] == "9230"
 
     @patch("run_extraction.RuntimeManager")
     @patch("recruiter_page_utils.PageStateProbe")
@@ -4781,7 +4781,7 @@ class TestRunPreflight:
         """Preflight should skip workbook existence/read checks in dry-run mode."""
         mock_manager = MagicMock()
         mock_manager.work_dir = tmp_path / "work"
-        mock_manager._resolve_profile.return_value = {"CDP_PORT": "9234"}
+        mock_manager._resolve_profile.return_value = {"CDP_PORT": "9230"}
         mock_manager_class.return_value = mock_manager
 
         mock_probe = Mock()
@@ -4796,7 +4796,7 @@ class TestRunPreflight:
         args = Mock()
         args.workbook = str(tmp_path / "nonexistent" / "workbook.xlsx")
         args.dry_run = True  # Dry run - skip workbook checks
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
 
         result = re.run_preflight(config, args)
 
@@ -4826,7 +4826,7 @@ class TestRunExtractionPreflightIntegration:
         """resolve_fresh_search_context should NOT be called when preflight fails."""
         mock_manager = MagicMock()
         mock_manager.work_dir = tmp_path / "work"
-        mock_manager._resolve_profile.return_value = {"CDP_PORT": "9234"}
+        mock_manager._resolve_profile.return_value = {"CDP_PORT": "9230"}
         mock_manager_class.return_value = mock_manager
 
         mock_probe = Mock()
@@ -4845,7 +4845,7 @@ class TestRunExtractionPreflightIntegration:
         args.config = "/path/to/config.sh"
         args.workbook = str(tmp_path / "workbook.xlsx")
         args.dry_run = False
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.start_page = 1
         args.max_pages = 1
 
@@ -4879,7 +4879,7 @@ class TestRunExtractionPreflightIntegration:
         """run_extraction should use existing_urls from preflight without calling get_existing_keys again."""
         mock_manager = MagicMock()
         mock_manager.work_dir = tmp_path / "work"
-        mock_manager._resolve_profile.return_value = {"CDP_PORT": "9234"}
+        mock_manager._resolve_profile.return_value = {"CDP_PORT": "9230"}
         mock_manager_class.return_value = mock_manager
 
         mock_probe = Mock()
@@ -4914,7 +4914,7 @@ class TestRunExtractionPreflightIntegration:
         args.config = "/path/to/config.sh"
         args.workbook = str(wb_path)
         args.dry_run = False
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.start_page = 1
         args.max_pages = 1
 
@@ -5340,7 +5340,7 @@ class TestResumeIntegration:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.dry_run = True
         args.start_page = 1
         args.max_pages = 1
@@ -5413,7 +5413,7 @@ class TestResumeIntegration:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.dry_run = True
         args.start_page = 1  # Should be overridden by persisted state
         args.max_pages = 1
@@ -5487,7 +5487,7 @@ class TestResumeIntegration:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.dry_run = True
         args.start_page = 1
         args.max_pages = 0  # Unlimited - let it complete naturally
@@ -5560,7 +5560,7 @@ class TestResumeIntegration:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.dry_run = True
         args.start_page = 1
         args.max_pages = 1
@@ -5636,7 +5636,7 @@ class TestResumeIntegration:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.dry_run = True
         args.start_page = 1
         args.max_pages = 2
@@ -5707,7 +5707,7 @@ class TestResumeIntegration:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.dry_run = True
         args.start_page = 1
         args.max_pages = 1
@@ -5777,7 +5777,7 @@ class TestResumeIntegration:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.dry_run = True
         args.start_page = 1
         args.max_pages = 1
@@ -5848,7 +5848,7 @@ class TestResumeIntegration:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.dry_run = True
         args.start_page = 1
         args.max_pages = 1
@@ -5909,7 +5909,7 @@ class TestResumeIntegration:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.dry_run = True
         args.start_page = 1
         args.max_pages = 2  # Limit to 2 pages even though more exist
@@ -5990,7 +5990,7 @@ class TestResumeIntegration:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.dry_run = True
         args.start_page = 1
         args.max_pages = 0  # Unlimited - process all pages
@@ -6077,7 +6077,7 @@ class TestResumeIntegration:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.dry_run = True
         args.start_page = 1
         args.max_pages = 1
@@ -6148,7 +6148,7 @@ class TestResumeIntegration:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.dry_run = True
         args.start_page = 1
         args.max_pages = 1
@@ -6221,7 +6221,7 @@ class TestResumeIntegration:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.dry_run = True
         args.start_page = 1
         args.max_pages = 1
@@ -6288,7 +6288,7 @@ class TestStateDirectoryCreationFailure:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.dry_run = True
         args.start_page = 1
         args.max_pages = 1
@@ -6359,7 +6359,7 @@ class TestStateWriteFailure:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.dry_run = True
         args.start_page = 1
         args.max_pages = 2  # Request 2 pages to trigger running-state write
@@ -6420,7 +6420,7 @@ class TestStateWriteFailure:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.dry_run = True
         args.start_page = 1
         args.max_pages = 1
@@ -6481,7 +6481,7 @@ class TestStateWriteFailure:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.dry_run = True
         args.start_page = 1
         args.max_pages = 1
@@ -6685,7 +6685,7 @@ class TestResumeStateIdentityValidation:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.dry_run = False  # Current run is REAL
         args.start_page = 1
         args.max_pages = 1
@@ -6759,7 +6759,7 @@ class TestResumeStateIdentityValidation:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.dry_run = True  # Current run is DRY-RUN
         args.start_page = 1
         args.max_pages = 1
@@ -6838,7 +6838,7 @@ class TestResumeStateIdentityValidation:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.dry_run = True  # Current run is also DRY-RUN
         args.start_page = 1
         args.max_pages = 1
@@ -6902,7 +6902,7 @@ class TestProjectRefResolution:
             "workbook_path": workbook_path,
             "existing_urls": set(),
             "project_id": "12345",
-            "cdp_port": "9234",
+            "cdp_port": "9230",
             "work_dir": str(tmp_path),
         }
         mock_resolve_context.return_value = {
@@ -6916,7 +6916,7 @@ class TestProjectRefResolution:
         args.project = "my_project"
         args.config = None
         args.workbook = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.dry_run = True
         args.start_page = 1
         args.max_pages = 1
@@ -7071,7 +7071,7 @@ class TestAutoResume:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.dry_run = True
         args.start_page = 1  # Default, not explicitly > 1
         args.max_pages = 1  # Only process 1 page
@@ -7160,7 +7160,7 @@ class TestAutoResume:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.dry_run = True
         args.start_page = 2  # EXPLICITLY set to page 2
         args.max_pages = 1
@@ -7245,7 +7245,7 @@ class TestAutoResume:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.dry_run = True
         args.start_page = 1
         args.max_pages = 1
@@ -7330,7 +7330,7 @@ class TestAutoResume:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.dry_run = True
         args.start_page = 1
         args.max_pages = 2  # Request 2 pages to trigger navigation
@@ -7416,7 +7416,7 @@ class TestAutoResume:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.dry_run = True
         args.start_page = 1
         args.max_pages = 2  # Request 2 pages to trigger navigation
@@ -7502,7 +7502,7 @@ class TestAutoResume:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.dry_run = True
         args.start_page = 1
         args.max_pages = 1
@@ -7592,7 +7592,7 @@ class TestAutoResume:
         args = Mock()
         args.config = "/path/to/config.sh"
         args.workbook = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.dry_run = True
         args.start_page = 1
         args.max_pages = 1
@@ -7730,7 +7730,7 @@ class TestArtdecoPaginationPattern:
         ]
 
         result = re.click_next_page_pagination(
-            cdp_port="9234",
+            cdp_port="9230",
             expected_start=25,
             max_wait_seconds=1.0,
             poll_interval=0.1,
@@ -7760,7 +7760,7 @@ class TestArtdecoPaginationPattern:
         }
 
         result = re.click_next_page_pagination(
-            cdp_port="9234",
+            cdp_port="9230",
             expected_start=25,
             max_wait_seconds=1.0,
             poll_interval=0.1,
@@ -7798,7 +7798,7 @@ class TestArtdecoPaginationPattern:
         ]
 
         re.click_next_page_pagination(
-            cdp_port="9234",
+            cdp_port="9230",
             expected_start=25,
             max_wait_seconds=1.0,
             poll_interval=0.1,
@@ -7832,7 +7832,7 @@ class TestArtdecoPaginationPattern:
         ]
 
         result = re.click_next_page_pagination(
-            cdp_port="9234",
+            cdp_port="9230",
             expected_start=25,
             max_wait_seconds=1.0,
             poll_interval=0.1,
@@ -7882,7 +7882,7 @@ class TestLastPageFalsePositiveRegression:
         }
 
         result = re.click_next_page_pagination(
-            cdp_port="9234",
+            cdp_port="9230",
             expected_start=175,  # Would be page 8
             max_wait_seconds=1.0,
             poll_interval=0.1,
@@ -7922,7 +7922,7 @@ class TestLastPageFalsePositiveRegression:
         ]
 
         result = re.click_next_page_pagination(
-            cdp_port="9234",
+            cdp_port="9230",
             expected_start=150,  # Page 7
             max_wait_seconds=1.0,
             poll_interval=0.1,
@@ -7949,7 +7949,7 @@ class TestLastPageFalsePositiveRegression:
         }
 
         re.click_next_page_pagination(
-            cdp_port="9234",
+            cdp_port="9230",
             expected_start=175,
             max_wait_seconds=1.0,
             poll_interval=0.1,
@@ -7996,7 +7996,7 @@ class TestLastPageFalsePositiveRegression:
         ]
 
         result = re.click_next_page_pagination(
-            cdp_port="9234",
+            cdp_port="9230",
             expected_start=75,
             max_wait_seconds=1.0,
             poll_interval=0.1,
@@ -8032,7 +8032,7 @@ class TestLastPageFalsePositiveRegression:
         }
 
         result = re.click_next_page_pagination(
-            cdp_port="9234",
+            cdp_port="9230",
             expected_start=75,
             max_wait_seconds=1.0,
             poll_interval=0.1,
@@ -8062,7 +8062,7 @@ class TestLastPageFalsePositiveRegression:
         ]
 
         result = re.click_next_page_pagination(
-            cdp_port="9234",
+            cdp_port="9230",
             expected_start=175,
             max_wait_seconds=0.1,
             poll_interval=0.1,
@@ -8092,7 +8092,7 @@ class TestLastPageFalsePositiveRegression:
         ]
 
         result = re.click_next_page_pagination(
-            cdp_port="9234",
+            cdp_port="9230",
             expected_start=75,
             max_wait_seconds=0.1,
             poll_interval=0.1,
@@ -8123,7 +8123,7 @@ class TestLastPageFalsePositiveRegression:
         ]
 
         result = re.click_next_page_pagination(
-            cdp_port="9234",
+            cdp_port="9230",
             expected_start=175,
             max_wait_seconds=0.1,
             poll_interval=0.1,
@@ -8153,7 +8153,7 @@ class TestLastPageFalsePositiveRegression:
         ]
 
         result = re.click_next_page_pagination(
-            cdp_port="9234",
+            cdp_port="9230",
             expected_start=75,
             max_wait_seconds=0.1,
             poll_interval=0.1,

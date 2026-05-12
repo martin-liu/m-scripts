@@ -9,10 +9,10 @@ timeouts with structured recovery attempts before giving up.
 Usage:
     from recruiter_page_utils import PageStateProbe, RecoveryHelper
 
-    probe = PageStateProbe("9234")
+    probe = PageStateProbe("9230")
     state = probe.classify_state()
 
-    recovery = RecoveryHelper("9234", work_dir="/path/to/work")
+    recovery = RecoveryHelper("9230", work_dir="/path/to/work")
     result = recovery.attempt_recovery(target_url="https://...")
 """
 

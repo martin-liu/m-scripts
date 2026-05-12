@@ -31,8 +31,8 @@ from browser_utils import (
     BrowserMode,
     FailureCode,
     attempt_timeout_dialog_recovery,
-    check_dialog_status,
     check_cdp_available,
+    check_dialog_status,
     get_browser_mode,
     resolve_browser_mode,
 )
@@ -112,7 +112,7 @@ def resolve_browser_mode_with_fallback(
         return BrowserMode(mode="cdp", cdp_port=env_port)
 
     # Priority 5: Default CDP mode
-    return BrowserMode(mode="cdp", cdp_port="9234")
+    return BrowserMode(mode="cdp", cdp_port="9230")
 
 
 SUBJECT_SELECTOR = (
@@ -1374,7 +1374,9 @@ def send_inmail_with_result(
         recovery_succeeded = cleanup_open_composer(mode)
         if recovery_succeeded:
             # Re-probe state to confirm clean state before continuing
-            post_recovery_state = probe_page_state(mode, timeout_sec=DEFAULT_DIALOG_TIMEOUT)
+            post_recovery_state = probe_page_state(
+                mode, timeout_sec=DEFAULT_DIALOG_TIMEOUT
+            )
             # Full clean-state predicate: no composer, no dialog, no discard dialog
             if (
                 not post_recovery_state["composer_open"]
@@ -1559,7 +1561,9 @@ def send_inmail_with_result(
 
         if not click_send_button(mode):
             last_state = probe_page_state(mode, timeout_sec=DEFAULT_DIALOG_TIMEOUT)
-            if send_attempts < MAX_SEND_ATTEMPTS and can_retry_send_from_state(last_state):
+            if send_attempts < MAX_SEND_ATTEMPTS and can_retry_send_from_state(
+                last_state
+            ):
                 time.sleep(SEND_RETRY_WAIT_SEC)
                 continue
             if can_retry_send_from_state(last_state):
@@ -1688,7 +1692,7 @@ def main():
     parser.add_argument(
         "--cdp-port",
         default=None,
-        help="Chrome DevTools Protocol port (default: from browser mode or 9234)",
+        help="Chrome DevTools Protocol port (default: from browser mode or 9230)",
     )
     parser.add_argument(
         "--work-dir",

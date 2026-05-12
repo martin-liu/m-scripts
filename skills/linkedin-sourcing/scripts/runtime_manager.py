@@ -33,13 +33,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-
 SCRIPT_DIR = Path(__file__).resolve().parent
 SKILL_DIR = SCRIPT_DIR.parent
 
 DEFAULT_PROFILE_PATH = Path.home() / ".config" / "linkedin-sourcing" / "profile.sh"
 DEFAULT_WORK_DIR = Path.home() / "Desktop" / "linkedin-sourcing"
-DEFAULT_CDP_PORT = "9234"
+DEFAULT_CDP_PORT = "9230"
 
 RUNTIME_SUBDIRS = ["incidents", "auth"]
 BUNDLE_SOURCE_DIRS = ["scripts", "templates"]

@@ -277,7 +277,9 @@ class TestExtractKeywordsFromText:
 
     def test_extracts_multiple_keywords(self):
         """Should extract multiple matching keywords."""
-        result = bp.extract_keywords_from_text("Python Kubernetes Engineer with AWS experience")
+        result = bp.extract_keywords_from_text(
+            "Python Kubernetes Engineer with AWS experience"
+        )
         assert "Python" in result
         assert "Kubernetes" in result
         assert "AWS" in result
@@ -314,14 +316,16 @@ class TestExtractKeywordsFromText:
         """Should use jd_text for additional keyword inference."""
         result = bp.extract_keywords_from_text(
             "Software Engineer",
-            jd_text="Experience with Kubernetes and Docker required"
+            jd_text="Experience with Kubernetes and Docker required",
         )
         assert "Kubernetes" in result
         assert "Docker" in result
 
     def test_extracts_infrastructure_keywords(self):
         """Should extract infrastructure-related keywords."""
-        result = bp.extract_keywords_from_text("Infrastructure Engineer with Terraform and AWS")
+        result = bp.extract_keywords_from_text(
+            "Infrastructure Engineer with Terraform and AWS"
+        )
         assert "Terraform" in result
         assert "AWS" in result
         assert "Infrastructure" in result
@@ -383,7 +387,9 @@ class TestInferKeywords:
 
     def test_does_not_infer_go_from_general_jd_prose(self):
         """JD fallback should remain conservative for ambiguous words."""
-        result = bp.infer_keywords("Software Engineer", jd_text="We go deep on reliability")
+        result = bp.infer_keywords(
+            "Software Engineer", jd_text="We go deep on reliability"
+        )
         assert "Go" not in result
 
 
@@ -716,6 +722,7 @@ class TestParseConfigFile:
         )
 
         from config_utils import parse_config_file
+
         result = parse_config_file(config_file)
 
         assert result["PROJECT_ID"] == "my_project"
@@ -728,6 +735,7 @@ class TestParseConfigFile:
         config_file.write_text("PROJECT_ID='my_project'\nPOSITION_TITLE='Engineer'")
 
         from config_utils import parse_config_file
+
         result = parse_config_file(config_file)
 
         assert result["PROJECT_ID"] == "my_project"
@@ -739,6 +747,7 @@ class TestParseConfigFile:
         config_file.write_text("PROJECT_ID=my_project\nDAILY_LIMIT=200")
 
         from config_utils import parse_config_file
+
         result = parse_config_file(config_file)
 
         assert result["PROJECT_ID"] == "my_project"
@@ -756,6 +765,7 @@ class TestParseConfigFile:
         )
 
         from config_utils import parse_config_file
+
         result = parse_config_file(config_file)
 
         assert result["PROJECT_ID"] == "my_project"
@@ -765,6 +775,7 @@ class TestParseConfigFile:
     def test_returns_empty_for_missing_file(self, tmp_path):
         """Should return empty dict for missing file."""
         from config_utils import parse_config_file
+
         result = parse_config_file(tmp_path / "nonexistent.sh")
         assert result == {}
 
@@ -1074,7 +1085,7 @@ class TestEnsureRecruiterProjectAndGetId:
         result = bp.ensure_recruiter_project_and_get_id(
             project_name="Test Project",
             description="Test description",
-            browser_mode="9234",  # Can pass string CDP port for backward compatibility
+            browser_mode="9230",  # Can pass string CDP port for backward compatibility
             work_dir=tmp_path,
         )
 
@@ -1095,7 +1106,7 @@ class TestEnsureRecruiterProjectAndGetId:
         result = bp.ensure_recruiter_project_and_get_id(
             project_name="Test Project",
             description="Test description",
-            browser_mode="9234",  # Can pass string CDP port for backward compatibility
+            browser_mode="9230",  # Can pass string CDP port for backward compatibility
             work_dir=tmp_path,
         )
 
@@ -1116,7 +1127,7 @@ class TestEnsureRecruiterProjectAndGetId:
         bp.ensure_recruiter_project_and_get_id(
             project_name="Test",
             description="",
-            browser_mode="9234",  # Can pass string CDP port for backward compatibility
+            browser_mode="9230",  # Can pass string CDP port for backward compatibility
             work_dir=tmp_path,
         )
 
@@ -1172,8 +1183,8 @@ class TestEnsureRecruiterProjectAndGetId:
                 "code": "browser_unavailable",
                 "summary": "Chrome is not running or not accessible",
                 "steps": [
-                    "Start Chrome with: google-chrome --remote-debugging-port=9234",
-                    "Ensure Chrome is accessible on port 9234",
+                    "Start Chrome with: google-chrome --remote-debugging-port=9230",
+                    "Ensure Chrome is accessible on port 9230",
                     "Retry the operation",
                 ],
                 "can_retry": True,
@@ -1183,7 +1194,7 @@ class TestEnsureRecruiterProjectAndGetId:
         result = bp.ensure_recruiter_project_and_get_id(
             project_name="Test Project",
             description="Test description",
-            browser_mode="9234",
+            browser_mode="9230",
             work_dir=tmp_path,
         )
 
@@ -1211,7 +1222,7 @@ class TestBootstrapProject:
         args.recruiter_url = (
             "https://linkedin.com/talent/hire/12345/discover/recruiterSearch"
         )
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.project_id = None  # Not overriding
         args.position_title = "Senior Engineer"
         args.team_name = None
@@ -1267,7 +1278,7 @@ class TestBootstrapProject:
         args.jd_text = "JD content"
         args.work_dir = str(tmp_path / "work")
         args.recruiter_url = None  # No URL provided
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.project_id = None
         args.position_title = "ML Engineer"
         args.team_name = "AI Team"
@@ -1307,7 +1318,7 @@ class TestBootstrapProject:
         args.jd_text = "JD content"
         args.work_dir = str(work_dir)
         args.recruiter_url = "https://linkedin.com/talent/hire/12345/"
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.project_id = "custom_id"  # Explicit override matching existing
         args.position_title = "Engineer"
         args.team_name = None
@@ -1380,7 +1391,7 @@ class TestBootstrapProject:
         args.recruiter_url = (
             "https://linkedin.com/talent/hire/1693735164/discover/recruiterSearch"
         )
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.project_id = "1693735164"
         args.position_title = "Engineer"
         args.team_name = None
@@ -1409,7 +1420,7 @@ class TestBootstrapProject:
         args.jd_text = "JD content"
         args.work_dir = str(tmp_path / "work")
         args.recruiter_url = "https://linkedin.com/talent/hire/12345/"
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.project_id = "nonexistent_id"  # Explicit override not matching any project
         args.position_title = "Engineer"
         args.team_name = None
@@ -1437,7 +1448,7 @@ class TestBootstrapProject:
         args.jd_text = "JD content"
         args.work_dir = str(tmp_path / "work")
         args.recruiter_url = "https://invalid-url.com/no-project-id"
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.project_id = None
         args.position_title = "Engineer"
         args.team_name = None
@@ -1469,7 +1480,7 @@ class TestBootstrapProject:
         args.jd_text = "JD content"
         args.work_dir = str(tmp_path / "work")
         args.recruiter_url = "https://invalid-url.com/no-project-id"
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.project_id = (
             "nonexistent_override_id"  # Override provided but doesn't exist
         )
@@ -1524,7 +1535,7 @@ class TestBootstrapProject:
         args.jd_text = "JD content"
         args.work_dir = str(tmp_path / "work")
         args.recruiter_url = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.project_id = None
         args.position_title = "Engineer"
         args.team_name = None
@@ -1569,7 +1580,7 @@ class TestBootstrapProject:
         args.recruiter_url = (
             "https://linkedin.com/talent/hire/12345/discover/recruiterSearch"
         )
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.project_id = "different_id"  # Explicit but doesn't exist
         args.position_title = "New Title"
         args.team_name = None
@@ -1615,7 +1626,7 @@ class TestBootstrapProject:
         args.recruiter_url = (
             "https://linkedin.com/talent/hire/12345/discover/recruiterSearch"
         )
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.project_id = None  # No explicit override
         args.position_title = "New Title"
         args.team_name = None
@@ -1665,7 +1676,7 @@ class TestBootstrapProject:
         args.recruiter_url = (
             "https://linkedin.com/talent/hire/12345/discover/recruiterSearch"
         )
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.project_id = None
         args.position_title = "Updated Title"
         args.team_name = None
@@ -1725,7 +1736,7 @@ class TestBootstrapProject:
         args.recruiter_url = (
             "https://linkedin.com/talent/hire/12345/discover/recruiterSearch"
         )
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.project_id = None
         args.position_title = "Updated Title"
         args.team_name = None
@@ -1780,7 +1791,7 @@ class TestBootstrapProject:
         args.recruiter_url = (
             "https://linkedin.com/talent/hire/12345/discover/recruiterSearch"
         )
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.project_id = None
         args.position_title = "Updated Title"
         args.team_name = None
@@ -1831,7 +1842,7 @@ class TestBootstrapProject:
         args.recruiter_url = (
             "https://linkedin.com/talent/hire/12345/discover/recruiterSearch"
         )
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.project_id = None
         args.position_title = "Updated Title"
         args.team_name = None
@@ -1882,7 +1893,7 @@ class TestBootstrapProject:
         args.recruiter_url = (
             "https://linkedin.com/talent/hire/67890/discover/recruiterSearch"
         )
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.project_id = None
         args.position_title = "New Title"
         args.team_name = None
@@ -1924,7 +1935,7 @@ class TestBootstrapProject:
         args.recruiter_url = (
             "https://linkedin.com/talent/hire/11111/discover/recruiterSearch"
         )
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.project_id = None
         args.position_title = "ML Engineer"
         args.team_name = None
@@ -1975,7 +1986,7 @@ class TestBootstrapProject:
         args.work_dir = str(work_dir)
         # Same recruiter URL as existing project
         args.recruiter_url = "https://linkedin.com/talent/hire/12345/overview"
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.project_id = None  # No explicit project_id
         args.position_title = "New Title"
         args.team_name = None
@@ -2019,7 +2030,7 @@ class TestBootstrapProject:
         args.jd_text = "JD content"
         args.work_dir = str(tmp_path / "work")
         args.recruiter_url = "https://linkedin.com/talent/hire/12345/discover/recruiterSearch?searchContextId=abc"
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.project_id = None
         args.position_title = "Engineer"
         args.team_name = None
@@ -2046,7 +2057,7 @@ class TestBootstrapProject:
         args.jd_text = "JD content"
         args.work_dir = str(tmp_path / "work")
         args.recruiter_url = "https://linkedin.com/talent/hire/12345/overview"
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.project_id = None
         args.position_title = "Engineer"
         args.team_name = None
@@ -2062,7 +2073,9 @@ class TestBootstrapProject:
         next_steps_text = "\n".join(result["next_steps"])
         assert "ensure_recruiter_project" in next_steps_text
 
-    def test_next_steps_call_out_unresolved_project_messaging(self, tmp_path, monkeypatch):
+    def test_next_steps_call_out_unresolved_project_messaging(
+        self, tmp_path, monkeypatch
+    ):
         """Bootstrap should call out unresolved project-level messaging fields early."""
         monkeypatch.setattr(bp.Path, "home", lambda: tmp_path)
 
@@ -2071,7 +2084,7 @@ class TestBootstrapProject:
         args.jd_text = "JD content"
         args.work_dir = str(tmp_path / "work")
         args.recruiter_url = "https://linkedin.com/talent/hire/12345/overview"
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.project_id = None
         args.position_title = "Engineer"
         args.team_name = None
@@ -2111,7 +2124,7 @@ class TestBootstrapProject:
         args.recruiter_url = (
             "https://linkedin.com/talent/hire/12345/discover/recruiterSearch"
         )
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.project_id = None
         args.position_title = None  # No explicit title
         args.team_name = None
@@ -2143,7 +2156,7 @@ class TestBootstrapProject:
         args.recruiter_url = (
             "https://linkedin.com/talent/hire/12345/discover/recruiterSearch"
         )
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.project_id = None
         args.position_title = None
         args.team_name = None
@@ -2187,7 +2200,7 @@ class TestBootstrapProject:
         args.recruiter_url = (
             "https://linkedin.com/talent/hire/12345/discover/recruiterSearch"
         )
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.project_id = None
         args.position_title = None
         args.team_name = None
@@ -2216,7 +2229,7 @@ class TestBootstrapProject:
         args.recruiter_url = (
             "https://linkedin.com/talent/hire/12345/discover/recruiterSearch"
         )
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.project_id = None
         args.position_title = "Custom Title"  # Explicit override
         args.team_name = None
@@ -2245,7 +2258,7 @@ class TestBootstrapProject:
         args.recruiter_url = (
             "https://linkedin.com/talent/hire/12345/discover/recruiterSearch"
         )
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.project_id = None
         args.position_title = None
         args.team_name = None
@@ -2313,7 +2326,7 @@ class TestBootstrapProject:
         args.recruiter_url = (
             "https://linkedin.com/talent/hire/12345/discover/recruiterSearch"
         )
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.project_id = None
         # No overrides - should preserve all existing values
         args.position_title = None
@@ -2377,7 +2390,7 @@ class TestBootstrapProject:
         args.recruiter_url = (
             "https://linkedin.com/talent/hire/12345/discover/recruiterSearch"
         )
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.project_id = None
         # Override some values
         args.position_title = "Override Title"
@@ -2436,7 +2449,7 @@ class TestBootstrapProject:
         args.recruiter_url = (
             "https://linkedin.com/talent/hire/12345/discover/recruiterSearch"
         )
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.project_id = None
         # No overrides
         args.position_title = None
@@ -2493,7 +2506,7 @@ class TestBootstrapProject:
         args.jd_text = "New JD content that is different from existing"
         args.work_dir = str(work_dir)
         args.recruiter_url = "https://linkedin.com/talent/hire/12345/"
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.project_id = None
         args.position_title = "Engineer"  # Same title slug as existing folder
         args.team_name = None
@@ -2559,7 +2572,7 @@ class TestBootstrapProject:
         args.jd_text = "New unique JD content"
         args.work_dir = str(work_dir)
         args.recruiter_url = "https://linkedin.com/talent/hire/12345/"
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.project_id = None
         args.position_title = "Engineer"
         args.team_name = None
@@ -2617,7 +2630,7 @@ class TestBootstrapProject:
         args.jd_text = jd_content  # Same JD content
         args.work_dir = str(work_dir)
         args.recruiter_url = "https://linkedin.com/talent/hire/12345/"
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.project_id = None
         args.position_title = "Senior ML Engineer"
         args.team_name = None
@@ -2685,7 +2698,7 @@ class TestParseArgs:
         """Should use default CDP port when not specified."""
         with patch.object(sys, "argv", ["script", "--jd-url", "https://example.com"]):
             args = bp.parse_args()
-            assert args.cdp_port == "9234"
+            assert args.cdp_port == "9230"
 
     def test_accepts_all_overrides(self):
         """Should accept all override arguments."""
@@ -2923,17 +2936,17 @@ class TestEnsureBrowserAuth:
         mock_bootstrap.return_value = {
             "success": True,
             "mode": "cdp",
-            "cdp_port": "9234",
+            "cdp_port": "9230",
             "message": "Using existing authenticated browser",
         }
 
-        result = bp.ensure_browser_auth(tmp_path, "9234")
+        result = bp.ensure_browser_auth(tmp_path, "9230")
 
         assert result["success"] is True
         assert result["error"] is None
         mock_bootstrap.assert_called_once_with(
             work_dir=tmp_path,
-            preferred_cdp_port="9234",
+            preferred_cdp_port="9230",
             allow_browser_launch=True,
         )
 
@@ -2946,7 +2959,7 @@ class TestEnsureBrowserAuth:
             "message": "Cannot launch Chrome for manual login",
         }
 
-        result = bp.ensure_browser_auth(tmp_path, "9234")
+        result = bp.ensure_browser_auth(tmp_path, "9230")
 
         assert result["success"] is False
         assert "Browser launch not allowed" in result["error"]
@@ -2957,12 +2970,12 @@ class TestEnsureBrowserAuth:
         mock_bootstrap.return_value = {
             "success": True,
             "mode": "cdp",
-            "cdp_port": "9234",
+            "cdp_port": "9230",
             "headed": True,
             "message": "Using existing authenticated browser",
         }
 
-        result = bp.ensure_browser_auth(tmp_path, "9234")
+        result = bp.ensure_browser_auth(tmp_path, "9230")
 
         assert result["success"] is True
         assert result["mode"].mode == "cdp"
@@ -2982,7 +2995,7 @@ class TestEnsureBrowserAuth:
             "message": "Session started",
         }
 
-        result = bp.ensure_browser_auth(tmp_path, "9234")
+        result = bp.ensure_browser_auth(tmp_path, "9230")
 
         assert result["success"] is True
         assert result["mode"].mode == "agent-browser"
@@ -2995,12 +3008,12 @@ class TestEnsureBrowserAuth:
         mock_bootstrap.return_value = {
             "success": True,
             "mode": "cdp",
-            "cdp_port": "9234",
+            "cdp_port": "9230",
             # headed not included - should default to True
             "message": "Using existing authenticated browser",
         }
 
-        result = bp.ensure_browser_auth(tmp_path, "9234")
+        result = bp.ensure_browser_auth(tmp_path, "9230")
 
         assert result["success"] is True
         assert result["mode"].headed is True
@@ -3033,7 +3046,7 @@ class TestBootstrapProjectBrowserAuth:
         args.jd_text = "JD content"
         args.work_dir = str(tmp_path / "work")
         args.recruiter_url = None  # No URL provided - should trigger browser bootstrap
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.project_id = None
         args.position_title = "ML Engineer"
         args.team_name = None
@@ -3047,7 +3060,7 @@ class TestBootstrapProjectBrowserAuth:
         result = bp.bootstrap_project(args)
 
         # Should call browser auth first
-        mock_ensure_browser.assert_called_once_with(tmp_path / "work", "9234")
+        mock_ensure_browser.assert_called_once_with(tmp_path / "work", "9230")
         # Then call ensure_recruiter_project
         mock_ensure_project.assert_called_once()
         # Project should be created successfully
@@ -3068,7 +3081,7 @@ class TestBootstrapProjectBrowserAuth:
         args.recruiter_url = (
             "https://linkedin.com/talent/hire/12345/discover/recruiterSearch"
         )
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.project_id = None
         args.position_title = "Engineer"
         args.team_name = None
@@ -3111,7 +3124,7 @@ class TestBootstrapProjectBrowserAuth:
         args.jd_text = "JD content"
         args.work_dir = str(work_dir)
         args.recruiter_url = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.project_id = "custom_override_id"  # Explicit override matching existing
         args.position_title = "Engineer"
         args.team_name = None
@@ -3150,7 +3163,7 @@ class TestBootstrapProjectBrowserAuth:
         args.jd_text = "JD content"
         args.work_dir = str(tmp_path / "work")
         args.recruiter_url = None  # No URL - needs browser
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.project_id = None
         args.position_title = "Engineer"
         args.team_name = None
@@ -3215,7 +3228,7 @@ class TestBootstrapProjectFreshAuthBootstrap:
         args.jd_text = "JD content"
         args.work_dir = str(tmp_path / "work")
         args.recruiter_url = None  # No URL - triggers browser bootstrap
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.project_id = None
         args.position_title = "Senior ML Engineer"
         args.team_name = None
@@ -3257,7 +3270,7 @@ class TestBootstrapProjectFreshAuthBootstrap:
         # Simulate auth bootstrap returning CDP mode
         browser_mode = BrowserMode(
             mode="cdp",
-            cdp_port="9234",
+            cdp_port="9230",
             headed=True,
         )
         mock_ensure_browser.return_value = {
@@ -3279,7 +3292,7 @@ class TestBootstrapProjectFreshAuthBootstrap:
         args.jd_text = "JD content"
         args.work_dir = str(tmp_path / "work")
         args.recruiter_url = None
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.project_id = None
         args.position_title = "Engineer"
         args.team_name = None
@@ -3299,7 +3312,7 @@ class TestBootstrapProjectFreshAuthBootstrap:
         passed_mode = call_kwargs["browser_mode"]
         assert passed_mode is browser_mode
         assert passed_mode.mode == "cdp"
-        assert passed_mode.cdp_port == "9234"
+        assert passed_mode.cdp_port == "9230"
 
 
 class TestNormalizeToPlainText:
@@ -3473,7 +3486,7 @@ class TestProjectStateIntegration:
         args.recruiter_url = (
             "https://linkedin.com/talent/hire/12345/discover/recruiterSearch"
         )
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.project_id = None
         args.position_title = "Senior Engineer"
         args.team_name = None
@@ -3509,7 +3522,7 @@ class TestProjectStateIntegration:
         args.recruiter_url = (
             "https://linkedin.com/talent/hire/12345/discover/recruiterSearch"
         )
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.project_id = None
         args.position_title = "Test Position"
         args.team_name = None
@@ -3555,7 +3568,7 @@ class TestProjectDeduplication:
         args.jd_text = None
         args.work_dir = str(work_dir)
         args.recruiter_url = "https://linkedin.com/talent/hire/12345/"
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.project_id = None
         args.position_title = "New Title"
         args.team_name = None
@@ -3600,7 +3613,7 @@ class TestProjectDeduplication:
         args.jd_text = jd_content  # Same JD content
         args.work_dir = str(work_dir)
         args.recruiter_url = "https://linkedin.com/talent/hire/12345/"
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.project_id = None
         args.position_title = "New Title"
         args.team_name = None
@@ -3656,7 +3669,7 @@ class TestProjectDeduplication:
         args.recruiter_url = (
             "https://linkedin.com/talent/hire/33333/"  # Different recruiter
         )
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.project_id = None
         args.position_title = "New Title"
         args.team_name = None
@@ -3704,7 +3717,7 @@ class TestProjectDeduplication:
         args.jd_text = new_jd_content  # Similar but not exact
         args.work_dir = str(work_dir)
         args.recruiter_url = "https://linkedin.com/talent/hire/67890/"
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.project_id = None
         args.position_title = "Engineer"
         args.team_name = None
@@ -3730,7 +3743,7 @@ class TestProjectDeduplication:
         args.jd_text = None
         args.work_dir = str(tmp_path / "work")
         args.recruiter_url = "https://linkedin.com/talent/hire/12345/"
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.project_id = None
         args.position_title = "Engineer"
         args.team_name = None
@@ -3774,7 +3787,7 @@ class TestProjectDeduplication:
         args.jd_text = None
         args.work_dir = str(work_dir)
         args.recruiter_url = "https://linkedin.com/talent/hire/12345/"
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.project_id = None
         args.position_title = "Engineer"
         args.team_name = None
@@ -3836,7 +3849,7 @@ class TestProjectDeduplication:
         args.jd_text = None
         args.work_dir = str(work_dir)
         args.recruiter_url = "https://linkedin.com/talent/hire/99999/"
-        args.cdp_port = "9234"
+        args.cdp_port = "9230"
         args.project_id = None
         args.position_title = "Updated Title"
         args.team_name = None

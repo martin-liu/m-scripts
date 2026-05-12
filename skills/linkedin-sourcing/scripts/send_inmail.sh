@@ -17,7 +17,7 @@ if [[ -n "${WORK_DIR:-}" ]]; then
     export WORK_DIR
 fi
 
-CDP_PORT="${CDP_PORT:-9234}"
+CDP_PORT="${CDP_PORT:-9230}"
 export CDP_PORT
 
 # Parse arguments

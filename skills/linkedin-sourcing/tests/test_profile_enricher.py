@@ -301,7 +301,7 @@ class TestEnrichViaBrowser:
 
         mock_run.side_effect = [open_result, eval_result]
 
-        result = pe._enrich_via_browser("https://linkedin.com/in/test", "9234", 60)
+        result = pe._enrich_via_browser("https://linkedin.com/in/test", "9230", 60)
 
         assert result.success is True
         assert result.enrichment_notes is not None
@@ -355,7 +355,7 @@ class TestEnrichViaBrowser:
 
         mock_run.side_effect = [open_result, loading_eval, empty_eval, ready_eval]
 
-        result = pe._enrich_via_browser("https://linkedin.com/in/test", "9234", 60)
+        result = pe._enrich_via_browser("https://linkedin.com/in/test", "9230", 60)
 
         assert result.success is True
         assert "Software Engineer at NetApp" in result.enrichment_notes
@@ -372,7 +372,7 @@ class TestEnrichViaBrowser:
 
         mock_run.return_value = open_result
 
-        result = pe._enrich_via_browser("https://linkedin.com/in/test", "9234", 60)
+        result = pe._enrich_via_browser("https://linkedin.com/in/test", "9230", 60)
 
         assert result.success is False
         assert result.failure_code == "auth_required"
@@ -390,7 +390,7 @@ class TestEnrichViaBrowser:
 
         mock_run.return_value = open_result
 
-        result = pe._enrich_via_browser("https://linkedin.com/in/test", "9234", 60)
+        result = pe._enrich_via_browser("https://linkedin.com/in/test", "9230", 60)
 
         assert result.success is False
         assert result.failure_code == "navigation_failed"
@@ -412,7 +412,7 @@ class TestEnrichViaBrowser:
 
         mock_run.side_effect = [open_result, eval_result]
 
-        result = pe._enrich_via_browser("https://linkedin.com/in/test", "9234", 60)
+        result = pe._enrich_via_browser("https://linkedin.com/in/test", "9230", 60)
 
         assert result.success is False
         assert result.failure_code == "extraction_parse_error"
@@ -438,7 +438,7 @@ class TestEnrichViaBrowser:
 
         mock_run.side_effect = [open_result, eval_result]
 
-        result = pe._enrich_via_browser("https://linkedin.com/in/test", "9234", 60)
+        result = pe._enrich_via_browser("https://linkedin.com/in/test", "9230", 60)
 
         assert result.success is False
         assert result.failure_code == "extraction_failed"  # NOT extraction_parse_error
@@ -449,7 +449,7 @@ class TestEnrichViaBrowser:
         """FileNotFoundError returns agent_browser_not_found."""
         mock_run.side_effect = FileNotFoundError("agent-browser not found")
 
-        result = pe._enrich_via_browser("https://linkedin.com/in/test", "9234", 60)
+        result = pe._enrich_via_browser("https://linkedin.com/in/test", "9230", 60)
 
         assert result.success is False
         assert result.failure_code == "agent_browser_not_found"
@@ -460,7 +460,7 @@ class TestEnrichViaBrowser:
         """Timeout during open returns navigation_timeout."""
         mock_run.side_effect = subprocess.TimeoutExpired("cmd", 60)
 
-        result = pe._enrich_via_browser("https://linkedin.com/in/test", "9234", 60)
+        result = pe._enrich_via_browser("https://linkedin.com/in/test", "9230", 60)
 
         assert result.success is False
         assert result.failure_code == "navigation_timeout"

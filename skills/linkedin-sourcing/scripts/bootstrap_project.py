@@ -18,7 +18,7 @@ Required (one of):
 Optional:
     --work-dir DIR        Working directory for projects (default: ~/Desktop/linkedin-sourcing)
     --recruiter-url URL   LinkedIn Recruiter project URL (if not provided, will create/ensure project)
-    --cdp-port PORT       Chrome DevTools Protocol port for ensure_recruiter_project (default: 9234)
+    --cdp-port PORT       Chrome DevTools Protocol port for ensure_recruiter_project (default: 9230)
     --project-id ID       Override project identifier (only for advanced use; normally derived from Recruiter)
     --position-title TITLE    Override position title
     --team-name NAME      Override team name
@@ -78,14 +78,13 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 SKILL_DIR = SCRIPT_DIR.parent
 
 sys.path.insert(0, str(SCRIPT_DIR))
-from excel_utils import create
-
 # Import auth_bootstrap for browser availability check
 import auth_bootstrap
 from config_utils import parse_config_file
+from excel_utils import create
 from recruiter_url_utils import (
-    extract_recruiter_id_from_url,
     build_project_overview_url,
+    extract_recruiter_id_from_url,
 )
 
 
@@ -134,8 +133,8 @@ Notes:
     parser.add_argument(
         "--cdp-port",
         metavar="PORT",
-        default="9234",
-        help="Chrome DevTools Protocol port for ensure_recruiter_project (default: 9234)",
+        default="9230",
+        help="Chrome DevTools Protocol port for ensure_recruiter_project (default: 9230)",
     )
     parser.add_argument(
         "--project-id",
@@ -259,7 +258,7 @@ def ensure_browser_auth(work_dir: Path, cdp_port: str) -> dict[str, Any]:
     Returns:
         Dict with success status, browser mode, and error message if failed.
     """
-    from browser_utils import ActionRequired, FailureCode, BrowserMode
+    from browser_utils import ActionRequired, BrowserMode, FailureCode
 
     AUTH_PROBE_JS = r"""
     (() => {
@@ -278,6 +277,7 @@ def ensure_browser_auth(work_dir: Path, cdp_port: str) -> dict[str, Any]:
         try:
             # Get list of pages
             import urllib.request
+
             req = urllib.request.Request(
                 f"http://localhost:{port}/json/list",
                 headers={"Accept": "application/json"},
@@ -288,7 +288,9 @@ def ensure_browser_auth(work_dir: Path, cdp_port: str) -> dict[str, Any]:
             # Find the main page (not background/service worker)
             page = None
             for p in pages:
-                if p.get("type") == "page" and not p.get("url", "").startswith("chrome-"):
+                if p.get("type") == "page" and not p.get("url", "").startswith(
+                    "chrome-"
+                ):
                     page = p
                     break
 
@@ -308,12 +310,14 @@ def ensure_browser_auth(work_dir: Path, cdp_port: str) -> dict[str, Any]:
                 "ok": True,
                 "data": {
                     "url": page_url,
-                    "path": page_url.replace("https://www.linkedin.com", "").replace("http://www.linkedin.com", ""),
+                    "path": page_url.replace("https://www.linkedin.com", "").replace(
+                        "http://www.linkedin.com", ""
+                    ),
                     "isTalentPath": is_talent,
                     "hasLoginForm": has_login,
                     "hasCheckpoint": has_checkpoint,
                     "hasCaptcha": has_captcha,
-                }
+                },
             }
         except Exception as e:
             return {"ok": False, "error": str(e)}
@@ -328,7 +332,9 @@ def ensure_browser_auth(work_dir: Path, cdp_port: str) -> dict[str, Any]:
         has_login = data.get("hasLoginForm", False)
         has_checkpoint = data.get("hasCheckpoint", False)
         has_captcha = data.get("hasCaptcha", False)
-        return (is_talent and not has_login and not has_checkpoint and not has_captcha), data
+        return (
+            is_talent and not has_login and not has_checkpoint and not has_captcha
+        ), data
 
     # --- Step 1: build candidate port list ---
     ports_to_try: list[str] = []
@@ -342,7 +348,7 @@ def ensure_browser_auth(work_dir: Path, cdp_port: str) -> dict[str, Any]:
     if cdp_port not in ports_to_try:
         ports_to_try.append(cdp_port)
 
-    for p in range(19234, 19240):
+    for p in range(19230, 19240):
         if str(p) not in ports_to_try:
             ports_to_try.append(str(p))
 
@@ -447,7 +453,7 @@ def ensure_browser_auth(work_dir: Path, cdp_port: str) -> dict[str, Any]:
 
         preferred_port_int = int(cdp_port)
         if auth_bootstrap.is_port_in_use(preferred_port_int):
-            fallback = 19234
+            fallback = 19230
             while auth_bootstrap.is_port_in_use(fallback) and fallback < 19300:
                 fallback += 1
             if fallback >= 19300:
@@ -468,7 +474,10 @@ def ensure_browser_auth(work_dir: Path, cdp_port: str) -> dict[str, Any]:
             f"Launching Chrome with your default profile on port {actual_cdp_port}",
             file=sys.stderr,
         )
-        print("(Using your existing Chrome profile so LinkedIn cookies are preserved)", file=sys.stderr)
+        print(
+            "(Using your existing Chrome profile so LinkedIn cookies are preserved)",
+            file=sys.stderr,
+        )
         print("", file=sys.stderr)
         print("=== Authentication Instructions ===", file=sys.stderr)
         print(
@@ -874,12 +883,14 @@ KEYWORD_RULES: list[tuple[str, list[str]]] = [
     # Programming languages
     (r"\bpython\b", ["Python"]),
     (r"\bjava\b", ["Java"]),
-    (r"\bgolang\b|\bgo\b(?=\s+(developer|engineer|programming|language|backend|services?|microservices?))", ["Go"]),
+    (
+        r"\bgolang\b|\bgo\b(?=\s+(developer|engineer|programming|language|backend|services?|microservices?))",
+        ["Go"],
+    ),
     (r"\brust\b", ["Rust"]),
     (r"\bc\+\+|\bcpp\b", ["C++"]),
     (r"\bjavascript\b|\bjs\b", ["JavaScript"]),
     (r"\btypescript\b|\bts\b", ["TypeScript"]),
-
     # ML/AI frameworks
     (r"\bpytorch\b", ["PyTorch", "Deep Learning"]),
     (r"\btensorflow\b|\btf\b", ["TensorFlow", "Keras"]),
@@ -888,9 +899,11 @@ KEYWORD_RULES: list[tuple[str, list[str]]] = [
     (r"\bcuda\b", ["CUDA", "GPU Optimization"]),
     (r"\bgpu\b", ["GPU Optimization"]),
     (r"\bkernel\b", ["Kernel Development"]),
-    (r"\bdistributed\b|\blarge[- ]?scale\b", ["Distributed Training", "Large-Scale Systems"]),
+    (
+        r"\bdistributed\b|\blarge[- ]?scale\b",
+        ["Distributed Training", "Large-Scale Systems"],
+    ),
     (r"\bmachine learning\b|\bml\b", ["Machine Learning", "ML Systems"]),
-
     # Infrastructure/DevOps
     (r"\bkubernetes\b|\bk8s\b", ["Kubernetes", "Container Orchestration"]),
     (r"\bdocker\b", ["Docker", "Containerization"]),
@@ -905,7 +918,6 @@ KEYWORD_RULES: list[tuple[str, list[str]]] = [
     (r"\btraffic management\b", ["Traffic Management"]),
     (r"\bload balancing\b", ["Load Balancing"]),
     (r"\bedge computing\b", ["Edge Computing"]),
-
     # Hardware/Embedded
     (r"\bverilog\b|\bsystemverilog\b", ["Verilog", "SystemVerilog"]),
     (r"\bsoc\b", ["SoC Design"]),
@@ -917,7 +929,10 @@ KEYWORD_RULES: list[tuple[str, list[str]]] = [
     (r"\brdc\b|\breset domain crossing\b", ["RDC"]),
     (r"\blow[- ]?power\b|\bpower gating\b|\bclock gating\b", ["Low Power Design"]),
     (r"\bnpu\b|\bai hardware\b", ["AI Hardware Acceleration"]),
-    (r"\bsynthesis\b|\bsta\b|\bstatic timing\b", ["Synthesis", "Static Timing Analysis"]),
+    (
+        r"\bsynthesis\b|\bsta\b|\bstatic timing\b",
+        ["Synthesis", "Static Timing Analysis"],
+    ),
 ]
 
 
@@ -1046,12 +1061,14 @@ def build_config(
     """
     existing = existing or {}
     fallback_keyword_text = " ".join(
-        part for part in [
+        part
+        for part in [
             inferred.get("description", ""),
             inferred.get("core_function", ""),
             inferred.get("business_impact", ""),
             inferred.get("team_name", ""),
-        ] if part
+        ]
+        if part
     )
 
     # Helper to get value with proper precedence: override > existing > inferred > default
@@ -1115,7 +1132,8 @@ def build_config(
             overrides.get("keywords")
             or (
                 existing.get("KEYWORDS", "")
-                if existing.get("KEYWORDS", "") and not existing.get("KEYWORDS", "").startswith("[")
+                if existing.get("KEYWORDS", "")
+                and not existing.get("KEYWORDS", "").startswith("[")
                 else ""
             )
             or inferred.get("keywords", "")
@@ -1990,12 +2008,14 @@ def bootstrap_project(args: argparse.Namespace) -> dict[str, Any]:
                     workflow_mode="reachout",
                     current_phase="create_search",
                     status="action_required",
-                    action_required=phase_result.get("action_required") or create_search_result.get("action_required"),
+                    action_required=phase_result.get("action_required")
+                    or create_search_result.get("action_required"),
                     last_result_summary=f"Search creation failed: {phase_result.get('error') or create_search_result.get('error', 'Unknown error')}",
                     last_error=True,
                 )
         except Exception as exc:
             import traceback
+
             traceback.print_exc()
             update_project_state(
                 project_dir=project_dir,

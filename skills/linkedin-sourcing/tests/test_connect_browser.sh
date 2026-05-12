@@ -278,19 +278,19 @@ mkdir -p "$mock_saved_work_dir/runtime"
 cat > "$mock_saved_work_dir/runtime/browser_mode.json" <<'EOF'
 {
   "mode": "cdp",
-  "cdp_port": "19234",
+  "cdp_port": "19230",
   "session_name": null,
   "auth_file": null,
   "headed": true,
   "updated_at": "2024-01-01T00:00:00Z"
 }
 EOF
-# Mock curl: preferred port (29999) fails, saved port (19234) succeeds
+# Mock curl: preferred port (29999) fails, saved port (19230) succeeds
 cat > "$mock_saved_dir/curl" <<'EOF'
 #!/bin/bash
 # Check all arguments for the port in URL
 for arg in "$@"; do
-    if [[ "$arg" == *"19234"* ]]; then
+    if [[ "$arg" == *"19230"* ]]; then
         exit 0  # Saved port is available
     fi
 done
@@ -303,7 +303,7 @@ cat > "$mock_saved_dir/python3" <<'EOF'
 #!/bin/bash
 if [[ "$*" == *"from browser_utils import probe_recruiter_auth"* ]]; then
     # Check which port is being probed - look for the port in the command
-    if [[ "$*" == *"19234"* ]]; then
+    if [[ "$*" == *"19230"* ]]; then
         printf '%s\n' '{"authenticated": true, "url": "https://www.linkedin.com/talent/home"}'
     else
         printf '%s\n' '{"authenticated": false, "url": null, "error": "CDP not available"}'
@@ -340,14 +340,14 @@ mkdir -p "$mock_stale_work_dir/runtime"
 cat > "$mock_stale_work_dir/runtime/browser_mode.json" <<'EOF'
 {
   "mode": "cdp",
-  "cdp_port": "19234",
+  "cdp_port": "19230",
   "session_name": null,
   "auth_file": null,
   "headed": true,
   "updated_at": "2024-01-01T00:00:00Z"
 }
 EOF
-# Mock curl: both saved port (19234) and preferred port (29999) fail - no CDP
+# Mock curl: both saved port (19230) and preferred port (29999) fail - no CDP
 cat > "$mock_stale_dir/curl" <<'EOF'
 #!/bin/bash
 exit 1  # No CDP available on any port

@@ -82,8 +82,12 @@ class TestBuildSearchBrief:
         # Should NOT include TikTok or ByteDance as target companies
         if "Target companies:" in brief:
             companies_section = brief.split("Target companies:")[1].split("\n")[0]
-            assert "TikTok" not in companies_section, f"TikTok should be excluded from target companies in: {companies_section}"
-            assert "ByteDance" not in companies_section, f"ByteDance should be excluded from target companies in: {companies_section}"
+            assert "TikTok" not in companies_section, (
+                f"TikTok should be excluded from target companies in: {companies_section}"
+            )
+            assert "ByteDance" not in companies_section, (
+                f"ByteDance should be excluded from target companies in: {companies_section}"
+            )
         # Should include other companies
         assert "Google" in brief
         assert "Meta" in brief
@@ -99,7 +103,9 @@ class TestBuildSearchBrief:
         brief = rcs.build_search_brief(config, "", jd_url)
 
         # Should exclude both TikTok and Byte Dance
-        companies_section = brief.split("Target companies:")[1] if "Target companies:" in brief else ""
+        companies_section = (
+            brief.split("Target companies:")[1] if "Target companies:" in brief else ""
+        )
         assert "TikTok" not in companies_section
         assert "Byte Dance" not in companies_section
         assert "Google" in brief
@@ -114,7 +120,7 @@ class TestRunCreateSearchPhase:
         config_path = tmp_path / "config.sh"
         config_path.write_text("", encoding="utf-8")
         (tmp_path / "job_description.txt").write_text("Test JD", encoding="utf-8")
-        mock_ctx.return_value = {"profile": {"CDP_PORT": "9234"}}
+        mock_ctx.return_value = {"profile": {"CDP_PORT": "9230"}}
         mock_resolve.return_value = (
             config_path,
             {
@@ -131,7 +137,7 @@ class TestRunCreateSearchPhase:
         assert result["status"] == "brief_only"
         assert result["phase"] == "create_search"
         assert result["next_phase"] == "create_search"
-        assert result["cdp_port"] == "9234"
+        assert result["cdp_port"] == "9230"
         assert "Engineer" in result["search_brief"]
 
     @patch("run_create_search.inspect_search_state")
@@ -143,7 +149,7 @@ class TestRunCreateSearchPhase:
     ):
         config_path = tmp_path / "config.sh"
         config_path.write_text("", encoding="utf-8")
-        mock_ctx.return_value = {"profile": {"CDP_PORT": "9234"}}
+        mock_ctx.return_value = {"profile": {"CDP_PORT": "9230"}}
         mock_resolve.return_value = (
             config_path,
             {
@@ -152,7 +158,7 @@ class TestRunCreateSearchPhase:
             },
             "123",
         )
-        mock_ensure_ready.return_value = ("9234", None)  # Browser ready
+        mock_ensure_ready.return_value = ("9230", None)  # Browser ready
         mock_inspect.return_value = {
             "success": True,
             "status": "ready",
@@ -178,7 +184,7 @@ class TestRunCreateSearchPhase:
         config_path = tmp_path / "config.sh"
         config_path.write_text("", encoding="utf-8")
         (tmp_path / "job_description.txt").write_text("Focus on CV", encoding="utf-8")
-        mock_ctx.return_value = {"profile": {"CDP_PORT": "9234"}}
+        mock_ctx.return_value = {"profile": {"CDP_PORT": "9230"}}
         mock_resolve.return_value = (
             config_path,
             {
@@ -188,7 +194,7 @@ class TestRunCreateSearchPhase:
             },
             "123",
         )
-        mock_ensure_ready.return_value = ("9234", None)  # Browser ready
+        mock_ensure_ready.return_value = ("9230", None)  # Browser ready
         mock_inspect.return_value = {
             "success": False,
             "status": "search_not_configured",
@@ -214,9 +220,9 @@ class TestRunCreateSearchPhase:
     ):
         config_path = tmp_path / "config.sh"
         config_path.write_text("", encoding="utf-8")
-        mock_ctx.return_value = {"profile": {"CDP_PORT": "9234"}}
+        mock_ctx.return_value = {"profile": {"CDP_PORT": "9230"}}
         mock_resolve.return_value = (config_path, {"PROJECT_ID": "proj-1"}, "123")
-        mock_ensure_ready.return_value = ("9234", None)  # Browser ready
+        mock_ensure_ready.return_value = ("9230", None)  # Browser ready
 
         with pytest.raises(rcs.CreateSearchError) as exc_info:
             rcs.run_create_search_phase("proj-1")
@@ -253,7 +259,7 @@ class TestInspectSearchState:
         mock_probe_class.return_value = mock_probe
 
         result = rcs.inspect_search_state(
-            "9234", "https://linkedin.com/talent/hire/123/discover/recruiterSearch"
+            "9230", "https://linkedin.com/talent/hire/123/discover/recruiterSearch"
         )
 
         assert result["success"] is False
@@ -273,7 +279,7 @@ class TestInspectSearchState:
         }
 
         result = rcs.inspect_search_state(
-            "9234", "https://linkedin.com/talent/hire/123/discover/recruiterSearch"
+            "9230", "https://linkedin.com/talent/hire/123/discover/recruiterSearch"
         )
 
         assert result["success"] is False
@@ -295,7 +301,7 @@ class TestInspectSearchState:
         mock_classify.return_value = mock_readiness
 
         result = rcs.inspect_search_state(
-            "9234", "https://linkedin.com/talent/hire/123/discover/recruiterSearch"
+            "9230", "https://linkedin.com/talent/hire/123/discover/recruiterSearch"
         )
 
         assert result["success"] is False
@@ -333,7 +339,7 @@ class TestInspectSearchState:
         mock_probe_class.return_value = mock_probe
 
         result = rcs.inspect_search_state(
-            "9234", "https://linkedin.com/talent/hire/123/discover/recruiterSearch"
+            "9230", "https://linkedin.com/talent/hire/123/discover/recruiterSearch"
         )
 
         # Should NOT be ready when search creation prompt is visible
@@ -373,7 +379,7 @@ class TestInspectSearchState:
         mock_probe_class.return_value = mock_probe
 
         result = rcs.inspect_search_state(
-            "9234",
+            "9230",
             "https://linkedin.com/talent/hire/1692252652/discover/recruiterSearch",
         )
 
@@ -404,13 +410,13 @@ class TestInspectSearchState:
             "code": "browser_unavailable",
             "summary": "Browser not available",
             "steps": ["Start Chrome"],
-            "context": {"cdp_port": "9234"},  # Missing recovery_command
+            "context": {"cdp_port": "9230"},  # Missing recovery_command
             "actor": "agent",
         }
         mock_classify.return_value = mock_readiness
 
         result = rcs.inspect_search_state(
-            "9234",
+            "9230",
             "https://linkedin.com/talent/hire/123/discover/recruiterSearch",
             work_dir=Path("/tmp/test"),
         )
@@ -449,7 +455,7 @@ class TestInspectSearchState:
         }
 
         result = rcs.inspect_search_state(
-            "9234",
+            "9230",
             "https://linkedin.com/talent/hire/123/discover/recruiterSearch",
             work_dir=Path("/tmp/test"),
         )
@@ -474,10 +480,10 @@ class TestEnsureBrowserReady:
         mock_check_available.return_value = True
         mock_probe.return_value = {"authenticated": True}
 
-        ctx = {"work_dir": "/tmp/test", "profile": {"CDP_PORT": "9234"}}
-        port, blocker = rcs._ensure_browser_ready(ctx, "9234")
+        ctx = {"work_dir": "/tmp/test", "profile": {"CDP_PORT": "9230"}}
+        port, blocker = rcs._ensure_browser_ready(ctx, "9230")
 
-        assert port == "9234"
+        assert port == "9230"
         assert blocker is None
         mock_bootstrap.assert_not_called()
 
@@ -491,14 +497,14 @@ class TestEnsureBrowserReady:
         mock_check_available.return_value = False
         mock_bootstrap.return_value = {
             "success": True,
-            "cdp_port": "9234",
+            "cdp_port": "9230",
             "message": "Bootstrap succeeded",
         }
 
-        ctx = {"work_dir": "/tmp/test", "profile": {"CDP_PORT": "9234"}}
-        port, blocker = rcs._ensure_browser_ready(ctx, "9234")
+        ctx = {"work_dir": "/tmp/test", "profile": {"CDP_PORT": "9230"}}
+        port, blocker = rcs._ensure_browser_ready(ctx, "9230")
 
-        assert port == "9234"
+        assert port == "9230"
         assert blocker is None
         mock_bootstrap.assert_called_once()
 
@@ -515,10 +521,10 @@ class TestEnsureBrowserReady:
             "error": "Chrome not found",
         }
 
-        ctx = {"work_dir": "/tmp/test", "profile": {"CDP_PORT": "9234"}}
-        port, blocker = rcs._ensure_browser_ready(ctx, "9234")
+        ctx = {"work_dir": "/tmp/test", "profile": {"CDP_PORT": "9230"}}
+        port, blocker = rcs._ensure_browser_ready(ctx, "9230")
 
-        assert port == "9234"
+        assert port == "9230"
         assert blocker is not None
         assert blocker["code"] == "browser_unavailable"
         assert "work_dir" in blocker["context"]
@@ -538,8 +544,8 @@ class TestEnsureBrowserReady:
         mock_check_available.return_value = False
         mock_bootstrap.return_value = {"success": False, "error": "Failed"}
 
-        ctx = {"work_dir": "/tmp/test", "profile": {"CDP_PORT": "9234"}}
-        port, blocker = rcs._ensure_browser_ready(ctx, "9234")
+        ctx = {"work_dir": "/tmp/test", "profile": {"CDP_PORT": "9230"}}
+        port, blocker = rcs._ensure_browser_ready(ctx, "9230")
 
         recovery_cmd = blocker["context"]["recovery_command"]
         assert "bash" in recovery_cmd
@@ -565,8 +571,8 @@ class TestEnsureBrowserReady:
             "error": "Authentication timeout after 300 seconds",
         }
 
-        ctx = {"work_dir": "/tmp/test", "profile": {"CDP_PORT": "9234"}}
-        port, blocker = rcs._ensure_browser_ready(ctx, "9234")
+        ctx = {"work_dir": "/tmp/test", "profile": {"CDP_PORT": "9230"}}
+        port, blocker = rcs._ensure_browser_ready(ctx, "9230")
 
         # Should be auth_required, not browser_unavailable
         assert blocker["code"] == "auth_required"
@@ -588,8 +594,8 @@ class TestEnsureBrowserReady:
             "error": "Could not find system Chrome installation",
         }
 
-        ctx = {"work_dir": "/tmp/test", "profile": {"CDP_PORT": "9234"}}
-        port, blocker = rcs._ensure_browser_ready(ctx, "9234")
+        ctx = {"work_dir": "/tmp/test", "profile": {"CDP_PORT": "9230"}}
+        port, blocker = rcs._ensure_browser_ready(ctx, "9230")
 
         # Should be browser_unavailable for Chrome not found
         assert blocker["code"] == "browser_unavailable"
@@ -613,8 +619,8 @@ class TestEnsureBrowserReady:
         mock_bootstrap.return_value = {"success": False, "error": "Failed"}
 
         # Context WITHOUT work_dir - should use canonical default, not skill dir
-        ctx = {"profile": {"CDP_PORT": "9234"}}  # No work_dir key
-        port, blocker = rcs._ensure_browser_ready(ctx, "9234")
+        ctx = {"profile": {"CDP_PORT": "9230"}}  # No work_dir key
+        port, blocker = rcs._ensure_browser_ready(ctx, "9230")
 
         # Verify the work_dir in blocker is NOT skill-dir-derived
         work_dir_in_blocker = blocker["context"]["work_dir"]
@@ -625,9 +631,10 @@ class TestEnsureBrowserReady:
             f"work_dir contains scripts path: {work_dir_in_blocker}"
         )
         # Should use canonical default location
-        assert "Desktop" in work_dir_in_blocker or "linkedin-sourcing" in work_dir_in_blocker, (
-            f"work_dir should be canonical default, got: {work_dir_in_blocker}"
-        )
+        assert (
+            "Desktop" in work_dir_in_blocker
+            or "linkedin-sourcing" in work_dir_in_blocker
+        ), f"work_dir should be canonical default, got: {work_dir_in_blocker}"
 
     @patch("auth_bootstrap.bootstrap_auth_session")
     @patch("browser_utils.check_browser_available")
@@ -640,8 +647,8 @@ class TestEnsureBrowserReady:
         mock_bootstrap.return_value = {"success": False, "error": "Failed"}
 
         # Context with empty work_dir - should use canonical default
-        ctx = {"work_dir": "", "profile": {"CDP_PORT": "9234"}}
-        port, blocker = rcs._ensure_browser_ready(ctx, "9234")
+        ctx = {"work_dir": "", "profile": {"CDP_PORT": "9230"}}
+        port, blocker = rcs._ensure_browser_ready(ctx, "9230")
 
         # Verify the work_dir in blocker is NOT skill-dir-derived
         work_dir_in_blocker = blocker["context"]["work_dir"]
@@ -658,20 +665,20 @@ class TestEnsureBrowserReady:
         mock_check_available.return_value = False
         mock_bootstrap.return_value = {
             "success": True,
-            "cdp_port": "9234",
+            "cdp_port": "9230",
         }
 
         ctx = {
             "work_dir": "/tmp/runtime-work",
             "profile": {
-                "CDP_PORT": "9234",
+                "CDP_PORT": "9230",
                 "CHROME_PROFILE": "$WORK_DIR/custom-profile",
             },
         }
 
-        port, blocker = rcs._ensure_browser_ready(ctx, "9234")
+        port, blocker = rcs._ensure_browser_ready(ctx, "9230")
 
-        assert port == "9234"
+        assert port == "9230"
         assert blocker is None
         assert mock_bootstrap.call_args.kwargs["chrome_profile"] == Path(
             "/tmp/runtime-work/custom-profile"
@@ -687,20 +694,20 @@ class TestEnsureBrowserReady:
         mock_check_available.return_value = False
         mock_bootstrap.return_value = {
             "success": True,
-            "cdp_port": "9234",
+            "cdp_port": "9230",
         }
 
         ctx = {
             "work_dir": "/tmp/runtime-work",
             "profile": {
-                "CDP_PORT": "9234",
+                "CDP_PORT": "9230",
                 "CHROME_PROFILE": "${WORK_DIR}/custom-profile",
             },
         }
 
-        port, blocker = rcs._ensure_browser_ready(ctx, "9234")
+        port, blocker = rcs._ensure_browser_ready(ctx, "9230")
 
-        assert port == "9234"
+        assert port == "9230"
         assert blocker is None
         assert mock_bootstrap.call_args.kwargs["chrome_profile"] == Path(
             "/tmp/runtime-work/custom-profile"
@@ -719,7 +726,7 @@ class TestRunCreateSearchPhaseBrowserBootstrap:
         """brief_only mode should not attempt browser bootstrap."""
         config_path = tmp_path / "config.sh"
         config_path.write_text("", encoding="utf-8")
-        mock_ctx.return_value = {"profile": {"CDP_PORT": "9234"}}
+        mock_ctx.return_value = {"profile": {"CDP_PORT": "9230"}}
         mock_resolve.return_value = (
             config_path,
             {
@@ -746,7 +753,7 @@ class TestRunCreateSearchPhaseBrowserBootstrap:
         """Normal mode should proactively ensure browser is ready."""
         config_path = tmp_path / "config.sh"
         config_path.write_text("", encoding="utf-8")
-        mock_ctx.return_value = {"profile": {"CDP_PORT": "9234"}}
+        mock_ctx.return_value = {"profile": {"CDP_PORT": "9230"}}
         mock_resolve.return_value = (
             config_path,
             {
@@ -755,7 +762,7 @@ class TestRunCreateSearchPhaseBrowserBootstrap:
             },
             "123",
         )
-        mock_ensure_ready.return_value = ("9234", None)  # Browser ready
+        mock_ensure_ready.return_value = ("9230", None)  # Browser ready
         mock_inspect.return_value = {
             "success": True,
             "status": "ready",
@@ -777,7 +784,7 @@ class TestRunCreateSearchPhaseBrowserBootstrap:
         """Should return blocker immediately if browser cannot be made ready."""
         config_path = tmp_path / "config.sh"
         config_path.write_text("", encoding="utf-8")
-        mock_ctx.return_value = {"profile": {"CDP_PORT": "9234"}}
+        mock_ctx.return_value = {"profile": {"CDP_PORT": "9230"}}
         mock_resolve.return_value = (
             config_path,
             {
@@ -791,11 +798,11 @@ class TestRunCreateSearchPhaseBrowserBootstrap:
             "summary": "Chrome browser is not available",
             "context": {
                 "work_dir": "/tmp/test",
-                "cdp_port": "9234",
+                "cdp_port": "9230",
                 "recovery_command": 'bash "/path/to/connect_browser.sh"',
             },
         }
-        mock_ensure_ready.return_value = ("9234", blocker)
+        mock_ensure_ready.return_value = ("9230", blocker)
 
         result = rcs.run_create_search_phase("proj-1")
 
@@ -823,7 +830,9 @@ class TestEffectiveTargetCompanies:
         """Should exclude TikTok/ByteDance when JD URL is lifeattiktok.com."""
         config = {"COMPANIES": "TikTok, ByteDance, Google, Meta"}
 
-        result = rcs.get_effective_target_companies(config, "", "https://lifeattiktok.com/jobs/123")
+        result = rcs.get_effective_target_companies(
+            config, "", "https://lifeattiktok.com/jobs/123"
+        )
 
         assert "TikTok" not in result
         assert "ByteDance" not in result
@@ -834,7 +843,9 @@ class TestEffectiveTargetCompanies:
         """Should exclude TikTok/ByteDance when JD URL is tiktok.com."""
         config = {"COMPANIES": "TikTok, Google"}
 
-        result = rcs.get_effective_target_companies(config, "", "https://tiktok.com/careers")
+        result = rcs.get_effective_target_companies(
+            config, "", "https://tiktok.com/careers"
+        )
 
         assert "TikTok" not in result
         assert "Google" in result
@@ -843,7 +854,9 @@ class TestEffectiveTargetCompanies:
         """Should exclude TikTok/ByteDance when JD URL is bytedance.com."""
         config = {"COMPANIES": "ByteDance, Google"}
 
-        result = rcs.get_effective_target_companies(config, "", "https://bytedance.com/jobs")
+        result = rcs.get_effective_target_companies(
+            config, "", "https://bytedance.com/jobs"
+        )
 
         assert "ByteDance" not in result
         assert "Google" in result
@@ -863,7 +876,9 @@ class TestEffectiveTargetCompanies:
         """Should handle empty COMPANIES config gracefully."""
         config = {}
 
-        result = rcs.get_effective_target_companies(config, "", "https://lifeattiktok.com")
+        result = rcs.get_effective_target_companies(
+            config, "", "https://lifeattiktok.com"
+        )
 
         assert result == []
 
@@ -871,7 +886,9 @@ class TestEffectiveTargetCompanies:
         """Should preserve original case for companies that are not excluded."""
         config = {"COMPANIES": "Google, Meta, ByteDance"}
 
-        result = rcs.get_effective_target_companies(config, "", "https://lifeattiktok.com")
+        result = rcs.get_effective_target_companies(
+            config, "", "https://lifeattiktok.com"
+        )
 
         assert "Google" in result
         assert "Meta" in result
@@ -884,16 +901,24 @@ class TestEffectiveTargetCompanies:
         Issue: Substring matching like 'tiktok' in 'TikTokAnalytics' would incorrectly
         exclude unrelated companies. Should only exclude exact alias matches.
         """
-        config = {"COMPANIES": "TikTok, TikTokAnalytics, ByteDance, ByteDanceResearch, Google"}
+        config = {
+            "COMPANIES": "TikTok, TikTokAnalytics, ByteDance, ByteDanceResearch, Google"
+        }
 
-        result = rcs.get_effective_target_companies(config, "", "https://lifeattiktok.com")
+        result = rcs.get_effective_target_companies(
+            config, "", "https://lifeattiktok.com"
+        )
 
         # Exact matches should be excluded
         assert "TikTok" not in result
         assert "ByteDance" not in result
         # Similar names should NOT be excluded (not exact matches)
-        assert "TikTokAnalytics" in result, "TikTokAnalytics should NOT be excluded - not an exact match"
-        assert "ByteDanceResearch" in result, "ByteDanceResearch should NOT be excluded - not an exact match"
+        assert "TikTokAnalytics" in result, (
+            "TikTokAnalytics should NOT be excluded - not an exact match"
+        )
+        assert "ByteDanceResearch" in result, (
+            "ByteDanceResearch should NOT be excluded - not an exact match"
+        )
         # Unrelated companies should be preserved
         assert "Google" in result
 
@@ -901,7 +926,9 @@ class TestEffectiveTargetCompanies:
         """Companies containing 'tiktok' as substring but not exact match should be kept."""
         config = {"COMPANIES": "MyTikTokTool, TikTok, TikTokHelper"}
 
-        result = rcs.get_effective_target_companies(config, "", "https://tiktok.com/careers")
+        result = rcs.get_effective_target_companies(
+            config, "", "https://tiktok.com/careers"
+        )
 
         # Only exact "TikTok" should be excluded
         assert "TikTok" not in result
@@ -974,7 +1001,9 @@ class TestFilterInspectionHelpers:
         analysis = rcs._analyze_filter_state(config, company_chips, title_chips)
 
         assert len(analysis["malformed_titles"]) > 0
-        assert "Platform EngineerInfrastructure Engineer" in analysis["malformed_titles"]
+        assert (
+            "Platform EngineerInfrastructure Engineer" in analysis["malformed_titles"]
+        )
         assert len(analysis["issues"]) > 0
         assert any("malformed" in issue.lower() for issue in analysis["issues"])
 
@@ -1009,12 +1038,17 @@ class TestFilterInspectionHelpers:
         config = {
             "COMPANIES": "TikTok, ByteDance, Google, Meta",
         }
-        company_chips = ["Google", "Meta"]  # TikTok and ByteDance not expected for TikTok JD
+        company_chips = [
+            "Google",
+            "Meta",
+        ]  # TikTok and ByteDance not expected for TikTok JD
         title_chips = []
         jd_text = "Join us at TikTok!"
         jd_url = "https://lifeattiktok.com/jobs"
 
-        analysis = rcs._analyze_filter_state(config, company_chips, title_chips, jd_text, jd_url)
+        analysis = rcs._analyze_filter_state(
+            config, company_chips, title_chips, jd_text, jd_url
+        )
 
         # Should NOT report TikTok/ByteDance as missing since they're excluded for TikTok JDs
         assert "tiktok" not in analysis["missing_companies"]
@@ -1034,7 +1068,9 @@ class TestFilterInspectionHelpers:
         title_chips = []
         jd_url = "https://tiktok.com/careers"
 
-        analysis = rcs._analyze_filter_state(config, company_chips, title_chips, jd_url=jd_url)
+        analysis = rcs._analyze_filter_state(
+            config, company_chips, title_chips, jd_url=jd_url
+        )
 
         # Should report Meta and Amazon as missing (not TikTok)
         assert "meta" in analysis["missing_companies"]
@@ -1054,7 +1090,9 @@ class TestFilterReconciliation:
 
     @patch("run_create_search._click_filter_button")
     @patch("run_create_search._add_company_filters")
-    def test_reconcile_adds_missing_companies(self, mock_add_companies, mock_click_button):
+    def test_reconcile_adds_missing_companies(
+        self, mock_add_companies, mock_click_button
+    ):
         """Reconciliation should attempt to add missing companies."""
         mock_click_button.return_value = True
         mock_add_companies.return_value = {"added": ["Amazon"], "failed": []}
@@ -1065,17 +1103,19 @@ class TestFilterReconciliation:
             "malformed_titles": [],
         }
 
-        result = rcs._reconcile_filter_state("9234", current_analysis)
+        result = rcs._reconcile_filter_state("9230", current_analysis)
 
         assert result["attempted"] is True
-        mock_click_button.assert_called_once_with("9234", "companies")
-        mock_add_companies.assert_called_once_with("9234", ["amazon"])
+        mock_click_button.assert_called_once_with("9230", "companies")
+        mock_add_companies.assert_called_once_with("9230", ["amazon"])
         assert result["companies_added"] == ["Amazon"]
         assert result["companies_failed"] == []
 
     @patch("run_create_search._click_filter_button")
     @patch("run_create_search._remove_malformed_title_chips")
-    def test_reconcile_removes_malformed_titles(self, mock_remove_titles, mock_click_button):
+    def test_reconcile_removes_malformed_titles(
+        self, mock_remove_titles, mock_click_button
+    ):
         """Reconciliation should attempt to remove malformed title chips."""
         mock_click_button.return_value = True
         mock_remove_titles.return_value = {"removed": ["EngineerManager"], "failed": []}
@@ -1086,11 +1126,11 @@ class TestFilterReconciliation:
             "malformed_titles": ["EngineerManager"],
         }
 
-        result = rcs._reconcile_filter_state("9234", current_analysis)
+        result = rcs._reconcile_filter_state("9230", current_analysis)
 
         assert result["attempted"] is True
-        mock_click_button.assert_called_once_with("9234", "titles")
-        mock_remove_titles.assert_called_once_with("9234", ["EngineerManager"])
+        mock_click_button.assert_called_once_with("9230", "titles")
+        mock_remove_titles.assert_called_once_with("9230", ["EngineerManager"])
         assert result["titles_removed"] == ["EngineerManager"]
         assert result["titles_failed"] == []
 
@@ -1103,7 +1143,7 @@ class TestFilterReconciliation:
             "malformed_titles": [],
         }
 
-        result = rcs._reconcile_filter_state("9234", current_analysis)
+        result = rcs._reconcile_filter_state("9230", current_analysis)
 
     @patch("run_create_search._click_filter_button")
     def test_reconcile_records_failed_companies(self, mock_click_button):
@@ -1116,7 +1156,7 @@ class TestFilterReconciliation:
             "malformed_titles": [],
         }
 
-        result = rcs._reconcile_filter_state("9234", current_analysis)
+        result = rcs._reconcile_filter_state("9230", current_analysis)
 
         assert result["attempted"] is True
         assert result["companies_failed"] == ["amazon"]
@@ -1124,7 +1164,9 @@ class TestFilterReconciliation:
 
     @patch("run_create_search._click_filter_button")
     @patch("run_create_search._add_company_filters")
-    def test_reconcile_handles_partial_company_add(self, mock_add_companies, mock_click_button):
+    def test_reconcile_handles_partial_company_add(
+        self, mock_add_companies, mock_click_button
+    ):
         """Reconciliation should handle partial success when adding companies."""
         mock_click_button.return_value = True
         mock_add_companies.return_value = {"added": ["Amazon"], "failed": ["Netflix"]}
@@ -1135,7 +1177,7 @@ class TestFilterReconciliation:
             "malformed_titles": [],
         }
 
-        result = rcs._reconcile_filter_state("9234", current_analysis)
+        result = rcs._reconcile_filter_state("9230", current_analysis)
         assert result["attempted"] is True
         assert "Amazon" in result["companies_added"]
         assert "Netflix" in result["companies_failed"]
@@ -1207,7 +1249,7 @@ class TestVolatileParamRegression:
         mock_probe_class.return_value = mock_probe
 
         result = rcs.inspect_search_state(
-            "9234",
+            "9230",
             "https://linkedin.com/talent/hire/1692252652/discover/recruiterSearch",
         )
 
@@ -1244,7 +1286,7 @@ class TestVolatileParamRegression:
         mock_probe_class.return_value = mock_probe
 
         result = rcs.inspect_search_state(
-            "9234",
+            "9230",
             "https://linkedin.com/talent/hire/1692252652/discover/recruiterSearch",
         )
 
@@ -1270,7 +1312,7 @@ class TestChromeProfilePathRegression:
             "code": "browser_unavailable",
             "summary": "Browser not available",
             "steps": ["Start Chrome"],
-            "context": {"cdp_port": "9234"},
+            "context": {"cdp_port": "9230"},
             "actor": "agent",
         }
 
@@ -1279,7 +1321,7 @@ class TestChromeProfilePathRegression:
         custom_chrome_profile = Path("/custom/chrome/profile")
 
         result = rcs._enrich_browser_unavailable_blocker(
-            action_required, "9234", custom_work_dir, custom_chrome_profile
+            action_required, "9230", custom_work_dir, custom_chrome_profile
         )
 
         # Must use the provided chrome_profile from runtime, not a derived path
@@ -1292,7 +1334,7 @@ class TestChromeProfilePathRegression:
             "code": "browser_unavailable",
             "summary": "Browser not available",
             "steps": ["Start Chrome"],
-            "context": {"cdp_port": "9234"},
+            "context": {"cdp_port": "9230"},
             "actor": "agent",
         }
 
@@ -1300,7 +1342,7 @@ class TestChromeProfilePathRegression:
 
         # Call without providing chrome_profile - should default to $WORK_DIR/chrome-profile
         result = rcs._enrich_browser_unavailable_blocker(
-            action_required, "9234", custom_work_dir, None
+            action_required, "9230", custom_work_dir, None
         )
 
         # Default should be based on provided work_dir
@@ -1314,13 +1356,13 @@ class TestChromeProfilePathRegression:
             "code": "browser_unavailable",
             "summary": "Browser not available",
             "steps": ["Start Chrome"],
-            "context": {"cdp_port": "9234"},
+            "context": {"cdp_port": "9230"},
             "actor": "agent",
         }
 
         # Even when work_dir is None, should use a sensible default (not skill dir)
         result = rcs._enrich_browser_unavailable_blocker(
-            action_required, "9234", None, None
+            action_required, "9230", None, None
         )
 
         # Should NOT contain "skills/linkedin-sourcing" or SCRIPT_DIR-derived paths
@@ -1331,7 +1373,9 @@ class TestChromeProfilePathRegression:
 
     @patch("browser_utils.classify_browser_readiness")
     @patch("browser_utils.run_browser_command")
-    def test_inspect_search_state_passes_chrome_profile_to_enrich(self, mock_run_browser, mock_classify):
+    def test_inspect_search_state_passes_chrome_profile_to_enrich(
+        self, mock_run_browser, mock_classify
+    ):
         """inspect_search_state should pass chrome_profile through to enrichment."""
         mock_run_browser.return_value = {"error": "connection refused"}
         mock_readiness = MagicMock()
@@ -1339,7 +1383,7 @@ class TestChromeProfilePathRegression:
         mock_readiness.action_required.code = "browser_unavailable"
         mock_readiness.action_required.to_dict.return_value = {
             "code": "browser_unavailable",
-            "context": {"cdp_port": "9234"},
+            "context": {"cdp_port": "9230"},
         }
         mock_classify.return_value = mock_readiness
 
@@ -1347,14 +1391,16 @@ class TestChromeProfilePathRegression:
         custom_chrome_profile = Path("/runtime/chrome-profile")
 
         result = rcs.inspect_search_state(
-            "9234",
+            "9230",
             "https://linkedin.com/talent/hire/123/discover/recruiterSearch",
             work_dir=custom_work_dir,
             chrome_profile=custom_chrome_profile,
         )
 
         # Should preserve the provided chrome_profile in the enriched blocker
-        assert result["action_required"]["context"]["chrome_profile"] == str(custom_chrome_profile)
+        assert result["action_required"]["context"]["chrome_profile"] == str(
+            custom_chrome_profile
+        )
         assert result["action_required"]["context"]["work_dir"] == str(custom_work_dir)
 
     @patch("run_create_search.inspect_search_state")
@@ -1378,7 +1424,7 @@ class TestChromeProfilePathRegression:
         mock_ctx.return_value = {
             "work_dir": str(runtime_work_dir),
             "profile": {
-                "CDP_PORT": "9234",
+                "CDP_PORT": "9230",
                 "CHROME_PROFILE": runtime_chrome_profile,
             },
         }
@@ -1390,7 +1436,7 @@ class TestChromeProfilePathRegression:
             },
             "123",
         )
-        mock_ensure_ready.return_value = ("9234", None)
+        mock_ensure_ready.return_value = ("9230", None)
         mock_inspect.return_value = {
             "success": False,
             "status": "search_not_configured",
@@ -1429,7 +1475,7 @@ class TestChromeProfilePathRegression:
         runtime_work_dir = Path("/clean/work/dir")
         mock_ctx.return_value = {
             "work_dir": str(runtime_work_dir),
-            "profile": {"CDP_PORT": "9234"},
+            "profile": {"CDP_PORT": "9230"},
         }
         mock_resolve.return_value = (
             config_path,
@@ -1439,7 +1485,7 @@ class TestChromeProfilePathRegression:
             },
             "123",
         )
-        mock_ensure_ready.return_value = ("9234", None)
+        mock_ensure_ready.return_value = ("9230", None)
 
         # Simulate browser_unavailable response from inspect_search_state
         mock_inspect.return_value = {
@@ -1487,7 +1533,7 @@ class TestChromeProfilePathRegression:
             "code": "browser_unavailable",
             "summary": "Browser not available",
             "steps": ["Start Chrome"],
-            "context": {"cdp_port": "9234"},
+            "context": {"cdp_port": "9230"},
             "actor": "agent",
         }
 
@@ -1496,7 +1542,7 @@ class TestChromeProfilePathRegression:
         runtime_chrome_profile = "$WORK_DIR/custom-profile"
 
         result = rcs._enrich_browser_unavailable_blocker(
-            action_required, "9234", runtime_work_dir, runtime_chrome_profile
+            action_required, "9230", runtime_work_dir, runtime_chrome_profile
         )
 
         # Must resolve $WORK_DIR to the actual path
@@ -1516,7 +1562,7 @@ class TestChromeProfilePathRegression:
             "code": "browser_unavailable",
             "summary": "Browser not available",
             "steps": ["Start Chrome"],
-            "context": {"cdp_port": "9234"},
+            "context": {"cdp_port": "9230"},
             "actor": "agent",
         }
 
@@ -1525,7 +1571,7 @@ class TestChromeProfilePathRegression:
         runtime_chrome_profile = "${WORK_DIR}/custom-profile"
 
         result = rcs._enrich_browser_unavailable_blocker(
-            action_required, "9234", runtime_work_dir, runtime_chrome_profile
+            action_required, "9230", runtime_work_dir, runtime_chrome_profile
         )
 
         # Must resolve ${WORK_DIR} to the actual path
@@ -1545,7 +1591,7 @@ class TestChromeProfilePathRegression:
             "code": "browser_unavailable",
             "summary": "Browser not available",
             "steps": ["Start Chrome"],
-            "context": {"cdp_port": "9234"},
+            "context": {"cdp_port": "9230"},
             "actor": "agent",
         }
 
@@ -1554,7 +1600,7 @@ class TestChromeProfilePathRegression:
         runtime_chrome_profile = "~/my-chrome-profile"
 
         result = rcs._enrich_browser_unavailable_blocker(
-            action_required, "9234", runtime_work_dir, runtime_chrome_profile
+            action_required, "9230", runtime_work_dir, runtime_chrome_profile
         )
 
         actual_profile = result["context"]["chrome_profile"]
@@ -1582,7 +1628,7 @@ class TestFacetSpecificChipExtraction:
             }
         }
 
-        result = rcs._extract_filter_chips_from_page("9234")
+        result = rcs._extract_filter_chips_from_page("9230")
 
         assert "Google" in result["companies"]
         assert "Meta" in result["companies"]
@@ -1601,7 +1647,7 @@ class TestFacetSpecificChipExtraction:
             }
         }
 
-        result = rcs._extract_filter_chips_from_page("9234")
+        result = rcs._extract_filter_chips_from_page("9230")
 
         assert "Software Engineer" in result["titles"]
         assert "Senior Developer" in result["titles"]
@@ -1618,7 +1664,7 @@ class TestFacetSpecificChipExtraction:
             }
         }
 
-        result = rcs._extract_filter_chips_from_page("9234")
+        result = rcs._extract_filter_chips_from_page("9230")
 
         # Multi-word company names should be extracted correctly
         assert "Google DeepMind" in result["companies"]
@@ -1630,7 +1676,7 @@ class TestFacetSpecificChipExtraction:
         """Should return empty lists when browser command fails."""
         mock_run_browser.side_effect = Exception("Connection failed")
 
-        result = rcs._extract_filter_chips_from_page("9234")
+        result = rcs._extract_filter_chips_from_page("9230")
 
         assert result["companies"] == []
         assert result["titles"] == []
@@ -1655,7 +1701,7 @@ class TestCompanyAddExactMatch:
             {"parsed": {"success": True, "verified": True, "chip": "Google"}},  # Verify
         ]
 
-        result = rcs._add_company_filters("9234", ["Google"])
+        result = rcs._add_company_filters("9230", ["Google"])
 
         assert "Google" in result["added"]
         assert result["failed"] == []
@@ -1668,8 +1714,12 @@ class TestCompanyAddExactMatch:
 
         # Verify explicit click on the exact match option via ref
         click_call = mock_run_browser.call_args_list[3]
-        assert click_call[0][1] == "click", f"Expected 'click' command, got {click_call[0][1]}"
-        assert click_call[0][2] == "@e123", f"Expected '@e123' ref, got {click_call[0][2]}"
+        assert click_call[0][1] == "click", (
+            f"Expected 'click' command, got {click_call[0][1]}"
+        )
+        assert click_call[0][2] == "@e123", (
+            f"Expected '@e123' ref, got {click_call[0][2]}"
+        )
 
         # Verify the snapshot command is scoped to the Companies facet
         snapshot_call = mock_run_browser.call_args_list[2]
@@ -1693,7 +1743,7 @@ class TestCompanyAddExactMatch:
             ),
         ]
 
-        result = rcs._add_company_filters("9234", ["NonExistentCorp"])
+        result = rcs._add_company_filters("9230", ["NonExistentCorp"])
 
         assert "NonExistentCorp" in result["failed"]
         assert result["added"] == []
@@ -1705,29 +1755,35 @@ class TestCompanyAddExactMatch:
     def test_handles_case_insensitive_exact_match(self, mock_run_browser):
         """Should match company case-insensitively and click exact match."""
         mock_run_browser.side_effect = [
-            {"parsed": {"success": True, "company": "google"}},  # Focus (lowercase input)
+            {
+                "parsed": {"success": True, "company": "google"}
+            },  # Focus (lowercase input)
             {"error": None},  # Keyboard inserttext
             self._snapshot_output('- option "Google" [ref=e456]'),
             {"error": None},  # Click @e456
             {"parsed": {"success": True, "verified": True}},  # Verify
         ]
 
-        result = rcs._add_company_filters("9234", ["google"])
+        result = rcs._add_company_filters("9230", ["google"])
 
         assert "google" in result["added"]
 
     @patch("browser_utils.run_browser_command")
-    def test_matches_add_to_list_option_when_exact_label_not_present(self, mock_run_browser):
+    def test_matches_add_to_list_option_when_exact_label_not_present(
+        self, mock_run_browser
+    ):
         """Should click Recruiter's add-to-list option for the target company."""
         mock_run_browser.side_effect = [
             {"parsed": {"success": True, "company": "Amazon"}},
             {"error": None},
-            self._snapshot_output('- option " , Add Amazon to list of filters" [ref=e654]'),
+            self._snapshot_output(
+                '- option " , Add Amazon to list of filters" [ref=e654]'
+            ),
             {"error": None},
             {"parsed": {"success": True, "verified": True, "chip": "Amazon"}},
         ]
 
-        result = rcs._add_company_filters("9234", ["Amazon"])
+        result = rcs._add_company_filters("9230", ["Amazon"])
 
         assert result["added"] == ["Amazon"]
         assert result["failed"] == []
@@ -1738,7 +1794,9 @@ class TestCompanyAddExactMatch:
     def test_opens_closed_facet_before_adding(self, mock_run_browser):
         """Should click facet button to open if initially closed."""
         mock_run_browser.side_effect = [
-            {"parsed": {"success": False, "reason": "facet_closed", "retry": True}},  # First attempt - closed
+            {
+                "parsed": {"success": False, "reason": "facet_closed", "retry": True}
+            },  # First attempt - closed
             {"parsed": {"success": True, "company": "Meta"}},  # Retry - success
             {"error": None},  # Keyboard inserttext
             self._snapshot_output('- option "Meta" [ref=e789]'),
@@ -1746,10 +1804,12 @@ class TestCompanyAddExactMatch:
             {"parsed": {"success": True, "verified": True}},  # Verify
         ]
 
-        result = rcs._add_company_filters("9234", ["Meta"])
+        result = rcs._add_company_filters("9230", ["Meta"])
 
         assert "Meta" in result["added"]
-        assert mock_run_browser.call_count == 6  # Initial + retry + keyboard + snapshot + click + verify
+        assert (
+            mock_run_browser.call_count == 6
+        )  # Initial + retry + keyboard + snapshot + click + verify
 
     @patch("browser_utils.run_browser_command")
     def test_handles_multiple_companies_mixed_results(self, mock_run_browser):
@@ -1768,7 +1828,7 @@ class TestCompanyAddExactMatch:
             self._snapshot_output('- option "Google" [ref=e1]'),
         ]
 
-        result = rcs._add_company_filters("9234", ["Google", "NonExistentCorp"])
+        result = rcs._add_company_filters("9230", ["Google", "NonExistentCorp"])
 
         assert "Google" in result["added"]
         assert "NonExistentCorp" in result["failed"]
@@ -1785,14 +1845,20 @@ class TestCompanyAddExactMatch:
             {"error": None},  # Keyboard inserttext
             self._snapshot_output('- option "Airbnb" [ref=e222]'),
             {"error": None},  # Click @e222
-            {"parsed": {"success": False, "reason": "chip_not_found_after_add"}},  # Verify FAILS
+            {
+                "parsed": {"success": False, "reason": "chip_not_found_after_add"}
+            },  # Verify FAILS
         ]
 
-        result = rcs._add_company_filters("9234", ["Airbnb"])
+        result = rcs._add_company_filters("9230", ["Airbnb"])
 
         # Should be in failed, NOT in added
-        assert "Airbnb" in result["failed"], "Company with failed verification should be in failed list"
-        assert "Airbnb" not in result["added"], "Company with failed verification should NOT be in added list"
+        assert "Airbnb" in result["failed"], (
+            "Company with failed verification should be in failed list"
+        )
+        assert "Airbnb" not in result["added"], (
+            "Company with failed verification should NOT be in added list"
+        )
 
     @patch("browser_utils.run_browser_command")
     def test_uses_explicit_click_on_exact_match_option(self, mock_run_browser):
@@ -1812,7 +1878,7 @@ class TestCompanyAddExactMatch:
             {"parsed": {"success": True, "verified": True}},  # Verify
         ]
 
-        result = rcs._add_company_filters("9234", ["Amazon"])
+        result = rcs._add_company_filters("9230", ["Amazon"])
 
         assert "Amazon" in result["added"]
 
@@ -1820,10 +1886,16 @@ class TestCompanyAddExactMatch:
         calls = mock_run_browser.call_args_list
         # Call 3 should be: run_browser_command(cdp_port, "click", "@e333")
         click_call = calls[3]
-        assert click_call[0][1] == "click", f"Expected 'click' command, got {click_call[0][1]}"
-        assert click_call[0][2] == "@e333", f"Expected '@e333' ref, got {click_call[0][2]}"
+        assert click_call[0][1] == "click", (
+            f"Expected 'click' command, got {click_call[0][1]}"
+        )
+        assert click_call[0][2] == "@e333", (
+            f"Expected '@e333' ref, got {click_call[0][2]}"
+        )
         # Should be exactly 3 args (cdp_port, "click", "@ref")
-        assert len(click_call[0]) == 3, f"Expected 3 args (cdp, 'click', '@ref'), got {len(click_call[0])}: {click_call[0]}"
+        assert len(click_call[0]) == 3, (
+            f"Expected 3 args (cdp, 'click', '@ref'), got {len(click_call[0])}: {click_call[0]}"
+        )
 
     @patch("browser_utils.run_browser_command")
     def test_falls_back_to_keyboard_type_if_inserttext_fails(self, mock_run_browser):
@@ -1837,7 +1909,7 @@ class TestCompanyAddExactMatch:
             {"parsed": {"success": True, "verified": True}},  # Verify
         ]
 
-        result = rcs._add_company_filters("9234", ["Netflix"])
+        result = rcs._add_company_filters("9230", ["Netflix"])
 
         assert "Netflix" in result["added"]
 
@@ -1865,14 +1937,20 @@ class TestCompanyAddExactMatch:
             {"parsed": {"success": False, "reason": "chip_not_found_after_add"}},
         ]
 
-        result = rcs._add_company_filters("9234", ["FakeCorp"])
+        result = rcs._add_company_filters("9230", ["FakeCorp"])
 
         # Should be in failed, NOT in added - no false positive from text content
-        assert "FakeCorp" in result["failed"], "Company without real chip evidence should be in failed list"
-        assert "FakeCorp" not in result["added"], "Company without real chip evidence should NOT be in added list"
+        assert "FakeCorp" in result["failed"], (
+            "Company without real chip evidence should be in failed list"
+        )
+        assert "FakeCorp" not in result["added"], (
+            "Company without real chip evidence should NOT be in added list"
+        )
 
     @patch("browser_utils.run_browser_command")
-    def test_suggestion_text_without_click_does_not_count_as_added(self, mock_run_browser):
+    def test_suggestion_text_without_click_does_not_count_as_added(
+        self, mock_run_browser
+    ):
         """REGRESSION: Suggestion text visible in dropdown must NOT count as added without click.
 
         Issue: If suggestion text appeared in the dropdown but the click failed or the
@@ -1888,7 +1966,7 @@ class TestCompanyAddExactMatch:
             {"parsed": {"success": False, "reason": "chip_not_found_after_add"}},
         ]
 
-        result = rcs._add_company_filters("9234", ["Google"])
+        result = rcs._add_company_filters("9230", ["Google"])
 
         # Even for a real company name, if no chip was added it should fail
         assert "Google" in result["failed"]
@@ -1904,7 +1982,7 @@ class TestCompanyAddExactMatch:
             {"error": "Click failed"},  # Click @e777 FAILS
         ]
 
-        result = rcs._add_company_filters("9234", ["Uber"])
+        result = rcs._add_company_filters("9230", ["Uber"])
 
         assert "Uber" in result["failed"]
         assert "Uber" not in result["added"]
@@ -1931,11 +2009,13 @@ class TestCompanyAddExactMatch:
                 '- option "Google" [ref=e123]',
                 '- option "Google DeepMind" [ref=e124]',
             ),
-            {"error": None},  # Explicit click @e123 (the exact match, not highlighted one)
+            {
+                "error": None
+            },  # Explicit click @e123 (the exact match, not highlighted one)
             {"parsed": {"success": True, "verified": True, "chip": "Google"}},  # Verify
         ]
 
-        result = rcs._add_company_filters("9234", ["Google"])
+        result = rcs._add_company_filters("9230", ["Google"])
 
         assert "Google" in result["added"]
         assert result["failed"] == []
@@ -1946,8 +2026,9 @@ class TestCompanyAddExactMatch:
         assert click_call[0][1] == "click"
         assert click_call[0][2] == "@e123"
         # CRITICAL: Should NOT use "press" command which would select highlighted option
-        assert "press" not in [c[0][1] for c in calls if len(c[0]) >= 2], \
+        assert "press" not in [c[0][1] for c in calls if len(c[0]) >= 2], (
             "Should NOT use 'press' command - must explicitly click exact match option"
+        )
 
 
 class TestReconciliationSummaryReporting:
@@ -1955,7 +2036,9 @@ class TestReconciliationSummaryReporting:
 
     @patch("run_create_search._click_filter_button")
     @patch("run_create_search._add_company_filters")
-    def test_summary_reports_added_companies(self, mock_add_companies, mock_click_button):
+    def test_summary_reports_added_companies(
+        self, mock_add_companies, mock_click_button
+    ):
         """Reconciliation summary should list successfully added companies."""
         mock_click_button.return_value = True
         mock_add_companies.return_value = {"added": ["Amazon", "Netflix"], "failed": []}
@@ -1966,14 +2049,16 @@ class TestReconciliationSummaryReporting:
             "malformed_titles": [],
         }
 
-        result = rcs._reconcile_filter_state("9234", current_analysis)
+        result = rcs._reconcile_filter_state("9230", current_analysis)
         assert result["attempted"] is True
         assert result["companies_added"] == ["Amazon", "Netflix"]
         assert result["companies_failed"] == []
 
     @patch("run_create_search._click_filter_button")
     @patch("run_create_search._add_company_filters")
-    def test_summary_reports_failed_companies(self, mock_add_companies, mock_click_button):
+    def test_summary_reports_failed_companies(
+        self, mock_add_companies, mock_click_button
+    ):
         """Reconciliation summary should list companies that failed to add."""
         mock_click_button.return_value = True
         mock_add_companies.return_value = {"added": [], "failed": ["UnknownStartup"]}
@@ -1984,18 +2069,20 @@ class TestReconciliationSummaryReporting:
             "malformed_titles": [],
         }
 
-        result = rcs._reconcile_filter_state("9234", current_analysis)
+        result = rcs._reconcile_filter_state("9230", current_analysis)
         assert result["companies_failed"] == ["UnknownStartup"]
         assert "UnknownStartup" in result["companies_failed"]
 
     @patch("run_create_search._click_filter_button")
     @patch("run_create_search._add_company_filters")
-    def test_summary_reports_partial_success(self, mock_add_companies, mock_click_button):
+    def test_summary_reports_partial_success(
+        self, mock_add_companies, mock_click_button
+    ):
         """Reconciliation summary should handle partial success correctly."""
         mock_click_button.return_value = True
         mock_add_companies.return_value = {
             "added": ["Amazon"],
-            "failed": ["NonExistentCorp"]
+            "failed": ["NonExistentCorp"],
         }
 
         config = {"COMPANIES": "Google, Amazon, NonExistentCorp"}
@@ -2004,14 +2091,16 @@ class TestReconciliationSummaryReporting:
             "malformed_titles": [],
         }
 
-        result = rcs._reconcile_filter_state("9234", current_analysis)
+        result = rcs._reconcile_filter_state("9230", current_analysis)
         assert "Amazon" in result["companies_added"]
         assert "NonExistentCorp" in result["companies_failed"]
         assert result["attempted"] is True
 
     @patch("run_create_search._click_filter_button")
     @patch("run_create_search._add_company_filters")
-    def test_summary_does_not_claim_unverified_companies(self, mock_add_companies, mock_click_button):
+    def test_summary_does_not_claim_unverified_companies(
+        self, mock_add_companies, mock_click_button
+    ):
         """REGRESSION: Summary must not claim auto-added companies that failed verification.
 
         Issue: When _add_company_filters reported companies in 'added' that were not
@@ -2022,7 +2111,7 @@ class TestReconciliationSummaryReporting:
         # All companies failed verification (truthful accounting)
         mock_add_companies.return_value = {
             "added": [],
-            "failed": ["airbnb", "akamai", "amazon", "anthropic", "apple"]
+            "failed": ["airbnb", "akamai", "amazon", "anthropic", "apple"],
         }
 
         config = {"COMPANIES": "airbnb, akamai, amazon, anthropic, apple, google"}
@@ -2031,10 +2120,14 @@ class TestReconciliationSummaryReporting:
             "malformed_titles": [],
         }
 
-        result = rcs._reconcile_filter_state("9234", current_analysis)
+        result = rcs._reconcile_filter_state("9230", current_analysis)
         # Should report empty added list when verification fails for all
-        assert result["companies_added"] == [], "Should not claim companies that failed verification"
-        assert len(result["companies_failed"]) == 5, "All failed companies should be recorded"
+        assert result["companies_added"] == [], (
+            "Should not claim companies that failed verification"
+        )
+        assert len(result["companies_failed"]) == 5, (
+            "All failed companies should be recorded"
+        )
         assert "airbnb" in result["companies_failed"]
         assert "amazon" in result["companies_failed"]
 
@@ -2069,24 +2162,34 @@ class TestSharedFacetHelpers:
     @patch("run_create_search._find_facet_option_ref")
     def test_find_company_option_ref_uses_shared_helper(self, mock_find_facet):
         """Company finder should delegate to shared facet helper."""
-        mock_find_facet.return_value = {"success": True, "matched": "Google", "ref": "e123"}
+        mock_find_facet.return_value = {
+            "success": True,
+            "matched": "Google",
+            "ref": "e123",
+        }
 
-        result = rcs._find_company_option_ref("9234", "Google")
+        result = rcs._find_company_option_ref("9230", "Google")
 
         mock_find_facet.assert_called_once_with(
-            "9234", "Google", ".search-facet-wrapper.facet-companies"
+            "9230", "Google", ".search-facet-wrapper.facet-companies"
         )
         assert result["success"] is True
 
     @patch("run_create_search._find_facet_option_ref")
     def test_find_keyword_option_ref_uses_shared_helper(self, mock_find_facet):
         """Keyword finder should delegate to shared facet helper."""
-        mock_find_facet.return_value = {"success": True, "matched": "Python", "ref": "e456"}
+        mock_find_facet.return_value = {
+            "success": True,
+            "matched": "Python",
+            "ref": "e456",
+        }
 
-        result = rcs._find_keyword_option_ref("9234", "Python")
+        result = rcs._find_keyword_option_ref("9230", "Python")
 
         mock_find_facet.assert_called_once_with(
-            "9234", "Python", ".search-facet-wrapper.facet-skills, .search-facet-wrapper.facet-skill"
+            "9230",
+            "Python",
+            ".search-facet-wrapper.facet-skills, .search-facet-wrapper.facet-skill",
         )
         assert result["success"] is True
 
@@ -2095,11 +2198,11 @@ class TestSharedFacetHelpers:
         """Company add should delegate to shared facet helper."""
         mock_add_facet.return_value = {"added": ["Google"], "failed": []}
 
-        result = rcs._add_company_filters("9234", ["Google"])
+        result = rcs._add_company_filters("9230", ["Google"])
 
         mock_add_facet.assert_called_once()
         call_args = mock_add_facet.call_args[0]
-        assert call_args[0] == "9234"
+        assert call_args[0] == "9230"
         assert call_args[1] == ["Google"]
         assert "facet-companies" in call_args[2]
         assert result["added"] == ["Google"]
@@ -2109,11 +2212,11 @@ class TestSharedFacetHelpers:
         """Keyword add should delegate to shared facet helper."""
         mock_add_facet.return_value = {"added": ["Python"], "failed": []}
 
-        result = rcs._add_keyword_filters("9234", ["Python"])
+        result = rcs._add_keyword_filters("9230", ["Python"])
 
         mock_add_facet.assert_called_once()
         call_args = mock_add_facet.call_args[0]
-        assert call_args[0] == "9234"
+        assert call_args[0] == "9230"
         assert call_args[1] == ["Python"]
         assert "facet-skills" in call_args[2]
         assert result["added"] == ["Python"]
@@ -2133,7 +2236,7 @@ class TestKeywordFilterHelpers:
             }
         }
 
-        result = rcs._extract_filter_chips_from_page("9234")
+        result = rcs._extract_filter_chips_from_page("9230")
 
         assert "Kubernetes" in result["keywords"]
         assert "Python" in result["keywords"]
@@ -2154,7 +2257,7 @@ class TestKeywordFilterHelpers:
             }
         }
 
-        result = rcs._extract_filter_chips_from_page("9234")
+        result = rcs._extract_filter_chips_from_page("9230")
 
         assert "Docker" in result["keywords"]
         assert "Terraform" in result["keywords"]
@@ -2169,12 +2272,17 @@ class TestKeywordFilterHelpers:
         title_chips = ["Platform Engineer"]
         keyword_chips = ["Kubernetes"]  # Python and AWS missing
 
-        analysis = rcs._analyze_filter_state(config, company_chips, title_chips, keyword_chips)
+        analysis = rcs._analyze_filter_state(
+            config, company_chips, title_chips, keyword_chips
+        )
 
         assert "python" in analysis["missing_keywords"]
         assert "aws" in analysis["missing_keywords"]
         assert "kubernetes" not in analysis["missing_keywords"]
-        assert any("missing" in issue.lower() and "keyword" in issue.lower() for issue in analysis["issues"])
+        assert any(
+            "missing" in issue.lower() and "keyword" in issue.lower()
+            for issue in analysis["issues"]
+        )
 
     def test_analyze_filter_state_no_keyword_issues_when_all_present(self):
         """Should report no keyword issues when all expected keywords are present."""
@@ -2186,7 +2294,9 @@ class TestKeywordFilterHelpers:
         title_chips = []
         keyword_chips = ["Kubernetes", "Python"]
 
-        analysis = rcs._analyze_filter_state(config, company_chips, title_chips, keyword_chips)
+        analysis = rcs._analyze_filter_state(
+            config, company_chips, title_chips, keyword_chips
+        )
 
         assert analysis["missing_keywords"] == []
         assert not any("keyword" in issue.lower() for issue in analysis["issues"])
@@ -2200,7 +2310,9 @@ class TestKeywordFilterHelpers:
         title_chips = []
         keyword_chips = []
 
-        analysis = rcs._analyze_filter_state(config, company_chips, title_chips, keyword_chips)
+        analysis = rcs._analyze_filter_state(
+            config, company_chips, title_chips, keyword_chips
+        )
 
         assert analysis["expected_keywords"] == []
         assert analysis["observed_keywords"] == []
@@ -2218,10 +2330,12 @@ class TestKeywordFilterHelpers:
             {"error": None},  # Keyboard inserttext
             self._snapshot_output('- option "Kubernetes" [ref=e123]'),
             {"error": None},  # Click @e123
-            {"parsed": {"success": True, "verified": True, "chip": "Kubernetes"}},  # Verify
+            {
+                "parsed": {"success": True, "verified": True, "chip": "Kubernetes"}
+            },  # Verify
         ]
 
-        result = rcs._add_keyword_filters("9234", ["Kubernetes"])
+        result = rcs._add_keyword_filters("9230", ["Kubernetes"])
 
         assert "Kubernetes" in result["added"]
         assert result["failed"] == []
@@ -2248,7 +2362,7 @@ class TestKeywordFilterHelpers:
             ),
         ]
 
-        result = rcs._add_keyword_filters("9234", ["NonExistentSkill"])
+        result = rcs._add_keyword_filters("9230", ["NonExistentSkill"])
 
         assert "NonExistentSkill" in result["failed"]
         assert result["added"] == []
@@ -2259,12 +2373,14 @@ class TestKeywordFilterHelpers:
         mock_run_browser.side_effect = [
             {"parsed": {"success": True, "keyword": "Docker"}},
             {"error": None},
-            self._snapshot_output('- option " , Add Docker to list of filters" [ref=e654]'),
+            self._snapshot_output(
+                '- option " , Add Docker to list of filters" [ref=e654]'
+            ),
             {"error": None},
             {"parsed": {"success": True, "verified": True, "chip": "Docker"}},
         ]
 
-        result = rcs._add_keyword_filters("9234", ["Docker"])
+        result = rcs._add_keyword_filters("9230", ["Docker"])
 
         assert result["added"] == ["Docker"]
         assert result["failed"] == []
@@ -2277,10 +2393,12 @@ class TestKeywordFilterHelpers:
             {"error": None},  # Keyboard inserttext
             self._snapshot_output('- option "AWS" [ref=e222]'),
             {"error": None},  # Click @e222
-            {"parsed": {"success": False, "reason": "chip_not_found_after_add"}},  # Verify FAILS
+            {
+                "parsed": {"success": False, "reason": "chip_not_found_after_add"}
+            },  # Verify FAILS
         ]
 
-        result = rcs._add_keyword_filters("9234", ["AWS"])
+        result = rcs._add_keyword_filters("9230", ["AWS"])
 
         assert "AWS" in result["failed"]
         assert "AWS" not in result["added"]
@@ -2301,7 +2419,7 @@ class TestKeywordFilterHelpers:
             self._snapshot_output('- option "Python" [ref=e1]'),
         ]
 
-        result = rcs._add_keyword_filters("9234", ["Kubernetes", "NonExistent"])
+        result = rcs._add_keyword_filters("9230", ["Kubernetes", "NonExistent"])
 
         assert "Kubernetes" in result["added"]
         assert "NonExistent" in result["failed"]
@@ -2312,7 +2430,9 @@ class TestKeywordReconciliation:
 
     @patch("run_create_search._click_filter_button")
     @patch("run_create_search._add_keyword_filters")
-    def test_reconcile_adds_missing_keywords(self, mock_add_keywords, mock_click_button):
+    def test_reconcile_adds_missing_keywords(
+        self, mock_add_keywords, mock_click_button
+    ):
         """Reconciliation should attempt to add missing keywords."""
         mock_click_button.return_value = True
         mock_add_keywords.return_value = {"added": ["Python", "AWS"], "failed": []}
@@ -2324,16 +2444,18 @@ class TestKeywordReconciliation:
             "malformed_titles": [],
         }
 
-        result = rcs._reconcile_filter_state("9234", current_analysis)
+        result = rcs._reconcile_filter_state("9230", current_analysis)
         assert result["attempted"] is True
-        mock_click_button.assert_called_once_with("9234", "skills")
-        mock_add_keywords.assert_called_once_with("9234", ["python", "aws"])
+        mock_click_button.assert_called_once_with("9230", "skills")
+        mock_add_keywords.assert_called_once_with("9230", ["python", "aws"])
         assert result["keywords_added"] == ["Python", "AWS"]
         assert result["keywords_failed"] == []
 
     @patch("run_create_search._click_filter_button")
     @patch("run_create_search._add_keyword_filters")
-    def test_reconcile_records_failed_keywords(self, mock_add_keywords, mock_click_button):
+    def test_reconcile_records_failed_keywords(
+        self, mock_add_keywords, mock_click_button
+    ):
         """Reconciliation should record keywords that failed to add."""
         mock_click_button.return_value = True
         mock_add_keywords.return_value = {"added": [], "failed": ["RareSkill"]}
@@ -2345,7 +2467,7 @@ class TestKeywordReconciliation:
             "malformed_titles": [],
         }
 
-        result = rcs._reconcile_filter_state("9234", current_analysis)
+        result = rcs._reconcile_filter_state("9230", current_analysis)
         assert result["keywords_failed"] == ["RareSkill"]
         assert "RareSkill" in result["keywords_failed"]
 
@@ -2359,12 +2481,14 @@ class TestKeywordReconciliation:
             "malformed_titles": [],
         }
 
-        result = rcs._reconcile_filter_state("9234", current_analysis)
+        result = rcs._reconcile_filter_state("9230", current_analysis)
         assert result["attempted"] is False
         mock_click_button.assert_not_called()
 
     @patch("run_create_search._click_filter_button")
-    def test_reconcile_records_failed_keywords_when_filter_closed(self, mock_click_button):
+    def test_reconcile_records_failed_keywords_when_filter_closed(
+        self, mock_click_button
+    ):
         """Reconciliation should record keywords as failed when cannot open filter."""
         mock_click_button.return_value = False  # Could not open filter
 
@@ -2375,7 +2499,7 @@ class TestKeywordReconciliation:
             "malformed_titles": [],
         }
 
-        result = rcs._reconcile_filter_state("9234", current_analysis)
+        result = rcs._reconcile_filter_state("9230", current_analysis)
         assert result["attempted"] is True
         assert result["keywords_failed"] == ["kubernetes"]
         assert "Could not open Skills filter" in result["errors"]
@@ -2392,8 +2516,14 @@ class TestReconciliationDefensiveGuard:
     @patch("recruiter_page_utils.PageStateProbe")
     @patch("browser_utils.run_browser_command")
     def test_defensive_guard_moves_falsely_claimed_to_failed(
-        self, mock_run_browser, mock_probe_class, mock_ensure_ready,
-        mock_click_button, mock_analyze, mock_reconcile, mock_extract_chips
+        self,
+        mock_run_browser,
+        mock_probe_class,
+        mock_ensure_ready,
+        mock_click_button,
+        mock_analyze,
+        mock_reconcile,
+        mock_extract_chips,
     ):
         """REGRESSION: Companies claimed as added but not observed must move to failed.
 
@@ -2404,7 +2534,11 @@ class TestReconciliationDefensiveGuard:
         mock_ensure_ready.return_value = {"ready": True, "state": "ready"}
         mock_run_browser.side_effect = [
             {"error": None},
-            {"parsed": {"url": "https://linkedin.com/talent/hire/123/discover/recruiterSearch"}},
+            {
+                "parsed": {
+                    "url": "https://linkedin.com/talent/hire/123/discover/recruiterSearch"
+                }
+            },
         ]
         mock_probe = MagicMock()
         mock_probe.classify_state.return_value = {
@@ -2454,7 +2588,7 @@ class TestReconciliationDefensiveGuard:
         config = {"COMPANIES": "Google, Meta, Amazon"}
 
         result = rcs.inspect_search_state(
-            "9234",
+            "9230",
             "https://linkedin.com/talent/hire/123/discover/recruiterSearch",
             config=config,
         )
@@ -2462,12 +2596,15 @@ class TestReconciliationDefensiveGuard:
         # The reconciliation result should have been corrected by defensive guard
         reconciliation = result.get("reconciliation", {})
         # Amazon should be moved to failed since it's not in observed_companies
-        assert "Amazon" not in reconciliation.get("companies_added", []), \
+        assert "Amazon" not in reconciliation.get("companies_added", []), (
             "Amazon should not be in companies_added since it was not observed"
-        assert "Amazon" in reconciliation.get("companies_failed", []), \
+        )
+        assert "Amazon" in reconciliation.get("companies_failed", []), (
             "Amazon should be in companies_failed since it was claimed but not observed"
-        assert "Meta" in reconciliation.get("companies_added", []), \
+        )
+        assert "Meta" in reconciliation.get("companies_added", []), (
             "Meta should remain in companies_added since it was observed"
+        )
 
     @patch("run_create_search._extract_filter_chips_from_page")
     @patch("run_create_search._reconcile_filter_state")
@@ -2477,14 +2614,24 @@ class TestReconciliationDefensiveGuard:
     @patch("recruiter_page_utils.PageStateProbe")
     @patch("browser_utils.run_browser_command")
     def test_defensive_guard_preserves_actually_added_companies(
-        self, mock_run_browser, mock_probe_class, mock_ensure_ready,
-        mock_click_button, mock_analyze, mock_reconcile, mock_extract_chips
+        self,
+        mock_run_browser,
+        mock_probe_class,
+        mock_ensure_ready,
+        mock_click_button,
+        mock_analyze,
+        mock_reconcile,
+        mock_extract_chips,
     ):
         """Defensive guard should preserve companies that are actually observed."""
         mock_ensure_ready.return_value = {"ready": True, "state": "ready"}
         mock_run_browser.side_effect = [
             {"error": None},
-            {"parsed": {"url": "https://linkedin.com/talent/hire/123/discover/recruiterSearch"}},
+            {
+                "parsed": {
+                    "url": "https://linkedin.com/talent/hire/123/discover/recruiterSearch"
+                }
+            },
         ]
         mock_probe = MagicMock()
         mock_probe.classify_state.return_value = {
@@ -2527,7 +2674,7 @@ class TestReconciliationDefensiveGuard:
         config = {"COMPANIES": "Google, Meta"}
 
         result = rcs.inspect_search_state(
-            "9234",
+            "9230",
             "https://linkedin.com/talent/hire/123/discover/recruiterSearch",
             config=config,
         )
@@ -2535,7 +2682,9 @@ class TestReconciliationDefensiveGuard:
         reconciliation = result.get("reconciliation", {})
         # Meta should remain in added since it was actually observed
         assert "Meta" in reconciliation.get("companies_added", [])
-        assert reconciliation.get("companies_failed") == [] or "Meta" not in reconciliation.get("companies_failed", [])
+        assert reconciliation.get(
+            "companies_failed"
+        ) == [] or "Meta" not in reconciliation.get("companies_failed", [])
 
     @patch("run_create_search._extract_filter_chips_from_page")
     @patch("run_create_search._reconcile_filter_state")
@@ -2545,8 +2694,14 @@ class TestReconciliationDefensiveGuard:
     @patch("recruiter_page_utils.PageStateProbe")
     @patch("browser_utils.run_browser_command")
     def test_defensive_guard_moves_falsely_claimed_keywords_to_failed(
-        self, mock_run_browser, mock_probe_class, mock_ensure_ready,
-        mock_click_button, mock_analyze, mock_reconcile, mock_extract_chips
+        self,
+        mock_run_browser,
+        mock_probe_class,
+        mock_ensure_ready,
+        mock_click_button,
+        mock_analyze,
+        mock_reconcile,
+        mock_extract_chips,
     ):
         """REGRESSION: Keywords claimed as added but not observed must move to failed.
 
@@ -2556,7 +2711,11 @@ class TestReconciliationDefensiveGuard:
         mock_ensure_ready.return_value = {"ready": True, "state": "ready"}
         mock_run_browser.side_effect = [
             {"error": None},
-            {"parsed": {"url": "https://linkedin.com/talent/hire/123/discover/recruiterSearch"}},
+            {
+                "parsed": {
+                    "url": "https://linkedin.com/talent/hire/123/discover/recruiterSearch"
+                }
+            },
         ]
         mock_probe = MagicMock()
         mock_probe.classify_state.return_value = {
@@ -2606,7 +2765,7 @@ class TestReconciliationDefensiveGuard:
         }
 
         result = rcs.inspect_search_state(
-            "9234",
+            "9230",
             "https://linkedin.com/talent/hire/123/discover/recruiterSearch",
             config={"KEYWORDS": "Kubernetes, Python, AWS"},
         )
@@ -2614,12 +2773,15 @@ class TestReconciliationDefensiveGuard:
         # The reconciliation result should have been corrected by defensive guard
         reconciliation = result.get("reconciliation", {})
         # AWS should be moved to failed since it's not in observed_keywords
-        assert "AWS" not in reconciliation.get("keywords_added", []), \
+        assert "AWS" not in reconciliation.get("keywords_added", []), (
             "AWS should not be in keywords_added since it was not observed"
-        assert "AWS" in reconciliation.get("keywords_failed", []), \
+        )
+        assert "AWS" in reconciliation.get("keywords_failed", []), (
             "AWS should be in keywords_failed since it was claimed but not observed"
-        assert "Python" in reconciliation.get("keywords_added", []), \
+        )
+        assert "Python" in reconciliation.get("keywords_added", []), (
             "Python should remain in keywords_added since it was observed"
+        )
 
 
 class TestStaleBlockerClearing:
@@ -2636,12 +2798,18 @@ class TestStaleBlockerClearing:
     @patch("run_create_search.load_runtime_context")
     @patch("run_create_search.resolve_project")
     def test_success_clears_stale_action_required_with_false(
-        self, mock_resolve, mock_ctx, mock_ensure_ready, mock_inspect, mock_update, tmp_path
+        self,
+        mock_resolve,
+        mock_ctx,
+        mock_ensure_ready,
+        mock_inspect,
+        mock_update,
+        tmp_path,
     ):
         """Successful create_search must use action_required=False to clear stale blockers."""
         config_path = tmp_path / "config.sh"
         config_path.write_text("", encoding="utf-8")
-        mock_ctx.return_value = {"profile": {"CDP_PORT": "9234"}}
+        mock_ctx.return_value = {"profile": {"CDP_PORT": "9230"}}
         mock_resolve.return_value = (
             config_path,
             {
@@ -2650,7 +2818,7 @@ class TestStaleBlockerClearing:
             },
             "123",
         )
-        mock_ensure_ready.return_value = ("9234", None)
+        mock_ensure_ready.return_value = ("9230", None)
         mock_inspect.return_value = {
             "success": True,
             "status": "ready",
@@ -2671,17 +2839,20 @@ class TestStaleBlockerClearing:
 
         # Find the call that sets status="completed"
         completed_calls = [
-            call for call in mock_update.call_args_list
+            call
+            for call in mock_update.call_args_list
             if call.kwargs.get("status") == "completed"
         ]
         assert len(completed_calls) == 1, "Expected one call with status=completed"
         call_kwargs = completed_calls[0].kwargs
 
         # Must use False (not None) to clear stale action_required per contract
-        assert call_kwargs.get("action_required") is False, \
+        assert call_kwargs.get("action_required") is False, (
             "action_required must be False to clear stale blockers, not None"
-        assert call_kwargs.get("last_error") is False, \
+        )
+        assert call_kwargs.get("last_error") is False, (
             "last_error must be False to clear stale errors, not None"
+        )
 
     @patch("project_state.update_project_state")
     @patch("run_create_search.inspect_search_state")
@@ -2689,12 +2860,18 @@ class TestStaleBlockerClearing:
     @patch("run_create_search.load_runtime_context")
     @patch("run_create_search.resolve_project")
     def test_success_persists_structured_create_search_summary(
-        self, mock_resolve, mock_ctx, mock_ensure_ready, mock_inspect, mock_update, tmp_path
+        self,
+        mock_resolve,
+        mock_ctx,
+        mock_ensure_ready,
+        mock_inspect,
+        mock_update,
+        tmp_path,
     ):
         """Successful create_search must persist structured summary for confirm_search handoff."""
         config_path = tmp_path / "config.sh"
         config_path.write_text("", encoding="utf-8")
-        mock_ctx.return_value = {"profile": {"CDP_PORT": "9234"}}
+        mock_ctx.return_value = {"profile": {"CDP_PORT": "9230"}}
         mock_resolve.return_value = (
             config_path,
             {
@@ -2703,7 +2880,7 @@ class TestStaleBlockerClearing:
             },
             "123",
         )
-        mock_ensure_ready.return_value = ("9234", None)
+        mock_ensure_ready.return_value = ("9230", None)
 
         filter_analysis = {
             "expected_companies": ["google", "meta"],
@@ -2733,7 +2910,8 @@ class TestStaleBlockerClearing:
         rcs.run_create_search_phase("proj-1")
 
         completed_calls = [
-            call for call in mock_update.call_args_list
+            call
+            for call in mock_update.call_args_list
             if call.kwargs.get("status") == "completed"
         ]
         assert len(completed_calls) == 1
@@ -2751,12 +2929,18 @@ class TestStaleBlockerClearing:
     @patch("run_create_search.load_runtime_context")
     @patch("run_create_search.resolve_project")
     def test_failure_clears_stale_structured_create_search_summary(
-        self, mock_resolve, mock_ctx, mock_ensure_ready, mock_inspect, mock_update, tmp_path
+        self,
+        mock_resolve,
+        mock_ctx,
+        mock_ensure_ready,
+        mock_inspect,
+        mock_update,
+        tmp_path,
     ):
         """Blocked create_search must clear any stale structured summary."""
         config_path = tmp_path / "config.sh"
         config_path.write_text("", encoding="utf-8")
-        mock_ctx.return_value = {"profile": {"CDP_PORT": "9234"}}
+        mock_ctx.return_value = {"profile": {"CDP_PORT": "9230"}}
         mock_resolve.return_value = (
             config_path,
             {
@@ -2765,7 +2949,7 @@ class TestStaleBlockerClearing:
             },
             "123",
         )
-        mock_ensure_ready.return_value = ("9234", None)
+        mock_ensure_ready.return_value = ("9230", None)
         mock_inspect.return_value = {
             "success": False,
             "status": "loading",
@@ -2782,7 +2966,8 @@ class TestStaleBlockerClearing:
         rcs.run_create_search_phase("proj-1")
 
         blocked_calls = [
-            call for call in mock_update.call_args_list
+            call
+            for call in mock_update.call_args_list
             if call.kwargs.get("status") == "action_required"
         ]
         assert len(blocked_calls) == 1

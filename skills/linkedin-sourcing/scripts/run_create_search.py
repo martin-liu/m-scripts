@@ -25,7 +25,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-
 SCRIPT_DIR = Path(__file__).resolve().parent
 # Loop-facing workflow phases (bootstrap is a pre-loop entrypoint)
 WORKFLOW_PHASES = [
@@ -68,8 +67,8 @@ def resolve_project(project_ref: str) -> tuple[Path, dict[str, str], str]:
     """Resolve project reference to config and parsed config."""
     sys.path.insert(0, str(SCRIPT_DIR))
     try:
-        from project_ref_utils import resolve_project_ref
         from config_utils import parse_config_file
+        from project_ref_utils import resolve_project_ref
 
         resolution = resolve_project_ref(project_ref)
         if not resolution.get("success"):
@@ -118,7 +117,10 @@ def _is_tiktok_jd(jd_text: str, jd_url: str = "") -> bool:
     text_lower = (jd_text or "").lower()
 
     # Check URL patterns
-    if any(domain in url_lower for domain in ["lifeattiktok.com", "tiktok.com", "bytedance.com"]):
+    if any(
+        domain in url_lower
+        for domain in ["lifeattiktok.com", "tiktok.com", "bytedance.com"]
+    ):
         return True
 
     # Check content patterns - be more lenient to catch JDs that mention
@@ -131,7 +133,9 @@ def _is_tiktok_jd(jd_text: str, jd_url: str = "") -> bool:
     return False
 
 
-def _detect_hiring_company(config: dict[str, str], jd_text: str = "", jd_url: str = "") -> str | None:
+def _detect_hiring_company(
+    config: dict[str, str], jd_text: str = "", jd_url: str = ""
+) -> str | None:
     """Detect the hiring company from config or JD context.
 
     Priority:
@@ -195,7 +199,9 @@ def _company_matches_alias(company: str, aliases: set[str]) -> bool:
     return False
 
 
-def get_effective_target_companies(config: dict[str, str], jd_text: str = "", jd_url: str = "") -> list[str]:
+def get_effective_target_companies(
+    config: dict[str, str], jd_text: str = "", jd_url: str = ""
+) -> list[str]:
     """Compute effective target companies, excluding the hiring company.
 
     For JDs where the hiring company is detected (e.g., TikTok/ByteDance),
@@ -437,13 +443,17 @@ def _enrich_browser_unavailable_blocker(
     from browser_utils import CONNECT_BROWSER_SCRIPT
 
     # Use provided work_dir from runtime context, never fall back to SCRIPT_DIR.parent.parent
-    resolved_work_dir = Path(work_dir) if work_dir else Path.home() / "Desktop" / "linkedin-sourcing"
+    resolved_work_dir = (
+        Path(work_dir) if work_dir else Path.home() / "Desktop" / "linkedin-sourcing"
+    )
 
     # Use provided chrome_profile from runtime context, or default to $WORK_DIR/chrome-profile
     if chrome_profile:
         if isinstance(chrome_profile, str):
             chrome_profile = chrome_profile.replace("$WORK_DIR", str(resolved_work_dir))
-            chrome_profile = chrome_profile.replace("${WORK_DIR}", str(resolved_work_dir))
+            chrome_profile = chrome_profile.replace(
+                "${WORK_DIR}", str(resolved_work_dir)
+            )
             chrome_profile = Path(chrome_profile).expanduser()
         resolved_chrome_profile = Path(chrome_profile)
     else:
@@ -451,14 +461,16 @@ def _enrich_browser_unavailable_blocker(
 
     # Build enriched context
     context = action_required.get("context", {})
-    context.update({
-        "work_dir": str(resolved_work_dir),
-        "cdp_port": cdp_port,
-        "chrome_profile": str(resolved_chrome_profile),
-        "connect_browser_script": str(CONNECT_BROWSER_SCRIPT),
-        "recovery_command": f'bash "{CONNECT_BROWSER_SCRIPT}"',
-        "agent_browser_command": f"agent-browser --cdp {cdp_port} get url",
-    })
+    context.update(
+        {
+            "work_dir": str(resolved_work_dir),
+            "cdp_port": cdp_port,
+            "chrome_profile": str(resolved_chrome_profile),
+            "connect_browser_script": str(CONNECT_BROWSER_SCRIPT),
+            "recovery_command": f'bash "{CONNECT_BROWSER_SCRIPT}"',
+            "agent_browser_command": f"agent-browser --cdp {cdp_port} get url",
+        }
+    )
 
     # Build enriched steps
     steps = [
@@ -482,7 +494,7 @@ def _normalize_chip_text(text: str) -> str:
     if not text:
         return ""
     # Remove extra whitespace and normalize
-    text = re.sub(r'\s+', ' ', text.strip())
+    text = re.sub(r"\s+", " ", text.strip())
     return text
 
 
@@ -507,7 +519,7 @@ def _detect_malformed_title_chips(title_chips: list[str]) -> list[str]:
         # - TitleCase words directly adjacent (e.g., "EngineerManager")
         # - Multiple job title keywords without separators
         # Pattern: word boundary between lowercase and uppercase (camelCase concatenation)
-        if re.search(r'[a-z][A-Z]', normalized):
+        if re.search(r"[a-z][A-Z]", normalized):
             malformed.append(chip)
         # Pattern: multiple title keywords in one chip (e.g., "Engineer - Infrastructure - Cloud")
         # This is actually valid, so we don't flag it
@@ -554,14 +566,20 @@ def _analyze_filter_state(
     # Check for missing expected companies
     missing_companies = expected_companies - observed_companies
     if missing_companies and expected_companies:
-        issues.append(f"Missing expected companies: {', '.join(sorted(missing_companies))}")
-        guidance.append("Verify the Companies filter includes all target companies from config")
+        issues.append(
+            f"Missing expected companies: {', '.join(sorted(missing_companies))}"
+        )
+        guidance.append(
+            "Verify the Companies filter includes all target companies from config"
+        )
 
     # Check for malformed title chips
     malformed_titles = _detect_malformed_title_chips(title_chips)
     if malformed_titles:
         issues.append(f"Malformed title chips detected: {len(malformed_titles)}")
-        guidance.append("Review Job Titles filter - some chips appear concatenated/duplicated")
+        guidance.append(
+            "Review Job Titles filter - some chips appear concatenated/duplicated"
+        )
 
     # Analyze keywords/skills
     keyword_chips = keyword_chips or []
@@ -580,8 +598,12 @@ def _analyze_filter_state(
     # Check for missing expected keywords
     missing_keywords = expected_keywords - observed_keywords
     if missing_keywords and expected_keywords:
-        issues.append(f"Missing expected keywords: {', '.join(sorted(missing_keywords))}")
-        guidance.append("Verify the Skills and Assessments filter includes all target keywords from config")
+        issues.append(
+            f"Missing expected keywords: {', '.join(sorted(missing_keywords))}"
+        )
+        guidance.append(
+            "Verify the Skills and Assessments filter includes all target keywords from config"
+        )
 
     return {
         "expected_companies": sorted(expected_companies) if expected_companies else [],
@@ -1179,11 +1201,14 @@ def _find_facet_option_ref(
     """
     sys.path.insert(0, str(SCRIPT_DIR))
     try:
-        from browser_utils import run_browser_probe
         import time
 
+        from browser_utils import run_browser_probe
+
         target = _normalize_facet_option_text(target_value)
-        add_target = _normalize_facet_option_text(f"Add {target_value} to list of filters")
+        add_target = _normalize_facet_option_text(
+            f"Add {target_value} to list of filters"
+        )
         snapshot_args = ("snapshot", "-i", "-s", facet_selector)
 
         for attempt in range(3):
@@ -1311,8 +1336,13 @@ def _add_facet_filters(
     """
     sys.path.insert(0, str(SCRIPT_DIR))
     try:
-        from browser_utils import run_browser_command, run_browser_probe, safe_get_parsed
         import time
+
+        from browser_utils import (
+            run_browser_command,
+            run_browser_probe,
+            safe_get_parsed,
+        )
 
         added = []
         failed = []
@@ -1355,7 +1385,7 @@ def _add_facet_filters(
                 result = run_browser_command(cdp_port, "eval", focus_js)
                 parsed = safe_get_parsed(result, default={})
 
-                if parsed.get("reason") == 'facet_closed':
+                if parsed.get("reason") == "facet_closed":
                     # Wait for facet to open and retry
                     time.sleep(0.3)
                     result = run_browser_command(cdp_port, "eval", focus_js)
@@ -1366,10 +1396,14 @@ def _add_facet_filters(
                     continue
 
                 # Step 2: Type the value using real keyboard input
-                type_result = run_browser_command(cdp_port, "keyboard", "inserttext", value)
+                type_result = run_browser_command(
+                    cdp_port, "keyboard", "inserttext", value
+                )
                 if type_result.get("error"):
                     # Fallback: try keyboard type if inserttext fails
-                    type_result = run_browser_command(cdp_port, "keyboard", "type", value)
+                    type_result = run_browser_command(
+                        cdp_port, "keyboard", "type", value
+                    )
                     if type_result.get("error"):
                         failed.append(value)
                         continue
@@ -1495,7 +1529,9 @@ def _add_keyword_filters(cdp_port: str, keywords: list[str]) -> dict[str, Any]:
     )
 
 
-def _remove_malformed_title_chips(cdp_port: str, malformed_titles: list[str]) -> dict[str, Any]:
+def _remove_malformed_title_chips(
+    cdp_port: str, malformed_titles: list[str]
+) -> dict[str, Any]:
     """Remove malformed title chips by clicking their remove buttons.
 
     Args:
@@ -1666,7 +1702,10 @@ def create_initial_search_with_copilot(
     sys.path.insert(0, str(SCRIPT_DIR))
     try:
         from browser_utils import (
-            ActionRequired, FailureCode, run_browser_command, safe_get_parsed,
+            ActionRequired,
+            FailureCode,
+            run_browser_command,
+            safe_get_parsed,
         )
         from recruiter_page_utils import ensure_page_ready
 
@@ -1677,7 +1716,9 @@ def create_initial_search_with_copilot(
                 "success": False,
                 "status": "browser_error",
                 "failure_code": FailureCode.BROWSER_UNAVAILABLE,
-                "action_required": ActionRequired.browser_unavailable(cdp_port=cdp_port).to_dict(),
+                "action_required": ActionRequired.browser_unavailable(
+                    cdp_port=cdp_port
+                ).to_dict(),
             }
 
         ready_result = ensure_page_ready(
@@ -1691,7 +1732,9 @@ def create_initial_search_with_copilot(
             return {
                 "success": False,
                 "status": ready_result.get("state", "unknown"),
-                "failure_code": ready_result.get("failure_code", FailureCode.AMBIGUOUS_STATE),
+                "failure_code": ready_result.get(
+                    "failure_code", FailureCode.AMBIGUOUS_STATE
+                ),
                 "action_required": ready_result.get("action_required"),
             }
 
@@ -1725,12 +1768,15 @@ def create_initial_search_with_copilot(
                 }
             # Wait for expansion
             import time
+
             time.sleep(1)
             # Re-detect
             for _ in range(5):
                 detect_result = run_browser_command(cdp_port, "eval", COPILOT_DETECT_JS)
                 detect_parsed = safe_get_parsed(detect_result, default={})
-                if detect_parsed.get("state") == "expanded" and detect_parsed.get("hasInput"):
+                if detect_parsed.get("state") == "expanded" and detect_parsed.get(
+                    "hasInput"
+                ):
                     break
                 time.sleep(1)
             else:
@@ -1765,7 +1811,9 @@ def create_initial_search_with_copilot(
 
         # Step 5b: Validate input reached React state
         time.sleep(0.5)
-        validate_result = run_browser_command(cdp_port, "eval", COPILOT_VALIDATE_INPUT_JS)
+        validate_result = run_browser_command(
+            cdp_port, "eval", COPILOT_VALIDATE_INPUT_JS
+        )
         validate_parsed = safe_get_parsed(validate_result, default={})
         if not validate_parsed.get("ok"):
             # Fallback: stash query in a data attribute, then run setter JS
@@ -1786,7 +1834,9 @@ def create_initial_search_with_copilot(
                         details="Failed to stash Copilot query for fallback"
                     ).to_dict(),
                 }
-            fallback_result = run_browser_command(cdp_port, "eval", COPILOT_TYPE_FALLBACK_JS)
+            fallback_result = run_browser_command(
+                cdp_port, "eval", COPILOT_TYPE_FALLBACK_JS
+            )
             fallback_parsed = safe_get_parsed(fallback_result, default={})
             if not fallback_parsed.get("ok"):
                 return {
@@ -1799,7 +1849,9 @@ def create_initial_search_with_copilot(
                 }
             # Re-validate after fallback
             time.sleep(0.5)
-            validate_result = run_browser_command(cdp_port, "eval", COPILOT_VALIDATE_INPUT_JS)
+            validate_result = run_browser_command(
+                cdp_port, "eval", COPILOT_VALIDATE_INPUT_JS
+            )
             validate_parsed = safe_get_parsed(validate_result, default={})
             if not validate_parsed.get("ok"):
                 return {
@@ -1853,18 +1905,27 @@ def create_initial_search_with_copilot(
             has_creation_prompt = poll_parsed.get("hasSearchCreationPrompt", False)
             copilot_created = poll_parsed.get("copilotCreatedSearch", False)
             has_results = (
-                poll_parsed.get("candidateCardCount", 0) > 0 or
-                poll_parsed.get("profileLinkCount", 0) > 0 or
-                poll_parsed.get("hasFacetWrappers", False)
+                poll_parsed.get("candidateCardCount", 0) > 0
+                or poll_parsed.get("profileLinkCount", 0) > 0
+                or poll_parsed.get("hasFacetWrappers", False)
             )
             is_generating = poll_parsed.get("isGenerating", False)
 
-            if (copilot_created or not has_creation_prompt) and has_results and not is_generating:
+            if (
+                (copilot_created or not has_creation_prompt)
+                and has_results
+                and not is_generating
+            ):
                 # Search appears ready - verify with inspect_search_state
                 # Use current URL from poll if still on same project, to avoid losing Copilot-created state
-                verification_url = current_url if current_project_id == expected_project_id else recruiter_url
+                verification_url = (
+                    current_url
+                    if current_project_id == expected_project_id
+                    else recruiter_url
+                )
                 inspection = inspect_search_state(
-                    cdp_port, verification_url,
+                    cdp_port,
+                    verification_url,
                     work_dir=work_dir,
                     chrome_profile=chrome_profile,
                     config=config,
@@ -1888,7 +1949,9 @@ def create_initial_search_with_copilot(
                     }
 
             if attempt > 0 and attempt % 10 == 0:
-                print(f"  Copilot still processing... ({attempt * 2}s)", file=sys.stderr)
+                print(
+                    f"  Copilot still processing... ({attempt * 2}s)", file=sys.stderr
+                )
 
         return {
             "success": False,
@@ -1904,8 +1967,13 @@ def create_initial_search_with_copilot(
 
 
 def inspect_search_state(
-    cdp_port: str, recruiter_url: str, work_dir: Path | None = None, chrome_profile: Path | str | None = None,
-    config: dict[str, str] | None = None, jd_text: str = "", jd_url: str = ""
+    cdp_port: str,
+    recruiter_url: str,
+    work_dir: Path | None = None,
+    chrome_profile: Path | str | None = None,
+    config: dict[str, str] | None = None,
+    jd_text: str = "",
+    jd_url: str = "",
 ) -> dict[str, Any]:
     """Open the project search page and inspect whether it is extraction-ready.
 
@@ -1924,12 +1992,12 @@ def inspect_search_state(
     sys.path.insert(0, str(SCRIPT_DIR))
     try:
         from browser_utils import (
+            CONNECT_BROWSER_SCRIPT,
             ActionRequired,
             FailureCode,
             classify_browser_readiness,
             run_browser_command,
             safe_get_parsed,
-            CONNECT_BROWSER_SCRIPT,
         )
         from recruiter_page_utils import PageStateProbe, ensure_page_ready
 
@@ -2035,14 +2103,21 @@ def inspect_search_state(
                 )
 
                 # Attempt to reconcile filter state if there are issues
-                if filter_analysis.get("missing_companies") or filter_analysis.get("missing_keywords") or filter_analysis.get("malformed_titles"):
-                    reconciliation_result = _reconcile_filter_state(cdp_port, filter_analysis)
+                if (
+                    filter_analysis.get("missing_companies")
+                    or filter_analysis.get("missing_keywords")
+                    or filter_analysis.get("malformed_titles")
+                ):
+                    reconciliation_result = _reconcile_filter_state(
+                        cdp_port, filter_analysis
+                    )
 
                     # If reconciliation was attempted and partially succeeded,
                     # re-extract and re-analyze to get updated state
                     if reconciliation_result.get("attempted"):
                         # Brief wait for UI to update
                         import time
+
                         time.sleep(1.0)
                         filter_chips = _extract_filter_chips_from_page(cdp_port)
                         filter_analysis = _analyze_filter_state(
@@ -2056,30 +2131,58 @@ def inspect_search_state(
 
                         # Defensive guard: ensure companies_added matches final observed state
                         # This prevents false positives where text appeared but no chip was added
-                        observed_companies = set(filter_analysis.get("observed_companies", []))
+                        observed_companies = set(
+                            filter_analysis.get("observed_companies", [])
+                        )
                         claimed_added = reconciliation_result.get("companies_added", [])
-                        actually_added = [c for c in claimed_added if c.lower() in observed_companies]
-                        falsely_claimed = [c for c in claimed_added if c.lower() not in observed_companies]
+                        actually_added = [
+                            c for c in claimed_added if c.lower() in observed_companies
+                        ]
+                        falsely_claimed = [
+                            c
+                            for c in claimed_added
+                            if c.lower() not in observed_companies
+                        ]
 
                         if falsely_claimed:
                             # Move falsely claimed companies to failed list
                             reconciliation_result["companies_added"] = actually_added
-                            reconciliation_result["companies_failed"] = list(set(
-                                reconciliation_result.get("companies_failed", []) + falsely_claimed
-                            ))
+                            reconciliation_result["companies_failed"] = list(
+                                set(
+                                    reconciliation_result.get("companies_failed", [])
+                                    + falsely_claimed
+                                )
+                            )
 
                         # Defensive guard: ensure keywords_added matches final observed state
-                        observed_keywords = set(filter_analysis.get("observed_keywords", []))
-                        claimed_keywords_added = reconciliation_result.get("keywords_added", [])
-                        actually_added_keywords = [k for k in claimed_keywords_added if k.lower() in observed_keywords]
-                        falsely_claimed_keywords = [k for k in claimed_keywords_added if k.lower() not in observed_keywords]
+                        observed_keywords = set(
+                            filter_analysis.get("observed_keywords", [])
+                        )
+                        claimed_keywords_added = reconciliation_result.get(
+                            "keywords_added", []
+                        )
+                        actually_added_keywords = [
+                            k
+                            for k in claimed_keywords_added
+                            if k.lower() in observed_keywords
+                        ]
+                        falsely_claimed_keywords = [
+                            k
+                            for k in claimed_keywords_added
+                            if k.lower() not in observed_keywords
+                        ]
 
                         if falsely_claimed_keywords:
                             # Move falsely claimed keywords to failed list
-                            reconciliation_result["keywords_added"] = actually_added_keywords
-                            reconciliation_result["keywords_failed"] = list(set(
-                                reconciliation_result.get("keywords_failed", []) + falsely_claimed_keywords
-                            ))
+                            reconciliation_result["keywords_added"] = (
+                                actually_added_keywords
+                            )
+                            reconciliation_result["keywords_failed"] = list(
+                                set(
+                                    reconciliation_result.get("keywords_failed", [])
+                                    + falsely_claimed_keywords
+                                )
+                            )
 
             return {
                 "success": True,
@@ -2166,22 +2269,26 @@ def _ensure_browser_ready(
     """
     sys.path.insert(0, str(SCRIPT_DIR))
     try:
+        from auth_bootstrap import bootstrap_auth_session
         from browser_utils import (
+            CONNECT_BROWSER_SCRIPT,
             ActionRequired,
             BrowserMode,
+            FailureCode,
             check_browser_available,
             check_cdp_available,
             probe_recruiter_auth,
-            CONNECT_BROWSER_SCRIPT,
-            FailureCode,
         )
-        from auth_bootstrap import bootstrap_auth_session
 
         # Use canonical runtime/profile resolution, never skill-dir fallback
-        work_dir = Path(ctx["work_dir"]) if ctx.get("work_dir") else Path.home() / "Desktop" / "linkedin-sourcing"
+        work_dir = (
+            Path(ctx["work_dir"])
+            if ctx.get("work_dir")
+            else Path.home() / "Desktop" / "linkedin-sourcing"
+        )
         profile = ctx.get("profile", {})
 
-        effective_cdp_port = cdp_port or profile.get("CDP_PORT", "9234")
+        effective_cdp_port = cdp_port or profile.get("CDP_PORT", "9230")
 
         # Resolve Chrome profile path
         chrome_profile = profile.get("CHROME_PROFILE", work_dir / "chrome-profile")
@@ -2226,25 +2333,29 @@ def _ensure_browser_ready(
         ):
             # Auth failure - preserve as user blocker
             blocker = ActionRequired.auth_required()
-            blocker.context.update({
-                "work_dir": str(work_dir),
-                "cdp_port": effective_cdp_port,
-                "chrome_profile": str(chrome_profile),
-                "bootstrap_error": error,
-            })
+            blocker.context.update(
+                {
+                    "work_dir": str(work_dir),
+                    "cdp_port": effective_cdp_port,
+                    "chrome_profile": str(chrome_profile),
+                    "bootstrap_error": error,
+                }
+            )
             return effective_cdp_port, blocker.to_dict()
 
         # Browser unavailable failure - build rich blocker with recovery details
         blocker = ActionRequired.browser_unavailable(cdp_port=effective_cdp_port)
         # Enrich with exact recovery details from runtime config
-        blocker.context.update({
-            "work_dir": str(work_dir),
-            "cdp_port": effective_cdp_port,
-            "chrome_profile": str(chrome_profile),
-            "connect_browser_script": str(CONNECT_BROWSER_SCRIPT),
-            "recovery_command": f'bash "{CONNECT_BROWSER_SCRIPT}"',
-            "agent_browser_command": f"agent-browser --cdp {effective_cdp_port} get url",
-        })
+        blocker.context.update(
+            {
+                "work_dir": str(work_dir),
+                "cdp_port": effective_cdp_port,
+                "chrome_profile": str(chrome_profile),
+                "connect_browser_script": str(CONNECT_BROWSER_SCRIPT),
+                "recovery_command": f'bash "{CONNECT_BROWSER_SCRIPT}"',
+                "agent_browser_command": f"agent-browser --cdp {effective_cdp_port} get url",
+            }
+        )
         blocker.steps = [
             "DO NOT kill or quit any existing Chrome windows",
             f"Run the recovery command to launch a new Chrome with CDP: {blocker.context['recovery_command']}",
@@ -2285,10 +2396,10 @@ def run_create_search_phase(
     else:
         # brief_only mode: use context CDP port without bootstrap attempt
         if cdp_port is None:
-            cdp_port = ctx.get("profile", {}).get("CDP_PORT", "9234")
+            cdp_port = ctx.get("profile", {}).get("CDP_PORT", "9230")
 
     # Ensure cdp_port is never None at this point
-    effective_cdp_port: str = cdp_port or ctx.get("profile", {}).get("CDP_PORT", "9234")
+    effective_cdp_port: str = cdp_port or ctx.get("profile", {}).get("CDP_PORT", "9230")
 
     config_path, config, recruiter_project_id = resolve_project(project_ref)
     project_dir = config_path.parent
@@ -2340,7 +2451,8 @@ def run_create_search_phase(
     runtime_work_dir = ctx.get("work_dir")
     runtime_chrome_profile = ctx.get("profile", {}).get("CHROME_PROFILE")
     inspection = inspect_search_state(
-        effective_cdp_port, recruiter_url,
+        effective_cdp_port,
+        recruiter_url,
         work_dir=Path(runtime_work_dir) if runtime_work_dir else None,
         chrome_profile=runtime_chrome_profile,
         config=config,
@@ -2356,7 +2468,10 @@ def run_create_search_phase(
         not inspection.get("success")
         and inspection.get("status") == "search_not_configured"
     ):
-        print("Search not configured - attempting AI Copilot search creation...", file=sys.stderr)
+        print(
+            "Search not configured - attempting AI Copilot search creation...",
+            file=sys.stderr,
+        )
         copilot_result = create_initial_search_with_copilot(
             effective_cdp_port,
             recruiter_url,
@@ -2386,7 +2501,9 @@ def run_create_search_phase(
             result["status"] = copilot_result.get("status", "copilot_failed")
             result["failure_code"] = copilot_result.get("failure_code")
             result["action_required"] = copilot_result.get("action_required")
-            result["message"] = f"AI Copilot search creation failed: {copilot_result.get('status')}"
+            result["message"] = (
+                f"AI Copilot search creation failed: {copilot_result.get('status')}"
+            )
             return result
 
     # Update project state based on result
@@ -2404,24 +2521,36 @@ def run_create_search_phase(
             if reconciliation and reconciliation.get("attempted"):
                 if reconciliation.get("companies_added"):
                     added = reconciliation["companies_added"]
-                    summary_parts.append(f"Auto-added companies: {', '.join(added[:5])}")
+                    summary_parts.append(
+                        f"Auto-added companies: {', '.join(added[:5])}"
+                    )
                 if reconciliation.get("companies_failed"):
                     failed = reconciliation["companies_failed"]
-                    summary_parts.append(f"Failed to add companies: {', '.join(failed[:5])}")
+                    summary_parts.append(
+                        f"Failed to add companies: {', '.join(failed[:5])}"
+                    )
                 if reconciliation.get("keywords_added"):
                     added = reconciliation["keywords_added"]
                     summary_parts.append(f"Auto-added keywords: {', '.join(added[:5])}")
                 if reconciliation.get("keywords_failed"):
                     failed = reconciliation["keywords_failed"]
-                    summary_parts.append(f"Failed to add keywords: {', '.join(failed[:5])}")
+                    summary_parts.append(
+                        f"Failed to add keywords: {', '.join(failed[:5])}"
+                    )
                 if reconciliation.get("titles_removed"):
                     removed = reconciliation["titles_removed"]
-                    summary_parts.append(f"Auto-removed malformed titles: {', '.join(removed[:3])}")
+                    summary_parts.append(
+                        f"Auto-removed malformed titles: {', '.join(removed[:3])}"
+                    )
                 if reconciliation.get("titles_failed"):
                     failed = reconciliation["titles_failed"]
-                    summary_parts.append(f"Failed to remove titles: {', '.join(failed[:3])}")
+                    summary_parts.append(
+                        f"Failed to remove titles: {', '.join(failed[:3])}"
+                    )
                 if reconciliation.get("errors"):
-                    summary_parts.append(f"Reconciliation errors: {len(reconciliation['errors'])}")
+                    summary_parts.append(
+                        f"Reconciliation errors: {len(reconciliation['errors'])}"
+                    )
 
             if filter_analysis:
                 if filter_analysis.get("issues"):
@@ -2437,13 +2566,19 @@ def run_create_search_phase(
                     summary_parts.append(f"Missing keywords: {', '.join(missing[:5])}")
                 if filter_analysis.get("malformed_titles"):
                     malformed = filter_analysis["malformed_titles"]
-                    summary_parts.append(f"Malformed titles: {', '.join(malformed[:3])}")
+                    summary_parts.append(
+                        f"Malformed titles: {', '.join(malformed[:3])}"
+                    )
                 if filter_analysis.get("observed_companies"):
                     observed = filter_analysis["observed_companies"]
-                    summary_parts.append(f"Observed companies: {', '.join(observed[:5])}")
+                    summary_parts.append(
+                        f"Observed companies: {', '.join(observed[:5])}"
+                    )
                 if filter_analysis.get("observed_keywords"):
                     observed = filter_analysis["observed_keywords"]
-                    summary_parts.append(f"Observed keywords: {', '.join(observed[:5])}")
+                    summary_parts.append(
+                        f"Observed keywords: {', '.join(observed[:5])}"
+                    )
 
             update_project_state(
                 project_dir=project_dir,
@@ -2487,7 +2622,9 @@ def run_create_search_phase(
             sys.path.remove(str(SCRIPT_DIR))
 
     if inspection.get("success"):
-        result["message"] = "Recruiter search has visible candidates - awaiting confirmation"
+        result["message"] = (
+            "Recruiter search has visible candidates - awaiting confirmation"
+        )
         result["filter_analysis"] = inspection.get("filter_analysis")
         result["filter_chips"] = inspection.get("filter_chips")
         return result
@@ -2527,7 +2664,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--cdp-port",
         default=None,
-        help="Chrome DevTools Protocol port (default: from profile or 9234)",
+        help="Chrome DevTools Protocol port (default: from profile or 9230)",
     )
     parser.add_argument(
         "--brief-only",

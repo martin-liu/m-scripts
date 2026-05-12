@@ -1409,12 +1409,12 @@ def save_browser_mode(work_dir: Path, mode: BrowserMode) -> None:
     mode_file.write_text(json.dumps(mode.to_dict(), indent=2))
 
 
-def resolve_browser_mode(work_dir: Path, preferred_port: str = "9234") -> BrowserMode:
+def resolve_browser_mode(work_dir: Path, preferred_port: str = "9230") -> BrowserMode:
     """Resolve the browser mode to use, considering saved state.
 
     Args:
         work_dir: Working directory for runtime data
-        preferred_port: Preferred CDP port (default "9234")
+        preferred_port: Preferred CDP port (default "9230")
 
     Returns:
         BrowserMode to use for browser operations
@@ -1442,7 +1442,7 @@ class BrowserContext:
     def __init__(
         self,
         work_dir: Path,
-        preferred_port: str = "9234",
+        preferred_port: str = "9230",
         auto_bootstrap: bool = False,
     ):
         """Initialize browser context.
@@ -1661,7 +1661,7 @@ class BrowserContext:
         if self.mode is None:
             raise RuntimeError("Browser context not initialized")
         if self.mode.is_cdp():
-            result = probe_recruiter_auth(self.mode.cdp_port or "9234")
+            result = probe_recruiter_auth(self.mode.cdp_port or "9230")
             return result["authenticated"]
         elif self.mode.is_agent_browser():
             # For agent-browser mode, check by navigating to Recruiter
