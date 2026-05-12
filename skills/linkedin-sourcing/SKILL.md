@@ -57,6 +57,21 @@ Do not choose phases manually in normal operation. The loop decides.
 - `complete`: no more work
 - `failed`: fix the issue, then rerun the loop
 
+## Browser Connection
+
+If the loop reports `browser_unavailable` or Chrome is not reachable on the CDP port:
+
+```bash
+# Launch a new Chrome with CDP and the correct profile
+# DO NOT kill existing Chrome windows
+bash "$SKILL_DIR/scripts/connect_browser.sh"
+```
+
+- `connect_browser.sh` launches a new Chrome instance with the configured profile
+- It does NOT interfere with existing Chrome windows
+- After it launches, log in to LinkedIn Recruiter if needed
+- Then rerun the loop command
+
 ## Dialog Unblock
 
 If a browser command appears hung or times out with no progress for about 30 seconds, check for a blocking JavaScript dialog before doing anything else.

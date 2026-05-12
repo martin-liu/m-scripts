@@ -2246,9 +2246,9 @@ def _ensure_browser_ready(
             "agent_browser_command": f"agent-browser --cdp {effective_cdp_port} get url",
         })
         blocker.steps = [
-            f"Ensure Chrome is running with CDP enabled on port {effective_cdp_port}",
-            f"Run the recovery command: {blocker.context['recovery_command']}",
-            "Navigate to LinkedIn Recruiter in the Chrome window",
+            "DO NOT kill or quit any existing Chrome windows",
+            f"Run the recovery command to launch a new Chrome with CDP: {blocker.context['recovery_command']}",
+            "Wait for the new Chrome window to open and load LinkedIn Recruiter",
             "Confirm the Recruiter interface is fully loaded",
             f"Verify connection with: {blocker.context['agent_browser_command']}",
             "Retry the operation once Chrome is ready",

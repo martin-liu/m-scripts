@@ -123,8 +123,9 @@ class ActionRequired:
             code=FailureCode.BROWSER_UNAVAILABLE,
             summary="Chrome browser is not available for automation",
             steps=[
-                "Ensure Chrome is running with CDP enabled",
-                "Navigate to LinkedIn Recruiter in the Chrome window",
+                "DO NOT kill or quit any existing Chrome windows",
+                "Run connect_browser.sh to launch a new Chrome with CDP and the correct profile",
+                "Wait for the new Chrome window to open and load LinkedIn Recruiter",
                 "Confirm the Recruiter interface is fully loaded",
                 "Retry the operation once Chrome is ready",
             ],
