@@ -234,6 +234,7 @@ def run_single_phase(
     project_ref: str,
     phase: str,
     dry_run: bool = False,
+    reset_retry_count: bool = False,
 ) -> dict[str, Any]:
     """Run a single phase using run_phase module.
 
@@ -241,6 +242,7 @@ def run_single_phase(
         project_ref: Project reference
         phase: Phase name to run
         dry_run: If True, don't actually execute
+        reset_retry_count: If True, clear previous retry state before running
 
     Returns:
         Phase result dict with phase_result details
@@ -249,7 +251,7 @@ def run_single_phase(
     try:
         from run_phase import run_phase
 
-        return run_phase(project_ref, phase, dry_run=dry_run)
+        return run_phase(project_ref, phase, dry_run=dry_run, reset_retry_count=reset_retry_count)
     finally:
         if str(SCRIPT_DIR) in sys.path:
             sys.path.remove(str(SCRIPT_DIR))
@@ -463,7 +465,9 @@ def run_loop_iteration(
         return (False, "No phase available to run", 1)
 
     print(f"\nRunning phase: {phase_to_run}")
-    phase_result = run_single_phase(project_ref, phase_to_run, dry_run=dry_run)
+    phase_result = run_single_phase(
+        project_ref, phase_to_run, dry_run=dry_run, reset_retry_count=retry_failed
+    )
 
     # Step 4: Classify result
     should_continue, message, result_exit_code = classify_phase_result(phase_result)

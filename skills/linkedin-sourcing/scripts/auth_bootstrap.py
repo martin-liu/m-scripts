@@ -352,6 +352,140 @@ def find_system_chrome() -> str | None:
     return None
 
 
+def is_normal_chrome_running() -> bool:
+    """Check if the user's normal Chrome (not CDP/isolated) is currently running.
+
+    Looks for system Chrome processes that do NOT have --remote-debugging-port
+    or --user-data-dir pointing to an isolated temp directory.
+
+    Returns:
+        True if normal Chrome is running, False otherwise.
+    """
+    system = platform.system()
+    try:
+        if system == "Darwin":
+            result = subprocess.run(
+                ["pgrep", "-f", "Google Chrome"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+        elif system == "Linux":
+            result = subprocess.run(
+                ["pgrep", "-f", "google-chrome"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+        elif system == "Windows":
+            result = subprocess.run(
+                ["tasklist", "/FI", "IMAGENAME eq chrome.exe"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            return "chrome.exe" in result.stdout
+        else:
+            return False
+
+        if result.returncode != 0 or not result.stdout.strip():
+            return False
+
+        # Check each Chrome process to see if it's a "normal" one
+        for pid in result.stdout.strip().splitlines():
+            pid = pid.strip()
+            if not pid or not pid.isdigit():
+                continue
+            try:
+                ps_result = subprocess.run(
+                    ["ps", "-p", pid, "-o", "command="],
+                    capture_output=True,
+                    text=True,
+                    timeout=2,
+                )
+                cmdline = ps_result.stdout.strip()
+                # Skip if it's an isolated/agent-browser profile
+                if "agent-browser-chrome-" in cmdline:
+                    continue
+                # Skip if it's a helper/renderer process
+                if "Helper" in cmdline:
+                    continue
+                # Found a normal Chrome main process
+                if "Google Chrome.app" in cmdline or "google-chrome" in cmdline:
+                    return True
+            except Exception:
+                continue
+
+        return False
+    except Exception:
+        return False
+
+
+def launch_chrome_with_default_profile(
+    cdp_port: int,
+    chrome_path: str | None = None,
+) -> subprocess.Popen | None:
+    """Launch Chrome with the user's default profile and CDP enabled.
+
+    Uses the default user data dir so LinkedIn cookies/auth are inherited.
+    Only call this when normal Chrome is NOT already running.
+
+    Args:
+        cdp_port: Port for Chrome DevTools Protocol
+        chrome_path: Optional path to Chrome executable (auto-detected if None)
+
+    Returns:
+        subprocess.Popen for the Chrome process, or None if launch failed
+    """
+    if chrome_path is None:
+        chrome_path = find_system_chrome()
+        if chrome_path is None:
+            return None
+
+    cmd = [
+        chrome_path,
+        f"--remote-debugging-port={cdp_port}",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--start-maximized",
+        RECRUITER_HOME_URL,
+    ]
+
+    try:
+        if platform.system() == "Windows":
+            process = subprocess.Popen(
+                cmd,
+                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        else:
+            process = subprocess.Popen(
+                cmd,
+                start_new_session=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+
+        deadline = time.time() + CHROME_LAUNCH_TIMEOUT
+        while time.time() < deadline:
+            if check_cdp_available(str(cdp_port)):
+                return process
+            if process.poll() is not None:
+                return None
+            time.sleep(0.5)
+
+        try:
+            process.terminate()
+            process.wait(timeout=5)
+        except Exception:
+            pass
+        return None
+
+    except Exception:
+        return None
+
+
 def launch_isolated_chrome(
     user_data_dir: Path,
     cdp_port: int,

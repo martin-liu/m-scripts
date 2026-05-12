@@ -184,6 +184,11 @@ Notes:
         metavar="TITLES",
         help="Titles to exclude (comma-separated, e.g., 'Manager,Director,VP')",
     )
+    parser.add_argument(
+        "--hiring-company",
+        metavar="COMPANY",
+        help="Hiring company name (e.g., 'TikTok', 'ByteDance'). Auto-excludes from target companies.",
+    )
 
     return parser.parse_args()
 
@@ -237,90 +242,326 @@ def check_existing_project_by_recruiter_id(
 
 
 def ensure_browser_auth(work_dir: Path, cdp_port: str) -> dict[str, Any]:
-    """Ensure browser is available and authenticated to LinkedIn Recruiter.
+    """Ensure a headed browser is available and authenticated to LinkedIn Recruiter.
 
-    This function invokes the canonical auth bootstrap flow to ensure a usable
-    browser is available before attempting Recruiter project operations.
+    Flow:
+        1. Scan candidate CDP ports.
+        2. For each port that responds, probe authentication immediately.
+        3. Use the first port that is both reachable AND authenticated.
+        4. If a CDP browser exists but is not authenticated, return AUTH_REQUIRED
+           (do not launch a second browser).
+        5. Only launch headed Chrome when no CDP browser exists at all.
 
     Args:
         work_dir: Working directory for runtime data
         cdp_port: Preferred Chrome DevTools Protocol port
 
     Returns:
-        Dict with success status, browser mode, and error message if failed:
-        - success: bool - whether browser is available and authenticated
-        - mode: BrowserMode | None - the browser mode to use for operations
-        - error: str | None - error message if failed
-        - action_required: dict | None - structured fallback for manual intervention
-        - failure_code: str | None - stable failure code if failed
+        Dict with success status, browser mode, and error message if failed.
     """
-    from browser_utils import ActionRequired, FailureCode
+    from browser_utils import ActionRequired, FailureCode, BrowserMode
 
-    result = auth_bootstrap.bootstrap_auth_session(
-        work_dir=work_dir,
-        preferred_cdp_port=cdp_port,
-        allow_browser_launch=True,  # CLI use case allows browser launch
-    )
+    AUTH_PROBE_JS = r"""
+    (() => {
+        const url = window.location.href;
+        const path = window.location.pathname;
+        const hasLoginForm = !!document.querySelector('input[name="session_key"], input[name="password"]');
+        const hasCheckpoint = path.includes('/checkpoint') || path.includes('/challenge');
+        const hasCaptcha = path.includes('/cap') || document.body.innerHTML.toLowerCase().includes('captcha');
+        const isTalentPath = path.startsWith('/talent');
+        return {url, path, isTalentPath, hasLoginForm, hasCheckpoint, hasCaptcha};
+    })()
+    """
 
-    if result["success"]:
-        # Construct BrowserMode from bootstrap result, preserving headed state
-        from browser_utils import BrowserMode
-
-        # Preserve headed from bootstrap result, default to True for backward compatibility
-        headed = result.get("headed")
-        if headed is None:
-            headed = True
-
-        if result.get("mode") == "agent-browser":
-            mode = BrowserMode(
-                mode="agent-browser",
-                session_name=result.get("session_name"),
-                auth_file=result.get("auth_file"),
-                headed=headed,
+    def _eval_auth(port: str) -> dict[str, Any]:
+        """Evaluate auth probe via raw CDP HTTP API (no agent-browser)."""
+        try:
+            # Get list of pages
+            import urllib.request
+            req = urllib.request.Request(
+                f"http://localhost:{port}/json/list",
+                headers={"Accept": "application/json"},
             )
+            with urllib.request.urlopen(req, timeout=5) as response:
+                pages = json.loads(response.read().decode("utf-8"))
+
+            # Find the main page (not background/service worker)
+            page = None
+            for p in pages:
+                if p.get("type") == "page" and not p.get("url", "").startswith("chrome-"):
+                    page = p
+                    break
+
+            if page is None:
+                return {"ok": False, "error": "No page found"}
+
+            page_url = page.get("url", "")
+
+            # A page must be on a talent URL to be considered authenticated
+            # about:blank, login pages, etc. are NOT authenticated
+            is_talent = "/talent" in page_url
+            has_login = "/login" in page_url or "/uas/login" in page_url
+            has_checkpoint = "/checkpoint" in page_url or "/challenge" in page_url
+            has_captcha = "/cap" in page_url or "captcha" in page_url.lower()
+
+            return {
+                "ok": True,
+                "data": {
+                    "url": page_url,
+                    "path": page_url.replace("https://www.linkedin.com", "").replace("http://www.linkedin.com", ""),
+                    "isTalentPath": is_talent,
+                    "hasLoginForm": has_login,
+                    "hasCheckpoint": has_checkpoint,
+                    "hasCaptcha": has_captcha,
+                }
+            }
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def _is_authenticated(port: str) -> tuple[bool, dict[str, Any] | None]:
+        """Return (authenticated, probe_data)."""
+        probe = _eval_auth(port)
+        if not probe["ok"]:
+            return False, None
+        data = probe["data"]
+        is_talent = data.get("isTalentPath", False)
+        has_login = data.get("hasLoginForm", False)
+        has_checkpoint = data.get("hasCheckpoint", False)
+        has_captcha = data.get("hasCaptcha", False)
+        return (is_talent and not has_login and not has_checkpoint and not has_captcha), data
+
+    # --- Step 1: build candidate port list ---
+    ports_to_try: list[str] = []
+
+    saved_mode = auth_bootstrap._load_saved_browser_mode(work_dir)
+    if saved_mode:
+        saved_port = saved_mode.get("cdp_port")
+        if saved_port:
+            ports_to_try.append(saved_port)
+
+    if cdp_port not in ports_to_try:
+        ports_to_try.append(cdp_port)
+
+    for p in range(19234, 19240):
+        if str(p) not in ports_to_try:
+            ports_to_try.append(str(p))
+
+    # --- Step 2: scan ports — require BOTH CDP availability AND authentication ---
+    actual_cdp_port: str | None = None
+    unauthenticated_ports: list[tuple[str, dict[str, Any]]] = []
+
+    for port in ports_to_try:
+        if not auth_bootstrap.check_cdp_available(port):
+            continue
+
+        authenticated, probe_data = _is_authenticated(port)
+        if authenticated:
+            actual_cdp_port = port
+            print(f"Found authenticated CDP browser on port {port}", file=sys.stderr)
+            break
         else:
-            mode = BrowserMode(
-                mode="cdp",
-                cdp_port=result.get("cdp_port", cdp_port),
-                headed=headed,
+            unauthenticated_ports.append((port, probe_data or {}))
+
+    # --- Step 3: if no authenticated CDP found, handle gracefully ---
+    if actual_cdp_port is None:
+        if unauthenticated_ports:
+            port, data = unauthenticated_ports[0]
+
+            if auth_bootstrap.is_normal_chrome_running():
+                # User's normal Chrome is running — the stale CDP is not their auth browser
+                details = (
+                    f"A CDP browser exists on port {port} but is not authenticated.\n"
+                    "Your normal Chrome is running with your LinkedIn login, "
+                    "but it does not have CDP enabled.\n"
+                    "To use your existing login, please:\n"
+                    "  1. Close all Chrome windows (including the CDP one)\n"
+                    "  2. Relaunch Chrome with CDP:\n"
+                    f"     open -na 'Google Chrome' --args --remote-debugging-port={cdp_port}\n"
+                    "  3. Re-run this command"
+                )
+                print(details, file=sys.stderr)
+                return {
+                    "success": False,
+                    "mode": None,
+                    "error": details,
+                    "action_required": ActionRequired.browser_unavailable(
+                        cdp_port=cdp_port
+                    ).to_dict(),
+                    "failure_code": FailureCode.BROWSER_UNAVAILABLE,
+                }
+
+            # No normal Chrome running — the stale CDP might be ours, poll for auth
+            url = data.get("url", "unknown")
+            has_captcha = data.get("hasCaptcha", False)
+            has_login = data.get("hasLoginForm", False)
+
+            details = f"CDP browser on port {port} is not authenticated."
+            if has_captcha:
+                details += " A CAPTCHA/login challenge is present."
+            elif has_login:
+                details += " A login form is present."
+            details += f" Current page: {url}"
+
+            print(details, file=sys.stderr)
+            return {
+                "success": False,
+                "mode": None,
+                "error": details,
+                "action_required": ActionRequired.auth_required().to_dict(),
+                "failure_code": FailureCode.AUTH_REQUIRED,
+            }
+
+        # No CDP browser at all — check if normal Chrome is running
+        if auth_bootstrap.is_normal_chrome_running():
+            details = (
+                "Your normal Chrome browser is running but does not have CDP enabled. "
+                "To use your existing LinkedIn login, please:\n"
+                "  1. Close all Chrome windows\n"
+                "  2. Relaunch Chrome with CDP:\n"
+                f"     open -na 'Google Chrome' --args --remote-debugging-port={cdp_port}\n"
+                "  3. Re-run this command"
             )
+            print(details, file=sys.stderr)
+            return {
+                "success": False,
+                "mode": None,
+                "error": details,
+                "action_required": ActionRequired.browser_unavailable(
+                    cdp_port=cdp_port
+                ).to_dict(),
+                "failure_code": FailureCode.BROWSER_UNAVAILABLE,
+            }
+
+        # No Chrome running — launch with default profile to inherit cookies
+        chrome_path = auth_bootstrap.find_system_chrome()
+        if chrome_path is None:
+            return {
+                "success": False,
+                "mode": None,
+                "error": "Could not find system Chrome installation",
+                "action_required": ActionRequired.browser_unavailable(
+                    cdp_port=cdp_port
+                ).to_dict(),
+                "failure_code": FailureCode.BROWSER_UNAVAILABLE,
+            }
+
+        preferred_port_int = int(cdp_port)
+        if auth_bootstrap.is_port_in_use(preferred_port_int):
+            fallback = 19234
+            while auth_bootstrap.is_port_in_use(fallback) and fallback < 19300:
+                fallback += 1
+            if fallback >= 19300:
+                return {
+                    "success": False,
+                    "mode": None,
+                    "error": "Could not find available port for Chrome",
+                    "action_required": ActionRequired.browser_unavailable(
+                        cdp_port=cdp_port
+                    ).to_dict(),
+                    "failure_code": FailureCode.BROWSER_UNAVAILABLE,
+                }
+            actual_cdp_port = str(fallback)
+        else:
+            actual_cdp_port = cdp_port
+
+        print(
+            f"Launching Chrome with your default profile on port {actual_cdp_port}",
+            file=sys.stderr,
+        )
+        print("(Using your existing Chrome profile so LinkedIn cookies are preserved)", file=sys.stderr)
+        print("", file=sys.stderr)
+        print("=== Authentication Instructions ===", file=sys.stderr)
+        print(
+            "1. A Chrome window has opened (or will open shortly)",
+            file=sys.stderr,
+        )
+        print(
+            "2. If you're already logged in to LinkedIn, it should work immediately",
+            file=sys.stderr,
+        )
+        print(
+            "3. If not, log in to LinkedIn Recruiter (complete any SSO/2FA)",
+            file=sys.stderr,
+        )
+        print("", file=sys.stderr)
+        print("Waiting for authentication...", file=sys.stderr)
+
+        chrome_process = auth_bootstrap.launch_chrome_with_default_profile(
+            int(actual_cdp_port), chrome_path
+        )
+        if chrome_process is None:
+            return {
+                "success": False,
+                "mode": None,
+                "error": "Failed to launch Chrome with default profile",
+                "action_required": ActionRequired.browser_unavailable(
+                    cdp_port=cdp_port
+                ).to_dict(),
+                "failure_code": FailureCode.BROWSER_UNAVAILABLE,
+            }
+
+        # Extra wait for Chrome to fully initialize before any agent-browser calls
+        time.sleep(3)
+
+        # Poll for auth (up to ~5 min)
+        for attempt in range(150):
+            if chrome_process.poll() is not None:
+                return {
+                    "success": False,
+                    "mode": None,
+                    "error": "Bootstrap cancelled (Chrome closed)",
+                    "action_required": ActionRequired.auth_required().to_dict(),
+                    "failure_code": FailureCode.AUTH_REQUIRED,
+                }
+
+            authenticated, _ = _is_authenticated(actual_cdp_port)
+            if authenticated:
+                print("\nAuthentication detected!", file=sys.stderr)
+                auth_bootstrap.save_browser_mode(
+                    work_dir,
+                    mode="cdp",
+                    cdp_port=actual_cdp_port,
+                    headed=True,
+                )
+                return {
+                    "success": True,
+                    "mode": BrowserMode(
+                        mode="cdp", cdp_port=actual_cdp_port, headed=True
+                    ),
+                    "error": None,
+                    "action_required": None,
+                    "failure_code": None,
+                }
+
+            if attempt > 0 and attempt % 5 == 0:
+                print(
+                    f"  Still waiting... ({attempt * 2}s elapsed)",
+                    file=sys.stderr,
+                )
+
+            time.sleep(2)
+
         return {
-            "success": True,
-            "mode": mode,
-            "error": None,
-            "action_required": None,
-            "failure_code": None,
+            "success": False,
+            "mode": None,
+            "error": "LinkedIn Recruiter not authenticated",
+            "action_required": ActionRequired.auth_required().to_dict(),
+            "failure_code": FailureCode.AUTH_REQUIRED,
         }
 
-    # Determine appropriate failure code and action_required
-    error = result.get("error", "Unknown error")
-    error_lower = error.lower()
-
-    if "chrome" in error_lower and (
-        "not found" in error_lower or "launch" in error_lower
-    ):
-        failure_code = FailureCode.BROWSER_UNAVAILABLE
-        action_required = ActionRequired.browser_unavailable(cdp_port=cdp_port)
-    elif (
-        "auth" in error_lower
-        or "login" in error_lower
-        or "not authenticated" in error_lower
-    ):
-        failure_code = FailureCode.AUTH_REQUIRED
-        action_required = ActionRequired.auth_required()
-    elif "captcha" in error_lower or "blocked" in error_lower:
-        failure_code = FailureCode.BLOCKED_OR_CAPTCHA
-        action_required = ActionRequired.blocked_or_captcha()
-    else:
-        failure_code = FailureCode.AMBIGUOUS_STATE
-        action_required = ActionRequired.ambiguous_state(details=error)
-
+    # --- Step 4: authenticated port found — save and return ---
+    auth_bootstrap.save_browser_mode(
+        work_dir,
+        mode="cdp",
+        cdp_port=actual_cdp_port,
+        headed=True,
+    )
     return {
-        "success": False,
-        "mode": None,
-        "error": error,
-        "action_required": action_required.to_dict(),
-        "failure_code": failure_code,
+        "success": True,
+        "mode": BrowserMode(mode="cdp", cdp_port=actual_cdp_port, headed=True),
+        "error": None,
+        "action_required": None,
+        "failure_code": None,
     }
 
 
@@ -887,6 +1128,9 @@ def build_config(
         "EXCLUDE_TITLES": overrides.get("exclude_titles")
         or existing.get("EXCLUDE_TITLES", "")
         or get_default_exclude_titles(),
+        "HIRING_COMPANY": overrides.get("hiring_company")
+        or existing.get("HIRING_COMPANY", "")
+        or "",
         "DAILY_LIMIT": existing.get("DAILY_LIMIT", "200"),
         "CANDIDATE_DELAY_SEC": existing.get("CANDIDATE_DELAY_SEC", "10"),
     }
@@ -934,6 +1178,10 @@ def write_config(config: dict[str, str], config_path: Path) -> None:
         f"KEYWORDS={shell_escape(config['KEYWORDS'])}",
         f"COMPANIES={shell_escape(config['COMPANIES'])}",
         f"EXCLUDE_TITLES={shell_escape(config['EXCLUDE_TITLES'])}",
+        "",
+        "# Hiring company (optional): set to auto-exclude hiring company from target companies",
+        "# e.g., HIRING_COMPANY='TikTok' will exclude TikTok/ByteDance from the company filter",
+        f"HIRING_COMPANY={shell_escape(config.get('HIRING_COMPANY', ''))}",
         "",
         "# Rate limiting",
         f"DAILY_LIMIT={shell_escape(config['DAILY_LIMIT'])}",
@@ -1677,6 +1925,7 @@ def bootstrap_project(args: argparse.Namespace) -> dict[str, Any]:
         "keywords": args.keywords,
         "companies": args.companies,
         "exclude_titles": args.exclude_titles,
+        "hiring_company": args.hiring_company,
         "recruiter_url": recruiter_url,
         "jd_url": args.jd_url,  # Persist JD URL for future deduplication
     }
@@ -1714,10 +1963,13 @@ def bootstrap_project(args: argparse.Namespace) -> dict[str, Any]:
     search_ready_at_bootstrap = False
     if recruiter_url and "discover/recruiterSearch" in recruiter_url:
         try:
-            from run_create_search import inspect_search_state
+            from run_phase import run_phase
 
-            inspection = inspect_search_state(args.cdp_port, recruiter_url)
-            if inspection.get("success"):
+            create_search_result = run_phase(
+                project_ref=project_id,
+                phase="create_search",
+            )
+            if create_search_result.get("success"):
                 search_ready_at_bootstrap = True
                 update_project_state(
                     project_dir=project_dir,
@@ -1726,11 +1978,34 @@ def bootstrap_project(args: argparse.Namespace) -> dict[str, Any]:
                     current_phase="create_search",
                     status="completed",
                     action_required=False,
-                    last_result_summary="Recruiter search already configured at bootstrap",
+                    last_result_summary="Recruiter search created and verified at bootstrap",
                     last_error=False,
                 )
-        except Exception:
-            pass
+            else:
+                # Search creation failed - update state with action required
+                phase_result = create_search_result.get("phase_result", {})
+                update_project_state(
+                    project_dir=project_dir,
+                    project_id=project_id,
+                    workflow_mode="reachout",
+                    current_phase="create_search",
+                    status="action_required",
+                    action_required=phase_result.get("action_required") or create_search_result.get("action_required"),
+                    last_result_summary=f"Search creation failed: {phase_result.get('error') or create_search_result.get('error', 'Unknown error')}",
+                    last_error=True,
+                )
+        except Exception as exc:
+            import traceback
+            traceback.print_exc()
+            update_project_state(
+                project_dir=project_dir,
+                project_id=project_id,
+                workflow_mode="reachout",
+                current_phase="create_search",
+                status="failed",
+                last_result_summary=f"Bootstrap search creation crashed: {exc}",
+                last_error=True,
+            )
 
     # Build inferred output
     result["inferred"] = {
@@ -1825,74 +2100,8 @@ def main():
         return 1
 
 
-def _parse_agent_browser_json(output: str) -> dict[str, Any] | None:
-    """Parse agent-browser JSON output, including double-encoded payloads."""
-    if not output.strip():
-        return None
-
-    try:
-        parsed = json.loads(output.strip())
-        if isinstance(parsed, str):
-            parsed = json.loads(parsed)
-        if isinstance(parsed, dict):
-            return parsed
-    except json.JSONDecodeError:
-        pass
-    return None
-
-
-def fetch_url_via_agent_browser(
-    url: str,
-    timeout: int = 45,
-    session_name: str | None = None,
-) -> tuple[int, str]:
-    """Fetch dynamic page HTML via agent-browser in a managed session."""
-    effective_session = session_name or f"linkedin-sourcing-jd-fetch-{os.getpid()}"
-    try:
-        open_result = subprocess.run(
-            ["agent-browser", "--session", effective_session, "open", url],
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-        if open_result.returncode != 0:
-            return 0, open_result.stderr.strip() or "agent-browser open failed"
-
-        eval_result = subprocess.run(
-            [
-                "agent-browser",
-                "--session",
-                effective_session,
-                "eval",
-                "(() => ({ html: document.documentElement.outerHTML, title: document.title, url: window.location.href }))()",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-        if eval_result.returncode != 0:
-            return 0, eval_result.stderr.strip() or "agent-browser eval failed"
-
-        parsed = _parse_agent_browser_json(eval_result.stdout)
-        html_content = parsed.get("html") if parsed else None
-        if html_content:
-            return 200, html_content
-        return 0, "agent-browser did not return page HTML"
-    except subprocess.TimeoutExpired:
-        return 0, f"agent-browser timed out after {timeout}s"
-    except FileNotFoundError:
-        return 0, "agent-browser not found in PATH"
-    except Exception as e:
-        return 0, f"agent-browser fetch failed: {e}"
-
-
 def fetch_jd_url(url: str, timeout: int = 30) -> tuple[int, str]:
-    """Fetch JD content, preferring agent-browser for dynamic job pages."""
-    lowered = url.lower()
-    if "lifeattiktok.com" in lowered or "tiktok.com" in lowered:
-        status, content = fetch_url_via_agent_browser(url, timeout=max(timeout, 45))
-        if status == 200:
-            return status, content
+    """Fetch JD content via plain HTTP."""
     return fetch_url(url, timeout=timeout)
 
 

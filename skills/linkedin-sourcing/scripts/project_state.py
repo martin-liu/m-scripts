@@ -82,6 +82,7 @@ def create_initial_state(
         "last_result_summary": None,
         "last_error": None,
         "create_search_summary": None,
+        "phase_retries": {},
     }
 
 

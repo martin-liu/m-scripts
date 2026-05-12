@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 import time
@@ -119,23 +120,43 @@ CHECK_PROJECT_EXISTS_JS = """
 
 CLICK_CREATE_PROJECT_JS = """
 (function() {
-    // Look for Create Project button
-    const buttons = Array.from(document.querySelectorAll('button, a'));
-    const createBtn = buttons.find(b => {
+    // Strategy 1: Look for exact "Create new" text (observed on live page)
+    const allElements = Array.from(document.querySelectorAll('button, a, [role="button"]'));
+    const createNewBtn = allElements.find(b => {
+        const text = b.textContent.trim().toLowerCase();
+        return text === 'create new' || text === 'create project' || text === 'new project';
+    });
+    if (createNewBtn) {
+        createNewBtn.click();
+        return { clicked: true, text: createNewBtn.textContent.trim(), method: 'exact' };
+    }
+
+    // Strategy 2: Look for primary button containing "create"
+    const primaryBtn = allElements.find(b => {
+        const text = b.textContent.trim().toLowerCase();
+        const className = (b.className || '').toLowerCase();
+        return text.includes('create') && className.includes('primary');
+    });
+    if (primaryBtn) {
+        primaryBtn.click();
+        return { clicked: true, text: primaryBtn.textContent.trim(), method: 'primary' };
+    }
+
+    // Strategy 3: Fallback to any element containing create/new project text
+    const fallbackBtn = allElements.find(b => {
         const text = b.textContent.trim().toLowerCase();
         return text.includes('create project') || text.includes('new project') || text.includes('create');
     });
-
-    if (createBtn) {
-        createBtn.click();
-        return { clicked: true, text: createBtn.textContent.trim() };
+    if (fallbackBtn) {
+        fallbackBtn.click();
+        return { clicked: true, text: fallbackBtn.textContent.trim(), method: 'fallback' };
     }
 
-    // Try data-test-id patterns
+    // Strategy 4: Try data-test-id patterns
     const testBtn = document.querySelector('[data-test-id*="create"], [data-test-id*="new-project"]');
     if (testBtn) {
         testBtn.click();
-        return { clicked: true, testId: true };
+        return { clicked: true, testId: true, method: 'test-id' };
     }
 
     return { clicked: false, error: "Create button not found" };
@@ -148,7 +169,7 @@ FILL_CREATE_FORM_JS = """
     const description = {description!r} || '';
 
     function setFieldValue(el, value) {{
-        if (!el) return;
+        if (!el) return false;
 
         const proto = Object.getPrototypeOf(el);
         const valueDescriptor = Object.getOwnPropertyDescriptor(proto, 'value')
@@ -164,39 +185,55 @@ FILL_CREATE_FORM_JS = """
         el.dispatchEvent(new Event('input', {{ bubbles: true }}));
         el.dispatchEvent(new Event('change', {{ bubbles: true }}));
         el.dispatchEvent(new Event('blur', {{ bubbles: true }}));
+        
+        return el.value === value;
     }}
 
     // Fill project name - try id-based selectors first (observed on live page as #ember1131-projectName)
     // then fall back to broader selectors
     const nameInput = document.querySelector(
         'input[id$="-projectName"], ' +
-        'input[id*="projectName"], ' +
+        'input[id*="-projectName"], ' +
         'input[name*="name"], ' +
         'input[placeholder*="name" i], ' +
         'input[aria-label*="name" i], ' +
         'input[data-test-id*="name"]'
     );
+    let nameVerified = false;
     if (nameInput) {{
-        setFieldValue(nameInput, projectName);
+        nameVerified = setFieldValue(nameInput, projectName);
+        // If direct value setting didn't work, try focus + keyboard approach
+        if (!nameVerified) {{
+            nameInput.focus();
+            nameInput.click();
+            nameInput.select();
+            nameInput.value = projectName;
+            nameInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
+            nameVerified = nameInput.value === projectName;
+        }}
     }}
 
     // Fill description if field exists - try id-based selectors first (observed as #ember1131-projectDescription)
     const descInput = document.querySelector(
         'textarea[id$="-projectDescription"], ' +
-        'textarea[id*="projectDescription"], ' +
+        'textarea[id*="-projectDescription"], ' +
         'textarea[name*="description"], ' +
         'textarea[placeholder*="description" i], ' +
         'textarea[aria-label*="description" i], ' +
         'input[name*="description"]'
     );
+    let descVerified = false;
     if (descInput && description) {{
-        setFieldValue(descInput, description);
+        descVerified = setFieldValue(descInput, description);
     }}
 
     return {{
         nameFilled: !!nameInput,
+        nameVerified: nameVerified,
         descFilled: !!descInput,
-        projectName: projectName
+        descVerified: descVerified,
+        projectName: projectName,
+        actualNameValue: nameInput ? nameInput.value : null
     }};
 }})()
 """
@@ -246,13 +283,28 @@ CLICK_OUTSIDE_JS = """
 
 CHECK_UNTITLED_JS = """
 (function() {
-    const titleEl = document.querySelector('h1, [data-test-id*="title"], .project-title');
-    if (titleEl) {
-        const text = titleEl.textContent.trim();
-        return {
-            isUntitled: text.toLowerCase().includes('untitled') || text === '',
-            title: text
-        };
+    // Check multiple possible title locations
+    const titleSelectors = [
+        'h1[data-test-project-name-name]',
+        'h1.project-name__name',
+        'h1',
+        '[data-test-id*="title"]',
+        '.project-title',
+        '[data-test-project-name-name]'
+    ];
+    
+    for (const sel of titleSelectors) {
+        const titleEl = document.querySelector(sel);
+        if (titleEl) {
+            const text = titleEl.textContent.trim();
+            if (text) {
+                return {
+                    isUntitled: text.toLowerCase().includes('untitled') || text === '',
+                    title: text,
+                    selector: sel
+                };
+            }
+        }
     }
     return { isUntitled: false, title: null };
 })()
@@ -262,12 +314,31 @@ RENAME_PROJECT_JS = """
 (function() {{
     const newName = {project_name!r};
 
-    // Look for edit/title input
+    // Strategy 1: Try clicking "Edit project name" button in settings panel
+    const editNameBtn = document.querySelector('button[aria-label*="Edit project name" i]');
+    if (editNameBtn) {{
+        editNameBtn.click();
+        // Wait for input to appear
+        setTimeout(() => {{
+            const inputs = Array.from(document.querySelectorAll('input[type="text"]'));
+            const nameInput = inputs.find(input => input.value.toLowerCase().includes('untitled'));
+            if (nameInput) {{
+                nameInput.value = newName;
+                nameInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                nameInput.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                
+                // Click Save
+                const saveBtn = Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim() === 'Save');
+                if (saveBtn) saveBtn.click();
+            }}
+        }}, 300);
+        return {{ attempted: true, method: 'settings_edit' }};
+    }}
+
+    // Strategy 2: Try clicking on the title directly (older UI)
     const titleEl = document.querySelector('h1, [data-test-id*="title"], .project-title');
     if (titleEl) {{
         titleEl.click();
-
-        // Wait a bit for input to appear
         setTimeout(() => {{
             const input = document.querySelector('input[type="text"], input:not([type])');
             if (input) {{
@@ -277,9 +348,10 @@ RENAME_PROJECT_JS = """
                 input.dispatchEvent(new KeyboardEvent('keydown', {{ key: 'Enter', bubbles: true }}));
             }}
         }}, 100);
+        return {{ attempted: true, method: 'direct_click' }};
     }}
 
-    return {{ attempted: true }};
+    return {{ attempted: false, error: 'Could not find rename mechanism' }};
 }})()
 """
 
@@ -1017,13 +1089,44 @@ def ensure_project_exists(
 
     time.sleep(2)  # Wait for form to appear
 
+    # Verify form appeared by checking for project name input
+    form_verify = run_browser_command(browser_mode, "eval", """
+    (function() {
+        const nameInput = document.querySelector('input[id$="-projectName"], input[id*="-projectName"]');
+        const heading = document.querySelector('h1, h2, h3');
+        return {
+            formReady: !!nameInput,
+            inputId: nameInput ? nameInput.id : null,
+            pageHeading: heading ? heading.textContent.trim() : null
+        };
+    })()
+    """)
+    if not form_verify.get("formReady"):
+        result["message"] = "Project creation form did not appear after clicking Create new"
+        result["failure_code"] = FailureCode.ELEMENT_MISSING
+        result["action_required"] = ActionRequired.element_missing(
+            selector="project creation form",
+            page_url="",
+        ).to_dict()
+        return result
+
     # Step 5: Fill the form
     fill_result = fill_create_form(browser_mode, project_name, description)
     if not fill_result.get("nameFilled"):
-        result["message"] = "Could not fill project name in form"
+        result["message"] = "Could not find project name input in form"
         result["failure_code"] = FailureCode.ELEMENT_MISSING
         result["action_required"] = ActionRequired.element_missing(
             selector="project name input",
+            page_url="",
+        ).to_dict()
+        return result
+
+    # Verify the name was actually set correctly
+    if not fill_result.get("nameVerified"):
+        result["message"] = f"Project name input found but value could not be set. Actual value: {fill_result.get('actualNameValue')}"
+        result["failure_code"] = FailureCode.ELEMENT_MISSING
+        result["action_required"] = ActionRequired.element_missing(
+            selector="project name input value setting",
             page_url="",
         ).to_dict()
         return result
@@ -1054,9 +1157,21 @@ def ensure_project_exists(
     # Step 7: Check if we landed on an untitled project
     untitled_check = check_untitled(browser_mode)
     if untitled_check.get("isUntitled"):
-        # Need to rename
-        rename_project(browser_mode, project_name)
-        time.sleep(2)
+        # Need to rename - navigate to project settings for reliable rename
+        url_result = get_current_url(browser_mode)
+        current_url = url_result.get("url", "")
+        project_id_match = re.search(r"/talent/hire/(\d+)", current_url)
+        if project_id_match:
+            overview_url = f"https://www.linkedin.com/talent/hire/{project_id_match.group(1)}/overview"
+            # Navigate to overview page where rename is more reliable
+            goto_result = _run_browser_command(browser_mode, "goto", overview_url, timeout=30)
+            if not goto_result.get("error"):
+                time.sleep(2)
+                rename_project(browser_mode, project_name)
+                time.sleep(2)
+        else:
+            rename_project(browser_mode, project_name)
+            time.sleep(2)
 
     # Step 8: Get the final URL and resolve to search URL
     url_result = get_current_url(browser_mode)

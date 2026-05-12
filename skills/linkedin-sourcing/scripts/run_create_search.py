@@ -114,18 +114,44 @@ def _is_tiktok_jd(jd_text: str, jd_url: str = "") -> bool:
     Returns:
         True if JD appears to be from TikTok/ByteDance hiring site
     """
-    url_lower = jd_url.lower()
-    text_lower = jd_text.lower()
+    url_lower = (jd_url or "").lower()
+    text_lower = (jd_text or "").lower()
 
     # Check URL patterns
     if any(domain in url_lower for domain in ["lifeattiktok.com", "tiktok.com", "bytedance.com"]):
         return True
 
-    # Check content patterns
-    if any(pattern in text_lower for pattern in ["lifeattiktok", "tiktok.com/careers", "bytedance.com"]):
+    # Check content patterns - be more lenient to catch JDs that mention
+    # ByteDance/TikTok without specific URL patterns
+    url_patterns = ["lifeattiktok", "tiktok.com/careers", "bytedance.com"]
+    company_patterns = ["bytedance", "tiktok"]
+    if any(pattern in text_lower for pattern in url_patterns + company_patterns):
         return True
 
     return False
+
+
+def _detect_hiring_company(config: dict[str, str], jd_text: str = "", jd_url: str = "") -> str | None:
+    """Detect the hiring company from config or JD context.
+
+    Priority:
+    1. Explicit HIRING_COMPANY config field
+    2. JD URL/content detection (TikTok/ByteDance)
+    3. None (unknown)
+
+    Returns:
+        Lowercase hiring company name or None
+    """
+    # 1. Explicit config override
+    hiring_company = config.get("HIRING_COMPANY", "").strip()
+    if hiring_company:
+        return hiring_company.lower()
+
+    # 2. Detect from JD
+    if _is_tiktok_jd(jd_text, jd_url):
+        return "tiktok"  # Use tiktok as canonical; aliases cover ByteDance too
+
+    return None
 
 
 def _get_hiring_company_aliases(company_name: str) -> set[str]:
@@ -144,11 +170,37 @@ def _get_hiring_company_aliases(company_name: str) -> set[str]:
     return aliases.get(company_name.lower(), {company_name.lower()})
 
 
-def get_effective_target_companies(config: dict[str, str], jd_text: str = "", jd_url: str = "") -> list[str]:
-    """Compute effective target companies, excluding hiring company for TikTok/ByteDance JDs.
+def _company_matches_alias(company: str, aliases: set[str]) -> bool:
+    """Check if a company name matches any alias (handles variations like 'Inc.', 'Ltd.', etc.).
 
-    For JDs from lifeattiktok.com or tiktok.com, excludes TikTok and ByteDance
-    from the target company list since those are the hiring company, not targets.
+    Uses both exact normalized matching and substring matching to be robust
+    without over-excluding unrelated names.
+    """
+    company_lower = company.lower().strip()
+    company_normalized = company_lower.replace(" ", "").replace("-", "")
+
+    for alias in aliases:
+        alias_normalized = alias.replace(" ", "").replace("-", "")
+        # Exact normalized match
+        if company_normalized == alias_normalized:
+            return True
+        # Substring match: alias is a distinct word in company name
+        # e.g., "ByteDance" in "ByteDance Inc." or "TikTok" in "TikTok Pte. Ltd."
+        if alias in company_lower:
+            return True
+        # Reverse: company is a distinct word in alias (less common)
+        if company_lower in alias:
+            return True
+
+    return False
+
+
+def get_effective_target_companies(config: dict[str, str], jd_text: str = "", jd_url: str = "") -> list[str]:
+    """Compute effective target companies, excluding the hiring company.
+
+    For JDs where the hiring company is detected (e.g., TikTok/ByteDance),
+    excludes the hiring company and its aliases from the target company list
+    since those are the hiring company, not targets.
 
     Args:
         config: Project configuration dict
@@ -164,24 +216,18 @@ def get_effective_target_companies(config: dict[str, str], jd_text: str = "", jd
 
     all_companies = _split_csv(companies_str)
 
-    # Check if this is a TikTok/ByteDance JD
-    if not _is_tiktok_jd(jd_text, jd_url):
+    # Detect hiring company
+    hiring_company = _detect_hiring_company(config, jd_text, jd_url)
+    if not hiring_company:
         return all_companies
 
-    # Get all TikTok/ByteDance aliases to exclude
-    excluded_aliases = _get_hiring_company_aliases("tiktok") | _get_hiring_company_aliases("bytedance")
+    # Get all aliases for the hiring company to exclude
+    excluded_aliases = _get_hiring_company_aliases(hiring_company)
 
-    # Filter out hiring company and its aliases using EXACT matching (not substring)
-    # to avoid over-excluding unrelated company names
+    # Filter out hiring company and its aliases
     effective = []
     for company in all_companies:
-        company_normalized = company.lower().replace(" ", "").replace("-", "")
-        # Check if company exactly matches any excluded alias (normalized)
-        is_excluded = any(
-            company_normalized == alias.replace(" ", "").replace("-", "")
-            for alias in excluded_aliases
-        )
-        if not is_excluded:
+        if not _company_matches_alias(company, excluded_aliases):
             effective.append(company)
 
     return effective
@@ -256,6 +302,63 @@ def build_search_brief(config: dict[str, str], jd_text: str, jd_url: str = "") -
         lines.append(
             "Search for candidates relevant to this project, then review titles, companies, locations, and exclusions in Recruiter"
         )
+
+    return "\n".join(lines)
+
+
+def build_copilot_search_query(
+    config: dict[str, str],
+    jd_text: str = "",
+    jd_url: str = "",
+) -> str:
+    """Build a comprehensive natural-language query for LinkedIn Recruiter AI Copilot.
+
+    The query instructs Copilot to create search filters (not just a text response)
+    using the project configuration fields.
+    """
+    title = config.get("POSITION_TITLE", "").strip()
+    location = config.get("LOCATION", "").strip()
+    keywords = _split_csv(config.get("KEYWORDS", ""))
+    companies = get_effective_target_companies(config, jd_text, jd_url)
+    exclude_titles = _split_csv(config.get("EXCLUDE_TITLES", ""))
+
+    lines = [
+        "Create a LinkedIn Recruiter candidate search for this hiring project.",
+        "Use Recruiter search filters, not just a text response.",
+    ]
+
+    if title:
+        lines.append(
+            f"Job title filter: target candidates with current or recent titles matching or closely related to: {title}."
+        )
+
+    if location:
+        lines.append(f"Location filter: prioritize candidates in or near: {location}.")
+
+    if companies:
+        lines.append(
+            "Company filter: prioritize candidates who currently or previously worked at these companies: "
+            + ", ".join(companies[:15])
+            + "."
+        )
+
+    if keywords:
+        lines.append(
+            "Skills/keywords filter: include candidates with experience in: "
+            + ", ".join(keywords[:20])
+            + "."
+        )
+
+    if exclude_titles:
+        lines.append(
+            "Exclusion filter: exclude candidates whose current title contains: "
+            + ", ".join(exclude_titles[:15])
+            + "."
+        )
+
+    lines.append(
+        "After creating the search, show matching candidate results and keep the filters visible for review."
+    )
 
     return "\n".join(lines)
 
@@ -678,6 +781,269 @@ def _extract_filter_chips_from_page(cdp_port: str) -> dict[str, list[str]]:
     finally:
         if str(SCRIPT_DIR) in sys.path:
             sys.path.remove(str(SCRIPT_DIR))
+
+
+# Copilot widget JavaScript snippets
+COPILOT_DETECT_JS = """
+(function() {
+  const widget = document.querySelector('[data-test-copilot-widget]');
+  if (!widget) {
+    return { found: false, state: "missing" };
+  }
+  const className = widget.className || "";
+  const expanded = className.includes("copilot-widget--expanded");
+  const collapsed = className.includes("copilot-widget--collapsed");
+  const textarea = widget.querySelector('textarea.copilot-chat-input__textbox');
+  const buttons = Array.from(widget.querySelectorAll('button, [role="button"]'))
+    .map((el) => ({
+      text: (el.textContent || "").trim(),
+      ariaLabel: el.getAttribute("aria-label") || "",
+      disabled: el.disabled || el.getAttribute("aria-disabled") === "true",
+    }));
+  return {
+    found: true,
+    state: expanded ? "expanded" : collapsed ? "collapsed" : "unknown",
+    hasInput: !!textarea,
+    buttons,
+  };
+})()
+"""
+
+COPILOT_EXPAND_JS = """
+(function() {
+  const widget = document.querySelector('[data-test-copilot-widget]');
+  if (!widget) return { success: false, reason: "widget_missing" };
+  if ((widget.className || "").includes("copilot-widget--expanded")) {
+    return { success: true, alreadyExpanded: true };
+  }
+  const buttons = Array.from(widget.querySelectorAll('button, [role="button"]'));
+  const expandButton = buttons.find((btn) => {
+    const text = (btn.textContent || "").toLowerCase();
+    const aria = (btn.getAttribute("aria-label") || "").toLowerCase();
+    return (
+      aria.includes("expand") || aria.includes("open") || aria.includes("copilot") ||
+      text.includes("copilot") || text.includes("ask")
+    );
+  }) || buttons.find((btn) => !btn.disabled && btn.getAttribute("aria-disabled") !== "true");
+  if (!expandButton) {
+    return { success: false, reason: "expand_button_missing" };
+  }
+  expandButton.click();
+  return {
+    success: true, clicked: true,
+    buttonText: (expandButton.textContent || "").trim(),
+    ariaLabel: expandButton.getAttribute("aria-label") || "",
+  };
+})()
+"""
+
+COPILOT_FOCUS_INPUT_JS = """
+(function() {
+  const widget = document.querySelector('[data-test-copilot-widget]');
+  if (!widget) return { success: false, reason: "widget_missing" };
+  const textarea = widget.querySelector('textarea.copilot-chat-input__textbox');
+  if (!textarea) return { success: false, reason: "textarea_missing" };
+  // Store original styles as JSON so we can restore them later
+  textarea.dataset.copilotOriginalStyles = JSON.stringify({
+    visibility: textarea.style.visibility,
+    display: textarea.style.display,
+    opacity: textarea.style.opacity,
+    position: textarea.style.position,
+    zIndex: textarea.style.zIndex,
+    width: textarea.style.width,
+    height: textarea.style.height,
+  });
+  // Make hidden textarea interactable for keyboard input
+  textarea.style.visibility = "visible";
+  textarea.style.display = "block";
+  textarea.style.opacity = "1";
+  textarea.style.position = "fixed";
+  textarea.style.zIndex = "2147483647";
+  textarea.style.width = "600px";
+  textarea.style.height = "160px";
+  textarea.focus();
+  textarea.click();
+  // Clear any existing value using native setter so React detects the change
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
+  const oldValue = textarea.value;
+  setter.call(textarea, "");
+  if (textarea._valueTracker) {
+    textarea._valueTracker.setValue(oldValue);
+  }
+  textarea.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "deleteContent" }));
+  return {
+    success: true, tag: textarea.tagName,
+    role: textarea.getAttribute("role") || "",
+    contenteditable: textarea.isContentEditable,
+  };
+})()
+"""
+
+COPILOT_RESTORE_INPUT_JS = """
+(function() {
+  const widget = document.querySelector('[data-test-copilot-widget]');
+  if (!widget) return { restored: false };
+  const textarea = widget.querySelector('textarea.copilot-chat-input__textbox');
+  if (!textarea) return { restored: false };
+  const raw = textarea.dataset.copilotOriginalStyles;
+  if (raw) {
+    try {
+      const styles = JSON.parse(raw);
+      textarea.style.visibility = styles.visibility || "";
+      textarea.style.display = styles.display || "";
+      textarea.style.opacity = styles.opacity || "";
+      textarea.style.position = styles.position || "";
+      textarea.style.zIndex = styles.zIndex || "";
+      textarea.style.width = styles.width || "";
+      textarea.style.height = styles.height || "";
+      delete textarea.dataset.copilotOriginalStyles;
+      return { restored: true };
+    } catch (e) {
+      return { restored: false, error: e.message };
+    }
+  }
+  return { restored: false };
+})()
+"""
+
+COPILOT_TYPE_FALLBACK_JS = """
+(function() {
+  const widget = document.querySelector('[data-test-copilot-widget]');
+  if (!widget) return { ok: false, reason: "widget_missing" };
+  const query = widget.dataset.copilotPendingQuery || "";
+  if (!query) return { ok: false, reason: "no_pending_query" };
+  const textarea = widget.querySelector('textarea.copilot-chat-input__textbox');
+  if (!textarea) return { ok: false, reason: "textarea_missing" };
+  textarea.style.visibility = "visible";
+  textarea.style.display = "block";
+  textarea.style.opacity = "1";
+  textarea.style.position = "fixed";
+  textarea.style.zIndex = "2147483647";
+  textarea.focus();
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
+  const oldValue = textarea.value;
+  setter.call(textarea, query);
+  if (textarea._valueTracker) {
+    textarea._valueTracker.setValue(oldValue);
+  }
+  textarea.dispatchEvent(new InputEvent("beforeinput", {
+    bubbles: true, cancelable: true, inputType: "insertText", data: query
+  }));
+  textarea.dispatchEvent(new InputEvent("input", {
+    bubbles: true, inputType: "insertText", data: query
+  }));
+  textarea.dispatchEvent(new Event("change", { bubbles: true }));
+  const mirror = widget.querySelector('.copilot-chat-input__textbox-mirror');
+  if (mirror) mirror.textContent = query;
+  delete widget.dataset.copilotPendingQuery;
+  return { ok: true, length: textarea.value.length };
+})()
+"""
+
+COPILOT_SUBMIT_JS = """
+(function() {
+  const widget = document.querySelector('[data-test-copilot-widget]');
+  if (!widget) return { success: false, reason: "widget_missing" };
+  const form = widget.querySelector('form.copilot-chat-input');
+  const buttons = Array.from((form || widget).querySelectorAll('button, [role="button"]'));
+  const submitButton = buttons.find((btn) => {
+    const text = (btn.textContent || "").toLowerCase().trim();
+    const aria = (btn.getAttribute("aria-label") || "").toLowerCase();
+    const disabled = btn.disabled || btn.getAttribute("aria-disabled") === "true";
+    if (disabled) return false;
+    return (
+      aria.includes("send") || aria.includes("submit") || aria.includes("search") ||
+      text.includes("send your request") || text === "send" || text === "submit" || text === "search"
+    );
+  });
+  if (submitButton) {
+    submitButton.click();
+    return {
+      success: true, method: "button",
+      text: (submitButton.textContent || "").trim(),
+      ariaLabel: submitButton.getAttribute("aria-label") || "",
+    };
+  }
+  return { success: false, reason: "submit_button_missing" };
+})()
+"""
+
+COPILOT_VALIDATE_INPUT_JS = """
+(function() {
+  const widget = document.querySelector('[data-test-copilot-widget]');
+  if (!widget) return { ok: false, reason: "widget_missing" };
+  const textarea = widget.querySelector('textarea.copilot-chat-input__textbox');
+  const form = widget.querySelector('form.copilot-chat-input');
+  const bodyText = document.body.innerText;
+  // Check textarea has value
+  const hasValue = textarea && textarea.value.length > 0;
+  const valueLength = textarea ? textarea.value.length : 0;
+  // Check for validation error
+  const hasValidationError = bodyText.includes("Please enter valid text.");
+  // Check char counter (look for pattern like "0 / 6,000")
+  const counterEl = Array.from(document.querySelectorAll('*')).find(el => {
+    const text = el.textContent ? el.textContent.trim() : "";
+    return /^\\d+\\s*\\/\\s*6,000$/.test(text);
+  });
+  const counterText = counterEl ? counterEl.textContent.trim() : null;
+  const counterIsZero = counterText === "0 / 6,000";
+  // Check send button is present and enabled
+  const buttons = Array.from((form || widget).querySelectorAll('button, [role="button"]'));
+  const sendButton = buttons.find((btn) => {
+    const text = (btn.textContent || "").toLowerCase().trim();
+    const aria = (btn.getAttribute("aria-label") || "").toLowerCase();
+    const disabled = btn.disabled || btn.getAttribute("aria-disabled") === "true";
+    if (disabled) return false;
+    return (
+      aria.includes("send") || aria.includes("submit") ||
+      text.includes("send your request") || text === "send" || text === "submit"
+    );
+  });
+  const hasSendButton = !!sendButton;
+  return {
+    ok: hasValue && !hasValidationError && !counterIsZero && hasSendButton,
+    hasValue,
+    valueLength,
+    hasValidationError,
+    counterText,
+    counterIsZero,
+    hasSendButton,
+  };
+})()
+"""
+
+COPILOT_POLL_JS = """
+(function() {
+  const widget = document.querySelector('[data-test-copilot-widget]');
+  const bodyText = document.body.innerText.toLowerCase();
+  const widgetText = widget ? widget.innerText.toLowerCase() : "";
+  return {
+    hasWidget: !!widget,
+    widgetState: widget
+      ? ((widget.className || "").includes("copilot-widget--expanded")
+          ? "expanded"
+          : (widget.className || "").includes("copilot-widget--collapsed")
+            ? "collapsed"
+            : "unknown")
+      : "missing",
+    isGenerating:
+      bodyText.includes("generating") || bodyText.includes("working on") ||
+      bodyText.includes("creating search") || bodyText.includes("thinking") ||
+      !!document.querySelector('[aria-busy="true"], .artdeco-spinner'),
+    hasSearchCreationPrompt:
+      bodyText.includes("start a search") ||
+      bodyText.includes("create a search from a job description") ||
+      bodyText.includes("generate or refine a boolean search"),
+    copilotCreatedSearch:
+      widgetText.includes("a search was created for you") ||
+      widgetText.includes("updates to your search criteria have been made"),
+    candidateCardCount: document.querySelectorAll('li.profile-list__border-bottom').length,
+    profileLinkCount: document.querySelectorAll('a[href*="/talent/profile/"]').length,
+    hasFacetWrappers: !!document.querySelector('.search-facet-wrapper, [class*="facet"]'),
+    currentUrl: window.location.href,
+  };
+})()
+"""
 
 
 def _click_filter_button(cdp_port: str, filter_type: str) -> bool:
@@ -1274,6 +1640,269 @@ def _reconcile_filter_state(
     return reconciliation
 
 
+def create_initial_search_with_copilot(
+    cdp_port: str,
+    recruiter_url: str,
+    config: dict[str, str],
+    jd_text: str = "",
+    jd_url: str = "",
+    work_dir: Path | None = None,
+    chrome_profile: Path | str | None = None,
+) -> dict[str, Any]:
+    """Create an initial Recruiter search using the AI Copilot widget.
+
+    Flow:
+        1. Open the recruiter search page
+        2. Detect the Copilot widget
+        3. Expand if collapsed
+        4. Focus input and type query
+        5. Submit query
+        6. Poll for search creation (up to 90s)
+        7. Verify search is ready via inspect_search_state
+
+    Returns:
+        Dict with success status and inspection results
+    """
+    sys.path.insert(0, str(SCRIPT_DIR))
+    try:
+        from browser_utils import (
+            ActionRequired, FailureCode, run_browser_command, safe_get_parsed,
+        )
+        from recruiter_page_utils import ensure_page_ready
+
+        # Step 1: Open search page
+        open_result = run_browser_command(cdp_port, "open", recruiter_url, timeout=30)
+        if open_result.get("error"):
+            return {
+                "success": False,
+                "status": "browser_error",
+                "failure_code": FailureCode.BROWSER_UNAVAILABLE,
+                "action_required": ActionRequired.browser_unavailable(cdp_port=cdp_port).to_dict(),
+            }
+
+        ready_result = ensure_page_ready(
+            cdp_port=cdp_port,
+            target_url=recruiter_url,
+            require_page_identity=True,
+            context="create_initial_search_with_copilot",
+            max_wait_seconds=20.0,
+        )
+        if not ready_result.get("ready"):
+            return {
+                "success": False,
+                "status": ready_result.get("state", "unknown"),
+                "failure_code": ready_result.get("failure_code", FailureCode.AMBIGUOUS_STATE),
+                "action_required": ready_result.get("action_required"),
+            }
+
+        # Step 2: Detect Copilot widget
+        detect_result = run_browser_command(cdp_port, "eval", COPILOT_DETECT_JS)
+        detect_parsed = safe_get_parsed(detect_result, default={})
+        if not detect_parsed.get("found"):
+            return {
+                "success": False,
+                "status": "copilot_widget_missing",
+                "failure_code": FailureCode.ELEMENT_MISSING,
+                "action_required": ActionRequired.element_missing(
+                    selector="data-test-copilot-widget",
+                    page_url=recruiter_url,
+                ).to_dict(),
+            }
+
+        # Step 3: Expand if collapsed
+        if detect_parsed.get("state") == "collapsed":
+            expand_result = run_browser_command(cdp_port, "eval", COPILOT_EXPAND_JS)
+            expand_parsed = safe_get_parsed(expand_result, default={})
+            if not expand_parsed.get("success"):
+                return {
+                    "success": False,
+                    "status": "copilot_expand_failed",
+                    "failure_code": FailureCode.ELEMENT_MISSING,
+                    "action_required": ActionRequired.element_missing(
+                        selector="Copilot expand button",
+                        page_url=recruiter_url,
+                    ).to_dict(),
+                }
+            # Wait for expansion
+            import time
+            time.sleep(1)
+            # Re-detect
+            for _ in range(5):
+                detect_result = run_browser_command(cdp_port, "eval", COPILOT_DETECT_JS)
+                detect_parsed = safe_get_parsed(detect_result, default={})
+                if detect_parsed.get("state") == "expanded" and detect_parsed.get("hasInput"):
+                    break
+                time.sleep(1)
+            else:
+                return {
+                    "success": False,
+                    "status": "copilot_expand_timeout",
+                    "failure_code": FailureCode.TIMEOUT,
+                    "action_required": ActionRequired.timeout(
+                        operation="wait for Copilot widget expansion"
+                    ).to_dict(),
+                }
+
+        # Step 4: Focus input
+        focus_result = run_browser_command(cdp_port, "eval", COPILOT_FOCUS_INPUT_JS)
+        focus_parsed = safe_get_parsed(focus_result, default={})
+        if not focus_parsed.get("success"):
+            return {
+                "success": False,
+                "status": "copilot_input_missing",
+                "failure_code": FailureCode.ELEMENT_MISSING,
+                "action_required": ActionRequired.element_missing(
+                    selector="Copilot input field",
+                    page_url=recruiter_url,
+                ).to_dict(),
+            }
+
+        # Step 5: Type query
+        query = build_copilot_search_query(config, jd_text, jd_url)
+        type_result = run_browser_command(cdp_port, "keyboard", "inserttext", query)
+        if type_result.get("error"):
+            type_result = run_browser_command(cdp_port, "keyboard", "type", query)
+
+        # Step 5b: Validate input reached React state
+        time.sleep(0.5)
+        validate_result = run_browser_command(cdp_port, "eval", COPILOT_VALIDATE_INPUT_JS)
+        validate_parsed = safe_get_parsed(validate_result, default={})
+        if not validate_parsed.get("ok"):
+            # Fallback: stash query in a data attribute, then run setter JS
+            stash_js = """
+            (function() {
+              const widget = document.querySelector('[data-test-copilot-widget]');
+              if (widget) widget.dataset.copilotPendingQuery = arguments[0];
+              return { stashed: !!widget };
+            })()
+            """
+            stash_result = run_browser_command(cdp_port, "eval", stash_js, query)
+            if stash_result.get("error"):
+                return {
+                    "success": False,
+                    "status": "copilot_type_failed",
+                    "failure_code": FailureCode.BROWSER_UNAVAILABLE,
+                    "action_required": ActionRequired.ambiguous_state(
+                        details="Failed to stash Copilot query for fallback"
+                    ).to_dict(),
+                }
+            fallback_result = run_browser_command(cdp_port, "eval", COPILOT_TYPE_FALLBACK_JS)
+            fallback_parsed = safe_get_parsed(fallback_result, default={})
+            if not fallback_parsed.get("ok"):
+                return {
+                    "success": False,
+                    "status": "copilot_type_failed",
+                    "failure_code": FailureCode.BROWSER_UNAVAILABLE,
+                    "action_required": ActionRequired.ambiguous_state(
+                        details="Failed to type Copilot query: keyboard and DOM fallback both failed"
+                    ).to_dict(),
+                }
+            # Re-validate after fallback
+            time.sleep(0.5)
+            validate_result = run_browser_command(cdp_port, "eval", COPILOT_VALIDATE_INPUT_JS)
+            validate_parsed = safe_get_parsed(validate_result, default={})
+            if not validate_parsed.get("ok"):
+                return {
+                    "success": False,
+                    "status": "copilot_type_validation_failed",
+                    "failure_code": FailureCode.BROWSER_UNAVAILABLE,
+                    "action_required": ActionRequired.ambiguous_state(
+                        details=f"Copilot input validation failed: {validate_parsed}"
+                    ).to_dict(),
+                }
+
+        # Step 6: Submit query
+        submit_result = run_browser_command(cdp_port, "eval", COPILOT_SUBMIT_JS)
+        submit_parsed = safe_get_parsed(submit_result, default={})
+        if not submit_parsed.get("success"):
+            return {
+                "success": False,
+                "status": "copilot_submit_failed",
+                "failure_code": FailureCode.ELEMENT_MISSING,
+                "action_required": ActionRequired.element_missing(
+                    selector="Copilot submit button",
+                    page_url=recruiter_url,
+                ).to_dict(),
+            }
+
+        # Restore textarea styles so they don't block future interactions
+        run_browser_command(cdp_port, "eval", COPILOT_RESTORE_INPUT_JS)
+
+        # Step 7: Poll for creation (up to 90s)
+        expected_project_id = _extract_project_id_from_url(recruiter_url)
+        for attempt in range(45):
+            time.sleep(2)
+            poll_result = run_browser_command(cdp_port, "eval", COPILOT_POLL_JS)
+            poll_parsed = safe_get_parsed(poll_result, default={})
+
+            # Check if we're still on the right project
+            current_url = poll_parsed.get("currentUrl", "")
+            current_project_id = _extract_project_id_from_url(current_url)
+            if current_project_id and current_project_id != expected_project_id:
+                return {
+                    "success": False,
+                    "status": "copilot_wrong_project",
+                    "failure_code": FailureCode.WRONG_PAGE,
+                    "action_required": ActionRequired.wrong_page(
+                        expected_url=recruiter_url,
+                        actual_url=current_url,
+                    ).to_dict(),
+                }
+
+            # Check if search was created
+            has_creation_prompt = poll_parsed.get("hasSearchCreationPrompt", False)
+            copilot_created = poll_parsed.get("copilotCreatedSearch", False)
+            has_results = (
+                poll_parsed.get("candidateCardCount", 0) > 0 or
+                poll_parsed.get("profileLinkCount", 0) > 0 or
+                poll_parsed.get("hasFacetWrappers", False)
+            )
+            is_generating = poll_parsed.get("isGenerating", False)
+
+            if (copilot_created or not has_creation_prompt) and has_results and not is_generating:
+                # Search appears ready - verify with inspect_search_state
+                # Use current URL from poll if still on same project, to avoid losing Copilot-created state
+                verification_url = current_url if current_project_id == expected_project_id else recruiter_url
+                inspection = inspect_search_state(
+                    cdp_port, verification_url,
+                    work_dir=work_dir,
+                    chrome_profile=chrome_profile,
+                    config=config,
+                    jd_text=jd_text,
+                    jd_url=jd_url,
+                )
+                if inspection.get("success"):
+                    return {
+                        "success": True,
+                        "status": "created",
+                        "inspection": inspection,
+                        "created_search_url": verification_url,
+                    }
+                # If inspect says not ready yet, keep polling
+                if inspection.get("status") != "search_not_configured":
+                    return {
+                        "success": False,
+                        "status": inspection.get("status", "unverified"),
+                        "failure_code": inspection.get("failure_code"),
+                        "action_required": inspection.get("action_required"),
+                    }
+
+            if attempt > 0 and attempt % 10 == 0:
+                print(f"  Copilot still processing... ({attempt * 2}s)", file=sys.stderr)
+
+        return {
+            "success": False,
+            "status": "copilot_no_results_timeout",
+            "failure_code": FailureCode.TIMEOUT,
+            "action_required": ActionRequired.timeout(
+                operation="wait for Copilot to create search"
+            ).to_dict(),
+        }
+    finally:
+        if str(SCRIPT_DIR) in sys.path:
+            sys.path.remove(str(SCRIPT_DIR))
+
+
 def inspect_search_state(
     cdp_port: str, recruiter_url: str, work_dir: Path | None = None, chrome_profile: Path | str | None = None,
     config: dict[str, str] | None = None, jd_text: str = "", jd_url: str = ""
@@ -1721,6 +2350,44 @@ def run_create_search_phase(
     result["status"] = inspection.get("status", "unknown")
     result["current_url"] = inspection.get("current_url")
     result["failure_code"] = inspection.get("failure_code")
+
+    # If search is not configured, try creating it via Copilot
+    if (
+        not inspection.get("success")
+        and inspection.get("status") == "search_not_configured"
+    ):
+        print("Search not configured - attempting AI Copilot search creation...", file=sys.stderr)
+        copilot_result = create_initial_search_with_copilot(
+            effective_cdp_port,
+            recruiter_url,
+            config,
+            jd_text=jd_text,
+            jd_url=jd_url,
+            work_dir=Path(runtime_work_dir) if runtime_work_dir else None,
+            chrome_profile=runtime_chrome_profile,
+        )
+        if copilot_result.get("success"):
+            # Re-inspect to get full filter analysis
+            inspection = inspect_search_state(
+                effective_cdp_port,
+                recruiter_url,
+                work_dir=Path(runtime_work_dir) if runtime_work_dir else None,
+                chrome_profile=runtime_chrome_profile,
+                config=config,
+                jd_text=jd_text,
+                jd_url=jd_url,
+            )
+            result["status"] = inspection.get("status", "unknown")
+            result["current_url"] = inspection.get("current_url")
+            result["failure_code"] = inspection.get("failure_code")
+        else:
+            # Copilot creation failed - preserve the failure details
+            result["success"] = False
+            result["status"] = copilot_result.get("status", "copilot_failed")
+            result["failure_code"] = copilot_result.get("failure_code")
+            result["action_required"] = copilot_result.get("action_required")
+            result["message"] = f"AI Copilot search creation failed: {copilot_result.get('status')}"
+            return result
 
     # Update project state based on result
     sys.path.insert(0, str(SCRIPT_DIR))

@@ -38,6 +38,7 @@ from phase_registry import (
     is_valid_phase,
 )
 from status import get_status
+from phase_retry import run_phase_with_retries
 
 
 def run_filter_phase(
@@ -291,6 +292,7 @@ def run_phase(
     project_ref: str,
     phase: str,
     dry_run: bool = False,
+    reset_retry_count: bool = False,
 ) -> dict[str, Any]:
     """Run a single phase for a project.
 
@@ -298,6 +300,7 @@ def run_phase(
         project_ref: Project reference (ID, URL, or config path)
         phase: Phase name to run
         dry_run: If True, don't actually execute, just report what would happen
+        reset_retry_count: If True, clear previous retry state before running
 
     Returns:
         Result dict with success status and details
@@ -405,8 +408,14 @@ def run_phase(
         result["phase_result"] = {"message": f"Would run {phase} phase (dry-run)"}
     else:
         try:
-            phase_result = runner(
-                project_dir, config_path, workbook_path, local_project_id
+            phase_result = run_phase_with_retries(
+                phase=phase,
+                project_ref=project_ref,
+                project_dir=project_dir,
+                reset_retry_count=reset_retry_count,
+                runner=lambda: runner(
+                    project_dir, config_path, workbook_path, local_project_id
+                ),
             )
             result["phase_result"] = phase_result
 
