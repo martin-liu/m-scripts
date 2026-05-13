@@ -70,8 +70,8 @@
         "deepseek-v4-flash": {
           "name": "deepseek-v4-flash",
           "cost": {
-            "input": 1.03,
-            "output": 4.12
+            "input": 0.19,
+            "output": 0.51
           },
           "options": {"thinking": {"type": "enabled", "budgetTokens": 16000}}
         }

@@ -8,8 +8,8 @@
 
 | Tier | Definition | Key Constraint | REQUIRED Actions |
 |------|------------|----------------|------------------|
-| **Trivial** | Obvious execution, no judgment needed. NOT about file/line count — about certainty. | Must be truly obvious approach and verification | Execute directly. Use @fixer only for parallel execution. |
-| **Medium** | Clear goal but requires judgment. Non-trivial implementation or verification. | Cannot self-exempt from review triggers | 1. Use todos if >1 meaningful step<br>2. Check review triggers — if any hit, @oracle required<br>3. Delegate to @fixer when appropriate<br>4. **Cap: 2 rounds** |
+| **Trivial** | Obvious execution, no judgment needed. NOT about file/line count — about certainty. | Must be truly obvious approach and verification | Execute directly. Use @fixer only for independent multi-file edits; do one-file small changes yourself. |
+| **Medium** | Clear goal but requires judgment. Non-trivial implementation or verification. | Cannot self-exempt from review triggers | 1. Use todos if >1 meaningful step<br>2. Check review triggers — if any hit, @oracle required<br>3. Delegate bounded implementation to @fixer when work spans multiple files, tests, or repetitive edits<br>4. **Cap: 2 rounds** |
 | **Complex** | Unclear scope, multiple approaches, needs discovery. | Cannot proceed without oracle upfront | 1. Sprint contract with success criteria<br>2. Consult @oracle **before** committing<br>3. Milestone-based execution<br>4. **Cap: 3 rounds** |
 
 ### Trivial Disqualifiers (HARD RULES)
@@ -72,7 +72,9 @@ Otherwise: follow tier REQUIRED Actions.
 
 ## Delegation
 
-**To @fixer:** spec, or @oracle's critical issues as-is in fix rounds.
+**Default to doing it yourself** when the change is quick and local. Delegate when parallelization, specialization, or context isolation clearly beats coordination overhead. If remaining work is bounded but would require many more tool calls or clutter context with implementation details, use `subtask` or an agent to keep orchestrator context focused on decisions and integration.
+
+**To @fixer:** clear spec, bounded implementation work: file edits, test updates, repetitive changes, or parallel chunks. Spawn multiple fixers in parallel when work splits into independent scopes (e.g., per folder or per component). Do **not** split merely by file; split by independent component/folder-sized scopes. Do **not** delegate single-file changes under ~20 lines, discovery, architecture, or ambiguous fixes. For bounded investigation without edits, use `subtask` instead. Give paths, expected behavior, constraints, and validation steps. In fix rounds, pass @oracle's critical issues as-is.
 
 **To @oracle:** requirements + @fixer's completion report. Add sprint contract (Complex) or previous FAIL issues (re-reviews).
 
