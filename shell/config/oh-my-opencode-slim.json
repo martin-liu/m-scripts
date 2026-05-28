@@ -21,7 +21,7 @@
         "mcps": []
       },
       "librarian": {
-        "model": "azure-westcentralus/deepseek-v4-flash",
+        "model": "azure-westus3/deepseek-v4-flash",
         "variant": "low",
         "skills": [],
         "mcps": [
@@ -31,7 +31,7 @@
         ]
       },
       "explorer": {
-        "model": "azure-westcentralus/deepseek-v4-flash",
+        "model": "azure-westus3/deepseek-v4-flash",
         "variant": "low",
         "skills": [],
         "mcps": []
@@ -45,8 +45,8 @@
         "mcps": []
       },
       "fixer": {
-        "model": "azure-westcentralus/deepseek-v4-flash",
-        "variant": "low",
+        "model": "azure-westus3/deepseek-v4-flash",
+        "variant": "xhigh",
         "skills": [],
         "mcps": []
       }
@@ -73,7 +73,7 @@
           "model": "azure/kimi-k2.6"
         },
         "fast": {
-          "model": "azure-westcentralus/deepseek-v4-flash"
+          "model": "azure-westus3/deepseek-v4-flash"
         }
       }
     }

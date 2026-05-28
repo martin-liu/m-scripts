@@ -7,7 +7,7 @@
   "enabled_providers": [
     "openrouter",
     "azure",
-    "azure-westcentralus",
+    "azure-westus3",
     "azure-openai",
     "ollama"
   ],
@@ -15,6 +15,13 @@
     "external_directory": {
       "/tmp/**": "allow"
     }
+  },
+  "compaction": {
+    "auto": true,
+    "prune": true,
+    "tail_turns": 3,
+    "preserve_recent_tokens": 50000,
+    "reserved": 62144
   },
   "small_model": "azure/kimi-k2.6",
   "provider": {
@@ -50,17 +57,22 @@
             "input": 0.95,
             "output": 4
           },
+          "limit": {
+            "context": 262144,
+            "input": 262144,
+            "output": 49152
+          },
           "options": {"thinking": {"type": "enabled", "budgetTokens": 16000}}
         }
       }
     },
-    "azure-westcentralus": {
+    "azure-westus3": {
       "npm": "@ai-sdk/openai-compatible",
       "name": "Azure CentralUS",
       "options": {
-        "baseURL": "{env:AZURE_API_BASE_NANDDEVWESTCENTRALUS}/openai/deployments/DeepSeek-V4-Flash",
+        "baseURL": "{env:AZURE_API_BASE_NANDDEVWESTUS3}/openai/deployments/DeepSeek-V4-Flash",
         "headers": {
-          "api-key": "{env:AZURE_API_KEY_NANDDEVWESTCENTRALUS}"
+          "api-key": "{env:AZURE_API_KEY_NANDDEVWESTUS3}"
         },
         "queryParams": {
           "api-version": "{env:AZURE_API_VERSION}"
