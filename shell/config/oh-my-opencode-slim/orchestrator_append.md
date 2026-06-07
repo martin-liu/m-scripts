@@ -33,6 +33,8 @@ If **any** apply, the task is **NOT Trivial** — classify as Medium or Complex:
 - New interfaces, shared abstractions, or maintainability risks
 - Debugging path or approach is non-obvious
 
+@oracle's verdict is what makes the loop terminate (see @oracle's output format): `[critical]` Issues are blockers that drive another round; `Simplify:` / `Minor observations:` never block and are tagged `(quick-win)` or `(defer)`; `Future work:` is out-of-scope.
+
 ## Workflow Rules
 
 ### Direct Execution Checklist (ALL must be true AND no Trivial Disqualifiers apply)
@@ -58,10 +60,14 @@ Otherwise: follow tier REQUIRED Actions.
 
 ### Loop Enforcement
 
+@oracle review is a **convergence loop**, not a single pass: re-review until @oracle stops flagging new `[critical]` issues — the round cap is a backstop, not the normal exit.
+
 1. **After every agent return**, next unchecked todo = next action.
-2. **PASS →** done, next feature/sprint.
-3. **FAIL + rounds left →** create `{prefix} fix round N` + `{prefix} re-review round N`.
-4. **FAIL at cap →** create `{prefix} RAISE-TO-USER`, present to user.
+2. **Only `[critical]` issues drive a new round.** Loop: create `{prefix} fix round N` (@fixer addresses every critical issue) + `{prefix} re-review round N` (@oracle re-reviews) → repeat while a round surfaces a *new* critical issue.
+3. **Each fix round also applies the `(quick-win)` Simplify/Minor items** inline alongside the critical fixes — don't blanket-defer them. `(defer)` items are listed for the user.
+4. **Converged when a round surfaces no new critical issue** (@oracle only raises new issues caused by the fix, so this terminates). Do **not** spawn another round just to chase `(quick-win)` or `(defer)` items.
+5. **PASS (converged) →** done, next feature/sprint. Report what was applied and what was deferred.
+6. **Critical issues still open at cap** (Medium: 2, Complex: 3) **→** create `{prefix} RAISE-TO-USER`, present to user.
 
 ## Specs
 

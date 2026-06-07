@@ -22,7 +22,9 @@ Read `Latest marker:` and `Current sprint:` together — they fully determine th
 
 Also check `## Escalations` for any unresolved `Delegation failure:` entries — if present, surface to user and resolve before routing.
 
-**If the file doesn't exist but the feature directory exists:** check whether `requirements.md` or `design.md` exist and are non-empty. If either is non-empty, the feature has in-progress state — **stop and ask the user** what happened before touching anything. Only if all docs are empty or missing: re-run Bootstrap from step 4 (skip mkdir), copying only template files that do not already exist or are empty.
+**Pointer sections:** if `## Requirements` or `## Design` contains only a `→ see <file>` line, read that file for the section's content. This is the escape hatch for large sections — treat it as if the content were inline.
+
+**If the file doesn't exist but the feature directory exists:** check whether `plan_and_track.md` exists and is non-empty. If it is, the feature has in-progress state — **stop and ask the user** what happened before touching anything. Only if it is empty or missing: re-run Bootstrap from step 4 (skip mkdir), copying only template files that do not already exist or are empty.
 
 **If the file doesn't exist and neither does the directory → follow Bootstrap below.**
 
@@ -36,13 +38,13 @@ If args were provided at invocation (e.g. `/xdev add OAuth login`), treat them a
 2. Confirm doc location (default: `.tmp/xdev/{feature}/`).
 3. **Guard:** if `plan_and_track.md` already exists at that path and is non-empty, this is an existing feature — do not bootstrap, go to Golden Rule resume instead.
 4. `mkdir -p .tmp/xdev/{feature}/`
-5. For each template file in `$SKILL_DIR/templates/`: copy to the feature directory **only if the destination does not exist or is empty**.
+5. Copy `plan_and_track.md` and `sprint_block.md` from `$SKILL_DIR/templates/` to the feature directory (only if the destination does not exist or is empty).
    - `$SKILL_DIR` is set by the harness. If absent, locate templates at `~/.agents/skills/xdev/templates/` or the project-local skill path.
-6. Write the initial feature description into `requirements.md` under `## Initial Brief`. If invocation args were provided, paste them there. If no args, write a brief summary from the user's response.
-7. Resolve placeholders in the copied files in this order:
-   a. Replace `{Feature Name}` and `{feature}` (feature name) in all files.
+6. Write the initial feature description into the `### Initial Brief` subsection of `## Requirements` in `plan_and_track.md`. If invocation args were provided, paste them there. If no args, write a brief summary from the user's response.
+7. Resolve placeholders in `plan_and_track.md` in this order:
+   a. Replace `{Feature Name}` and `{feature}` (feature name).
    b. Resolve role bindings (see Role Model) — ask user or use harness convention.
-   c. Replace `{agent or @handle}` with resolved bindings in `plan_and_track.md`.
+   c. Replace `{agent or @handle}` with resolved bindings.
    d. Leave `Sprint N: {Title}` as-is — filled per-sprint at 3a.
    e. Check `.gitignore` — add `.tmp/` if not present. **Note:** `.tmp/` means "local only, not committed" — not "auto-deleted." Do not add to auto-clean scripts.
  8. Set `Latest marker:` to `(none)`, `Current sprint:` to `(none)`.
@@ -79,7 +81,7 @@ xdev assumes sequential execution — only one role is active at a time writing 
 | `planner`      | Requirements, design, sprint contracts, design-change updates        |
 | `generator`    | Sprint implementation, test runs, completion reports                 |
 | `evaluator`    | Contract quality verdicts, completion-report verdicts, all `[APPROVED]` and `[RAISED]` markers |
-| `researcher`   | External doc / library lookups (optional)                           |
+| `researcher`   | External doc / library lookups (optional); reconciles confirmed findings into `## Research Log` |
 
 **Hard rules:**
 - Generator and evaluator must always be **different instances**. A generator cannot evaluate its own work.
@@ -104,9 +106,9 @@ Resolve in this order:
 
 Every prompt to a role must include:
 
-- **planner**: paths to read (`requirements.md`, `design.md`) → section to produce → where to write in `plan_and_track.md` → marker to set on success.
-- **generator**: path to the sprint's `#### Contract` section + referenced `design.md` sections + relevant source file paths → validation command → where to write `#### Completion Report`.
-- **evaluator**: path to section to judge + hard-threshold criteria → where to write verdict → marker to set on PASS → current `Rounds:` value to increment.
+- **planner**: sections to read (`## Requirements`, `## Design` in `plan_and_track.md`) → section to produce → where to write in `plan_and_track.md` → marker to set on success.
+- **generator**: path to the sprint's `#### Contract` section + referenced `## Design` subsections + relevant source file paths → validation command → where to write `#### Completion Report`.
+- **evaluator**: section to judge + hard-threshold criteria → where to write verdict → marker to set on PASS → current `Rounds:` value to increment.
 
 No role needs conversation history. Every handoff is a file read.
 
@@ -122,7 +124,7 @@ Used in all FAIL verdicts:
 | **major** | Significant gap against contract criteria, must fix before ship | Yes — FAIL |
 | **minor** | Advisory, style, or non-blocking observation | No — PASS with notes |
 
-**Rule:** evaluator may only write FAIL when at least one critical or major issue exists. Minor-only findings → PASS with a notes section listing them.
+**Rule:** evaluator may only write FAIL when at least one critical or major issue exists. Minor-only findings → PASS — but minors are not blanket-deferred: when a fix round is already running for critical/major issues, the generator also applies the **quick-win** minors (low-risk, bounded, in-scope — a one-line simplification, an obvious clarity fix) in that same round. Minors that are risky, large, or out-of-scope go into the verdict's notes section for the user. Minors never trigger a new round on their own.
 
 ---
 
@@ -162,8 +164,8 @@ A report is **submitted** when: `**Files changed:**` is non-empty; `**Validation
 | `[RAISED: SPRINT_N]` | evaluator | Sprint cap hit | See Raised-State Recovery; re-entry: generator addresses issues → 3d |
 | `[RAISED: PRODUCTION]` | evaluator | Close cap hit | See Raised-State Recovery; re-entry: generator fixes → Phase 4 step 2 |
 | `[ABORTED: SPRINT_N — {reason}]` | orchestrator | Mid-sprint pivot | Sprints 1..N-1 already approved remain valid. Planner revises sprint list from Sprint N onwards (adding `[INVALIDATED: SPRINT_M]` annotations to Sprint N and any now-invalid future sprints); re-enter Phase 2 step 2 to revise the remaining sprint list only |
-| `[ABORTED: DESIGN — {reason}]` | orchestrator | Design restart | Planner revises `design.md` based on reason; re-enter Phase 2 step 1 |
-| `[ABORTED: REQUIREMENTS — {reason}]` | orchestrator | Scope restart | All downstream state is invalidated: clear `[APPROVED: DESIGN]`, mark all sprints `[INVALIDATED: SPRINT_M]`, reset Sprint List. Planner revises `requirements.md`; re-enter Phase 1 step 3 |
+| `[ABORTED: DESIGN — {reason}]` | orchestrator | Design restart | Planner revises the `## Design` section based on reason; re-enter Phase 2 step 1 |
+| `[ABORTED: REQUIREMENTS — {reason}]` | orchestrator | Scope restart | Planner clears `[APPROVED: DESIGN]`, marks all sprints `[INVALIDATED: SPRINT_M]`, resets Sprint List, then revises the `## Requirements` section; re-enter Phase 1 step 3 |
 | `[INVALIDATED: SPRINT_M]` | planner | Sprint made moot | Not a `Latest marker:` value — annotation only. For sprints with an existing block: written inside Sprint M's verdict section. For sprints not yet started (no block exists): written in the Sprint List table's Scope column as `[INVALIDATED]` and noted in `## Design Revisions`. Skip all invalidated sprints when advancing; if all remaining sprints are invalidated, enter Phase 4 |
 
 If `Latest marker:` is missing, malformed, or unrecognized: stop and ask the user before proceeding.
@@ -225,15 +227,8 @@ Happy path: `(none)` → `[APPROVED: REQUIREMENTS]` → `[APPROVED: DESIGN]` →
 
 1. Read project `CLAUDE.md` / `AGENTS.md` (if present) for red lines and conventions.
 2. Explore codebase for prior art. Delegate to `{researcher}` (if bound) for broad searches or unfamiliar libraries.
-3. `{planner}` fills `requirements.md`. All open questions must be resolved — leave none blank.
-4. `{evaluator}` reviews: clarity, scope discipline, missing constraints, unresolved open questions. Writes verdict in `## Requirements Review` using this format:
-   ```
-   Requirements verdict: PASS | FAIL
-   Rounds: N/3
-   Issues (if FAIL — at least one critical or major):
-   - [area] — severity: critical|major|minor — [specific issue]
-   ```
-   Increments `Requirements: Rounds:`.
+3. `{planner}` fills the `## Requirements` section. All open questions must be resolved — leave none blank.
+4. `{evaluator}` reviews: clarity, scope discipline, missing constraints, unresolved open questions. Appends verdict to `## Requirements Review` using the format pre-seeded in that section. Increments `Requirements: Rounds:`.
 5. `{planner}` (fresh instance) fixes; `{evaluator}` re-reviews (writes new verdict in `## Requirements Review`). Cap: 3 rounds total. Cap hit → write `[RAISED: REQUIREMENTS]` + escalation summary under `## Escalations`.
 6. On PASS: `{evaluator}` writes `[APPROVED: REQUIREMENTS]` as `Latest marker:`.
 
@@ -247,8 +242,8 @@ Happy path: `(none)` → `[APPROVED: REQUIREMENTS]` → `[APPROVED: DESIGN]` →
 
 **Round cap: 3. Track in `## Phase Rounds` → `Design: Rounds: N/3`.**
 
-1. `{planner}` writes `design.md` from template.
-2. `{planner}` drafts sprint list in `plan_and_track.md`: titles + one-line scope only. Leave empty if no implementation needed.
+1. `{planner}` fills the `## Design` section.
+2. `{planner}` drafts the `## Sprint List` table: titles + one-line scope only. Leave empty if no implementation needed.
 3. `{evaluator}` reviews design for correctness, security, over-engineering, gaps. Writes verdict in `## Design Review` in `plan_and_track.md`. Increments `Design: Rounds:`.
 4. `{planner}` (fresh instance) fixes; `{evaluator}` re-reviews (writes new verdict in `## Design Review`). Cap: 3 rounds. Cap hit → write `[RAISED: DESIGN]` + escalation summary.
  5. On PASS: `{evaluator}` writes `[APPROVED: DESIGN]`. Orchestrator updates `Current sprint:` to `(none — zero sprints)` if Sprint List is empty.
@@ -267,11 +262,11 @@ For each new sprint, `{planner}` appends `sprint_block.md` content (with N and t
 
 #### 3a — Draft Contract
 
-`{planner}` appends a new sprint block (from `sprint_block.md`) under `## Sprint Log` in `plan_and_track.md`, then writes the contract. Consult `{researcher}` (if bound) before finalizing criteria referencing unfamiliar libraries.
+`{planner}` writes the contract. Consult `{researcher}` (if bound) before finalizing criteria referencing unfamiliar libraries.
 
 ```markdown
 #### Contract
-- **Scope:** which sections of design.md apply
+- **Scope:** which subsections of ## Design apply
 - **Success criteria:** (hard thresholds — each independently verifiable)
   - [ ] `<test command>` exits 0
   - [ ] `<file or output>` exists / matches expected
@@ -283,22 +278,14 @@ For each new sprint, `{planner}` appends `sprint_block.md` content (with N and t
 
 #### 3b — Review Contract
 
-`{evaluator}` checks: are all success criteria hard thresholds verifiable without interpretation?
-
-**Required verdict format:**
-```
-Contract verdict: PASS | FAIL
-Rounds: N/2
-Issues (if FAIL):
-- [criterion text] — too vague because: [reason] — rewrite as: [concrete alternative]
-```
+`{evaluator}` checks: are all success criteria hard thresholds verifiable without interpretation? Appends verdict to the `#### Contract Review Verdict` block using the format pre-seeded there.
 
 - **PASS** → write `[APPROVED: SPRINT_N_CONTRACT]`.
 - **FAIL** → `{planner}` (fresh instance) rewrites. Cap: 2 rounds. Cap hit → write `[RAISED: SPRINT_N_CONTRACT]` + escalation summary.
 
 #### 3c — Implement
 
-`{generator}` reads: sprint contract, referenced `design.md` sections, relevant source files. Implements, runs validation command. **Generator must not submit a Completion Report with a failing validation command — fix failures first.**
+`{generator}` reads: sprint contract, referenced `## Design` subsections, relevant source files. Implements, runs validation command. **Generator must not submit a Completion Report with a failing validation command — fix failures first.**
 
 **Generator stuck:** if the validation command cannot be made to pass (e.g. pre-existing infrastructure failure, blocked dependency), generator stops and surfaces the blockage to the orchestrator. The orchestrator writes a `Delegation failure: validation blocked — [reason]` note under `## Escalations` and surfaces to the user before proceeding.
 
@@ -318,32 +305,16 @@ All new-code criteria must be `[x] — passed`. The only allowed `[ ]` entries a
 
 #### 3d — Evaluate
 
-`{evaluator}` reads contract + Completion Report, spot-checks changed files.
-
-**Required verdict format:**
-```
-Sprint verdict: PASS | FAIL
-Rounds: N/2
-Issues (if FAIL — must contain at least one critical or major):
-- [criterion or file] — severity: critical|major|minor — [specific actionable description]
-Minor-only findings (list here, set verdict to PASS):
-```
+`{evaluator}` reads contract + Completion Report, spot-checks changed files. Appends verdict to the `#### Evaluation Verdict` block using the format pre-seeded there.
 
 - **PASS** → write `[APPROVED: SPRINT_N]`.
 - **FAIL** → proceed to 3e.
 
 #### 3e — Fix
 
-`{generator}` addresses critical and major issues, updates Completion Report. Minor issues are advisory. Back to 3d. **Cap: 2 rounds total (tracked in `Rounds:` of the Evaluation Verdict).** Cap hit → write `[RAISED: SPRINT_N]` + escalation summary.
+`{generator}` addresses critical and major issues, updates Completion Report. Minor issues are advisory — but since a round is already running, generator also applies the quick-win minors (low-risk, bounded, in-scope) here per the Severity Levels rule; the rest stay in the verdict notes for the user. Back to 3d. **Cap: 2 rounds total (tracked in `Rounds:` of the Evaluation Verdict).** Cap hit → write `[RAISED: SPRINT_N]` + escalation summary.
 
-**Mid-sprint design change:** if implementation reveals a design error → write `Design Rev N: Paused sprint: M — [what changed and why]` under `## Design Revisions` and add `Design Rev N: Rounds: 0/2` under `## Phase Rounds` → `{planner}` updates `design.md` → `{evaluator}` appends verdict to `## Design Revisions` using this format:
-
-```
-Design revision verdict: PASS | FAIL
-Rounds: N/2
-Issues (if FAIL):
-- [section] — severity: critical|major|minor — [specific description]
-```
+**Mid-sprint design change:** if implementation reveals a design error → write `Design Rev N: Paused sprint: M — [what changed and why]` under `## Design Revisions` and add `Design Rev N: Rounds: 0/2` under `## Phase Rounds` → `{planner}` updates the `## Design` section → `{evaluator}` appends verdict to `## Design Revisions` using the format pre-seeded in that section.
 
 Cap: 2 rounds total. Cap hit → write `[RAISED: DESIGN_REV_N]`. On PASS → write `[APPROVED: DESIGN_REV_N]`. Resume per marker table conditional (evaluator checks if contract is now stale → 3a if stale). If change invalidates an approved sprint, add `[INVALIDATED: SPRINT_M]` to that sprint's verdict section.
 
@@ -355,18 +326,10 @@ Cap: 2 rounds total. Cap hit → write `[RAISED: DESIGN_REV_N]`. On PASS → wri
 
 **Round cap: 3. Track in `## Phase Rounds` → `Production: Rounds: N/3`.**
 
-1. `{generator}` runs full test suite across affected packages. **Affected packages** = all packages containing files listed in any sprint's Completion Report `**Files changed:**`. Zero-sprint projects: generator runs the full suite against all packages whose paths appear in `design.md` under Architecture or Data Model sections. Document pre-existing failures — don't fix unrelated things.
-2. `{evaluator}` holistic review: security, reliability, observability, data integrity, performance, red-line compliance (re-read `CLAUDE.md` / `AGENTS.md` if present). Writes verdict in `## Production Review` in `plan_and_track.md`. Increments `Production: Rounds:`.
+1. `{generator}` runs full test suite across affected packages. **Affected packages** = all packages containing files listed in any sprint's Completion Report `**Files changed:**`. Zero-sprint projects: generator runs the full suite against all packages whose paths appear in the `## Design` section under Architecture or Data Model. Document pre-existing failures — don't fix unrelated things.
+2. `{evaluator}` holistic review: security, reliability, observability, data integrity, performance, red-line compliance (re-read `CLAUDE.md` / `AGENTS.md` if present). Appends verdict to `## Production Review` using the format pre-seeded in that section. Increments `Production: Rounds:`.
 
-**Required verdict format (append to `## Production Review`):**
-```
-Production verdict: PASS | FAIL
-Rounds: N/3
-Issues (if FAIL — at least one critical or major):
-- [area] — severity: critical|major|minor — [specific actionable description]
-```
-
-3. `{generator}` fixes implementation issues (no format required for fix work itself); `{planner}` updates `design.md` only if a doc-level concern arises. `{evaluator}` re-reviews. Cap: 3 rounds total. Cap hit → write `[RAISED: PRODUCTION]` + escalation summary.
+3. `{generator}` fixes implementation issues (no format required for fix work itself); `{planner}` updates the `## Design` section only if a doc-level concern arises. `{evaluator}` re-reviews. Cap: 3 rounds total. Cap hit → write `[RAISED: PRODUCTION]` + escalation summary.
 4. On PASS: `{evaluator}` writes `[APPROVED: PRODUCTION]` as `Latest marker:` and sets `Current sprint:` to `(complete)`.
 
 ---
@@ -385,10 +348,12 @@ Issues (if FAIL — at least one critical or major):
 
 ## Doc-as-State Contract
 
-The three `.md` files are the **only** durable state.
+`plan_and_track.md` is the **only** durable state file. (`requirements.md` / `design.md` may exist alongside it if a section was explicitly extracted via `→ see <file>` — treated as an extension of the plan file, not separate state.)
 
 - Update `plan_and_track.md` **before** delegating to any sub-agent.
 - `Latest marker:` is the canonical resume anchor — read it first, always.
+- **Prefer reset over compaction.** On a long run, when the orchestrator's own context grows heavy, reset to a clean slate rather than compacting — `plan_and_track.md` is a complete handoff artifact. Re-read it and resume from `Latest marker:`; never rely on retained conversation history. (This is why every delegation brief is self-contained.)
+- **Reference files by path, never paste file contents into the docs.** Contents go stale and bloat the handoff artifact; a path stays current.
 - **Never write credentials, tokens, API keys, or secrets into xdev docs.**
 - If a fact isn't in the docs, it doesn't exist for `xdev`.
 
@@ -399,11 +364,11 @@ The three `.md` files are the **only** durable state.
 ```
 {repo}/
   .tmp/xdev/{feature}/
-    requirements.md
-    design.md
-    plan_and_track.md
-    sprint_block.md      ← template for appending sprint sections
-  .gitignore             ← .tmp/ must be listed
+    plan_and_track.md          ← the single state file (req + design + tracking)
+    sprint_block.md            ← template for appending sprint sections (not edited)
+    requirements.md            ← optional: only if ## Requirements was extracted
+    design.md                  ← optional: only if ## Design was extracted
+  .gitignore                   ← .tmp/ must be listed
 ```
 
 ---
