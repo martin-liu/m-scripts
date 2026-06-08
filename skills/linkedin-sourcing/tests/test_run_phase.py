@@ -415,12 +415,15 @@ class TestTimeoutHandling:
                         result = rp.run_phase("test_project", "create_search")
 
                         assert result["success"] is False
-                        assert result["failure_code"] == "timeout"
+                        # Retry layer converts exhausted timeouts to retry_exhausted
+                        assert result["failure_code"] == "retry_exhausted"
                         assert result["can_retry"] is True
                         # State should be "failed" to allow retry, not "action_required"
-                        assert mock_update.call_count == 2
-                        failed_call = mock_update.call_args_list[1]
-                        assert failed_call.kwargs["status"] == "failed"
+                        failed_calls = [
+                            c for c in mock_update.call_args_list
+                            if c.kwargs.get("status") == "failed"
+                        ]
+                        assert len(failed_calls) >= 1
 
 
 if __name__ == "__main__":

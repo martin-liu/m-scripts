@@ -628,37 +628,25 @@ class TestConfirmSearchFilterSummary:
         )
 
     def test_confirm_search_summary_uses_structured_data_when_available(self, tmp_path):
-        """Status should prefer structured create_search_summary over legacy string."""
-        project_dir = tmp_path / "projects" / "test_project"
-        project_dir.mkdir(parents=True)
-        config_file = project_dir / "config.sh"
-        config_file.write_text('PROJECT_ID="test_project"\n')
-
-        # Create empty workbook (extraction hasn't run yet)
-        workbook_path = project_dir / "workbook.xlsx"
-        from excel_utils import create
-
-        create(str(workbook_path))
-
+        """Structured confirm-search summary should include copilot query and search brief."""
+        from openpyxl import Workbook
         from project_state import create_initial_state, save_project_state
 
+        project_dir = tmp_path / "projects" / "test_project"
+        project_dir.mkdir(parents=True)
+        (project_dir / "config.sh").write_text(
+            'PROJECT_ID="test_project"\nRECRUITER_PROJECT_URL="https://linkedin.com/talent/hire/123/discover"\n',
+            encoding="utf-8",
+        )
+        wb = Workbook()
+        wb.save(project_dir / "workbook.xlsx")
         state = create_initial_state(
             "test_project", current_phase="create_search", status="completed"
         )
-        # Set both structured and legacy summary
         state["create_search_summary"] = {
-            "filter_analysis": {
-                "expected_companies": ["google", "meta"],
-                "observed_companies": ["google"],
-                "missing_companies": ["meta"],
-                "malformed_titles": ["BadTitle"],
-            },
-            "reconciliation": {
-                "attempted": True,
-                "companies_added": ["Meta"],
-                "companies_failed": ["NonExistent"],
-                "titles_removed": ["BadTitle"],
-            },
+            "recruiter_url": "https://linkedin.com/talent/hire/123/discover",
+            "copilot_query": "Create a search for Software Engineer in San Francisco",
+            "search_brief": "Search for Software Engineer candidates",
         }
         state["last_result_summary"] = "Legacy string summary"
         save_project_state(project_dir, state)
@@ -669,22 +657,14 @@ class TestConfirmSearchFilterSummary:
         assert result["next_phase"] == "confirm_search"
         # Should build summary from structured data, not use legacy string
         confirm_summary = result.get("confirm_search_summary", "")
-        assert "Auto-added companies: Meta" in confirm_summary
-        assert "Failed to add companies: NonExistent" in confirm_summary
-        assert "Auto-removed malformed titles: BadTitle" in confirm_summary
-        assert "Missing companies: meta" in confirm_summary
-        # Should NOT contain legacy summary
+        assert "Software Engineer" in confirm_summary
         assert "Legacy string summary" not in confirm_summary
         # Should expose normalized entries for pretty rendering
         entries = result.get("confirm_search_entries") or []
-        assert ("success", "Auto-added companies: Meta") in entries
-        assert any(
-            kind == "warning" and "Missing companies: meta" in text
-            for kind, text in entries
-        )
+        assert any("Copilot query" in text for kind, text in entries)
 
     def test_confirm_search_summary_includes_keyword_results(self, tmp_path):
-        """Structured confirm-search summary should include keyword add/missing details."""
+        """Structured confirm-search summary should include copilot query and search brief."""
         project_dir = tmp_path / "projects" / "test_project"
         project_dir.mkdir(parents=True)
         config_file = project_dir / "config.sh"
@@ -701,25 +681,16 @@ class TestConfirmSearchFilterSummary:
             "test_project", current_phase="create_search", status="completed"
         )
         state["create_search_summary"] = {
-            "filter_analysis": {
-                "missing_keywords": ["python"],
-                "observed_keywords": ["kubernetes"],
-            },
-            "reconciliation": {
-                "attempted": True,
-                "keywords_added": ["Kubernetes"],
-                "keywords_failed": ["Python"],
-            },
+            "copilot_query": "Create a search for Software Engineer with Python skills",
+            "search_brief": "Search for Software Engineer candidates",
         }
         save_project_state(project_dir, state)
 
         result = status.get_status("test_project", tmp_path)
 
         confirm_summary = result.get("confirm_search_summary", "")
-        assert "Auto-added keywords: Kubernetes" in confirm_summary
-        assert "Failed to add keywords: Python" in confirm_summary
-        assert "Missing keywords: python" in confirm_summary
-        assert "Observed keywords: kubernetes" in confirm_summary
+        assert "Software Engineer" in confirm_summary
+        assert "Python" in confirm_summary
 
 
 class TestCreateSearchToConfirmSearchRouting:
@@ -777,7 +748,7 @@ class TestCreateSearchToConfirmSearchRouting:
     def test_structured_confirm_search_summary_keeps_issue_and_error_details(
         self, tmp_path
     ):
-        """Structured confirm-search summary should keep operator-facing issue details."""
+        """Structured confirm-search summary should show copilot query and search brief."""
         project_dir = tmp_path / "projects" / "test_project"
         project_dir.mkdir(parents=True)
         config_file = project_dir / "config.sh"
@@ -794,30 +765,16 @@ class TestCreateSearchToConfirmSearchRouting:
             "test_project", current_phase="create_search", status="completed"
         )
         state["create_search_summary"] = {
-            "filter_analysis": {
-                "issues": ["Missing expected companies: meta"],
-                "missing_companies": ["meta"],
-                "observed_companies": ["google"],
-            },
-            "reconciliation": {
-                "attempted": True,
-                "companies_failed": ["meta"],
-                "titles_failed": ["BadTitle"],
-                "errors": ["Could not open Companies filter"],
-            },
+            "copilot_query": "Create a search for Software Engineer in San Francisco",
+            "search_brief": "Search for Software Engineer candidates",
         }
         save_project_state(project_dir, state)
 
         result = status.get_status("test_project", tmp_path)
 
         entries = result.get("confirm_search_entries") or []
-        assert ("info", "Issues: 1") in entries
-        assert ("warning", "Missing expected companies: meta") in entries
-        assert ("warning", "Failed to remove titles: BadTitle") in entries
-        assert (
-            "warning",
-            "Reconciliation errors: Could not open Companies filter",
-        ) in entries
+        assert any("Copilot query" in text for kind, text in entries)
+        assert any("Software Engineer" in text for kind, text in entries)
 
 
 class TestGetStatus:

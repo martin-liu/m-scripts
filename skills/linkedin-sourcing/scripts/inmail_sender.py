@@ -507,6 +507,9 @@ def navigate_to_profile(
 
     agent-browser open can occasionally time out even when Chrome has already landed
     on the requested profile. Treat that as success only when the final URL matches.
+
+    Operation-level recovery: if navigation succeeds but URL doesn't match,
+    retries once with open + ensure_page_ready before giving up.
     """
     global LAST_NAVIGATION_FAILURE_CODE
     LAST_NAVIGATION_FAILURE_CODE = None
@@ -515,7 +518,31 @@ def navigate_to_profile(
         mode, "open", profile_url, timeout_sec=timeout_sec
     )
     if returncode == 0:
-        return True
+        # Verify we're actually on the target profile
+        success, current_url = get_current_url(mode, timeout_sec=3)
+        if success and urls_match(current_url, profile_url):
+            return True
+        # Wrong page - retry once with ensure_page_ready
+        returncode2, _, _ = run_agent_browser(
+            mode, "open", profile_url, timeout_sec=timeout_sec
+        )
+        if returncode2 == 0:
+            sys.path.insert(0, str(Path(__file__).parent))
+            try:
+                from recruiter_page_utils import ensure_page_ready
+                ready = ensure_page_ready(
+                    browser_mode=mode.cdp_port if mode.is_cdp() else mode,
+                    target_url=profile_url,
+                    max_wait_seconds=recovery_wait_sec,
+                )
+                if ready.get("ready"):
+                    success, current_url = get_current_url(mode, timeout_sec=3)
+                    if success and urls_match(current_url, profile_url):
+                        return True
+            finally:
+                if str(Path(__file__).parent) in sys.path:
+                    sys.path.remove(str(Path(__file__).parent))
+        return False
     if _is_browser_unavailable_message(stderr):
         LAST_NAVIGATION_FAILURE_CODE = FailureCode.BROWSER_UNAVAILABLE
         return False
@@ -1425,12 +1452,18 @@ def send_inmail_with_result(
                 clean_state=False,
                 profile_url=profile_url,
             )
+        # Capture actual URL for actionable blocker
+        actual_url = None
+        try:
+            _, actual_url = get_current_url(mode, timeout_sec=3)
+        except Exception:
+            pass
         return _build_failure_result(
             reason="navigation_failed",
             failure_code=FailureCode.WRONG_PAGE,
             action_required=ActionRequired.wrong_page(
                 expected_url=profile_url,
-                actual_url=None,
+                actual_url=actual_url,
             ),
             clean_state=True,
             profile_url=profile_url,

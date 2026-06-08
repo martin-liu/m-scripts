@@ -364,6 +364,7 @@ def run_enrich_phase(
                         "navigation_failed",
                         "extraction_parse_error",
                         "agent_browser_not_found",
+                        "wrong_page",
                     }
 
                     is_browser_failure = failure_code in browser_failure_codes

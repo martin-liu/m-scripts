@@ -60,6 +60,8 @@ Do not guess the next phase.
 |---|---|
 | Login/auth required | Log into LinkedIn Recruiter, then rerun the loop |
 | Browser/CDP unavailable | Reconnect Chrome (`connect_browser.sh`), then rerun the loop |
+| Search creation required | Open Recruiter, create the search using the provided Copilot query, then rerun the loop |
+| Confirm search required | User verifies the search is ready, then run with `--confirm-search` |
 | Send confirmation required | Review drafted messages in workbook, get explicit user approval, then run with `--confirm-send` |
 | Page/dialog blocked | Clear the blocker, then rerun the loop |
 | Unclear failure | Stop and inspect `DEBUG.md`; do not manually advance phases |

@@ -286,6 +286,13 @@ class TestEnrichViaBrowser:
         open_result.stdout = ""
         open_result.stderr = ""
 
+        # Mock successful URL verification
+        verify_result = MagicMock(
+            returncode=0,
+            stdout=json.dumps({"url": "https://linkedin.com/in/test"}),
+            stderr="",
+        )
+
         # Mock successful eval command with profile data
         eval_result = MagicMock()
         eval_result.returncode = 0
@@ -299,7 +306,7 @@ class TestEnrichViaBrowser:
         )
         eval_result.stderr = ""
 
-        mock_run.side_effect = [open_result, eval_result]
+        mock_run.side_effect = [open_result, verify_result, eval_result]
 
         result = pe._enrich_via_browser("https://linkedin.com/in/test", "9230", 60)
 
@@ -309,17 +316,24 @@ class TestEnrichViaBrowser:
 
         # Verify correct commands were called
         calls = mock_run.call_args_list
-        assert len(calls) == 2
+        assert len(calls) == 3
         # First call should be 'open' command
         assert calls[0][0][0][3] == "open"
-        # Second call should be 'eval' command
+        # Second call should be 'eval' command (URL verification)
         assert calls[1][0][0][3] == "eval"
+        # Third call should be 'eval' command (profile extraction)
+        assert calls[2][0][0][3] == "eval"
 
     @patch("time.sleep")
     @patch("subprocess.run")
     def test_browser_retries_when_profile_is_still_loading(self, mock_run, mock_sleep):
         """Should retry eval when the profile page is still in a loading shell."""
         open_result = MagicMock(returncode=0, stdout="", stderr="")
+        verify_result = MagicMock(
+            returncode=0,
+            stdout=json.dumps({"url": "https://linkedin.com/in/test"}),
+            stderr="",
+        )
         loading_eval = MagicMock(
             returncode=0,
             stdout=json.dumps({"headline": "Loading.", "top_lines": ["Loading."]}),
@@ -353,13 +367,13 @@ class TestEnrichViaBrowser:
             stderr="",
         )
 
-        mock_run.side_effect = [open_result, loading_eval, empty_eval, ready_eval]
+        mock_run.side_effect = [open_result, verify_result, loading_eval, empty_eval, ready_eval]
 
         result = pe._enrich_via_browser("https://linkedin.com/in/test", "9230", 60)
 
         assert result.success is True
         assert "Software Engineer at NetApp" in result.enrichment_notes
-        assert mock_run.call_count == 4
+        assert mock_run.call_count == 5
         assert mock_sleep.call_count == 2
 
     @patch("subprocess.run")
@@ -405,12 +419,18 @@ class TestEnrichViaBrowser:
         open_result.stdout = ""
         open_result.stderr = ""
 
+        verify_result = MagicMock(
+            returncode=0,
+            stdout=json.dumps({"url": "https://linkedin.com/in/test"}),
+            stderr="",
+        )
+
         eval_result = MagicMock()
         eval_result.returncode = 0
         eval_result.stdout = "not valid json"
         eval_result.stderr = ""
 
-        mock_run.side_effect = [open_result, eval_result]
+        mock_run.side_effect = [open_result, verify_result, eval_result]
 
         result = pe._enrich_via_browser("https://linkedin.com/in/test", "9230", 60)
 
@@ -429,6 +449,12 @@ class TestEnrichViaBrowser:
         open_result.stdout = ""
         open_result.stderr = ""
 
+        verify_result = MagicMock(
+            returncode=0,
+            stdout=json.dumps({"url": "https://linkedin.com/in/test"}),
+            stderr="",
+        )
+
         eval_result = MagicMock()
         eval_result.returncode = 1  # Command failed
         eval_result.stdout = (
@@ -436,7 +462,7 @@ class TestEnrichViaBrowser:
         )
         eval_result.stderr = "JavaScript runtime error: undefined is not a function"
 
-        mock_run.side_effect = [open_result, eval_result]
+        mock_run.side_effect = [open_result, verify_result, eval_result]
 
         result = pe._enrich_via_browser("https://linkedin.com/in/test", "9230", 60)
 

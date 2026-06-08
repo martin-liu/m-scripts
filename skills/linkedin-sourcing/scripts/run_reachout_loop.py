@@ -333,36 +333,23 @@ def format_stop_guidance(
         lines.append(f"\nThen resume with:")
         lines.append(f"  {loop_cmd}")
     elif next_phase == "confirm_search":
-        # Confirm search boundary - USER must confirm, not agent
-        lines.append(f"\n🛑 USER CONFIRMATION REQUIRED: Verify search filters")
-        lines.append(f"  The USER must review and confirm search filters in LinkedIn Recruiter:")
-        lines.append(f"    - Check Job Titles filter for correct titles (no duplicates/concatenation)")
-        lines.append(f"    - Check Companies filter includes all target companies from config")
-        lines.append(f"    - Manually add any companies that could not be auto-added")
-        lines.append(f"    - Verify candidate results look correct")
-        # Show filter analysis summary if available
-        filter_summary = status_result.get("confirm_search_summary") or status_result.get("last_result_summary")
-        if filter_summary:
-            lines.append(f"\n  Filter inspection findings:")
-            for line in filter_summary.split("; "):
-                line = line.strip()
-                if line.startswith("Issue:"):
-                    lines.append(f"    ⚠️  {line[6:].strip()}")
-                elif line.startswith("Missing companies:"):
-                    lines.append(f"    ⚠️  {line}")
-                elif line.startswith("Malformed titles:"):
-                    lines.append(f"    ⚠️  {line}")
-                elif line.startswith("Auto-added companies:"):
-                    lines.append(f"    ✅ {line}")
-                elif line.startswith("Auto-removed malformed titles:"):
-                    lines.append(f"    ✅ {line}")
-                elif line.startswith("Failed to add companies:"):
-                    lines.append(f"    ⚠️  {line} (USER must add these manually)")
-                elif line and not line.startswith("Recruiter search"):
-                    lines.append(f"    ℹ️  {line}")
-        lines.append(f"\nAfter USER confirms filters are correct, resume with:")
+        # Confirm search boundary - USER must create and verify search
+        lines.append(f"\n🛑 USER CONFIRMATION REQUIRED: Create and verify search")
+        lines.append(f"  The USER must create the candidate search in LinkedIn Recruiter:")
+        lines.append(f"    - Open the Recruiter project")
+        lines.append(f"    - Use the AI Copilot to create a search (or configure filters manually)")
+        lines.append(f"    - Verify Job Titles, Companies, and Keywords filters look correct")
+        lines.append(f"    - Confirm candidate results are visible")
+        # Show search creation guidance if available
+        search_summary = status_result.get("create_search_summary")
+        if search_summary:
+            copilot_query = search_summary.get("copilot_query", "")
+            if copilot_query:
+                lines.append(f"\n  Copilot query (copy and paste into Recruiter):")
+                lines.append(f"    {copilot_query[:200]}...")
+        lines.append(f"\nAfter USER confirms the search is ready, resume with:")
         lines.append(f"  {loop_cmd} --confirm-search")
-        lines.append(f"\n⚠️  Only use --confirm-search after the USER has verified the filters")
+        lines.append(f"\n⚠️  Only use --confirm-search after the USER has created and verified the search")
     elif next_phase == "send":
         # Send boundary
         if confirm_send:
@@ -381,6 +368,100 @@ def format_stop_guidance(
         lines.append(f"  {loop_cmd}")
 
     return "\n".join(lines)
+
+
+# Phase 1: Pre-flight check is warning-only (does not block)
+# Phase 2: Set to True to enable blocking
+PREFLIGHT_ENFORCED = True
+
+
+def pre_flight_check(cdp_port: str) -> tuple[bool, dict | None]:
+    """Check browser readiness before running a browser phase.
+
+    Phase 1: Logs warnings only, returns (True, None) regardless.
+    Phase 2: Returns (False, blocker) if checks fail.
+
+    Args:
+        cdp_port: Chrome DevTools Protocol port number
+
+    Returns:
+        Tuple of (ok, blocker_dict_or_none)
+    """
+    from browser_utils import check_cdp_available, probe_recruiter_auth, check_dialog_status
+    from recruiter_url_utils import is_linkedin_domain
+
+    issues = []
+
+    # 1. CDP reachable?
+    if not check_cdp_available(cdp_port):
+        issues.append("CDP not available")
+        if PREFLIGHT_ENFORCED:
+            return False, {
+                "code": "browser_unavailable",
+                "summary": f"Chrome/CDP not available on port {cdp_port}",
+                "steps": ["Run connect_browser.sh to establish connection"],
+                "actor": "agent",
+            }
+
+    # 2. Auth valid? (read-only: don't navigate away from current page)
+    if check_cdp_available(cdp_port):
+        auth = probe_recruiter_auth(cdp_port, navigate=False)
+        if not auth["authenticated"]:
+            current_url = auth.get("url", "")
+            is_linkedin = is_linkedin_domain(current_url) if current_url else False
+            has_auth_indicators = any(
+                indicator in (current_url or "").lower()
+                for indicator in ["/login", "/checkpoint", "/challenge", "/cap", "/signin"]
+            )
+
+            if is_linkedin and has_auth_indicators:
+                issues.append(f"Auth required (on {current_url})")
+                if PREFLIGHT_ENFORCED:
+                    return False, {
+                        "code": "auth_required",
+                        "summary": "LinkedIn auth required",
+                        "steps": ["Log in to LinkedIn Recruiter in the browser"],
+                        "actor": "user",
+                    }
+
+    # 3. Dialog blocking?
+    if check_cdp_available(cdp_port):
+        dialog_check = check_dialog_status(cdp_port)
+        if dialog_check.get("has_dialog"):
+            issues.append(f"Dialog blocking: {dialog_check.get('dialog_type')}")
+            if PREFLIGHT_ENFORCED:
+                return False, {
+                    "code": "dialog_blocked",
+                    "summary": "Browser dialog is blocking automation",
+                    "steps": ["Dismiss the dialog in the browser"],
+                    "actor": "agent",
+                }
+
+    # Phase 1: log warnings but don't block
+    if issues and not PREFLIGHT_ENFORCED:
+        print(f"[pre_flight] WARNINGS: {', '.join(issues)}")
+
+    return True, None
+
+
+def resolve_cdp_port(project_ref: str) -> str:
+    """Resolve CDP port from project configuration."""
+    sys.path.insert(0, str(SCRIPT_DIR))
+    try:
+        from project_ref_utils import resolve_project_ref
+        from config_utils import parse_config_file
+
+        resolution = resolve_project_ref(project_ref)
+        if resolution.get("success") and resolution.get("config_path"):
+            config = parse_config_file(resolution["config_path"])
+            return config.get("CDP_PORT", "9230")
+    except Exception:
+        pass
+    finally:
+        if str(SCRIPT_DIR) in sys.path:
+            sys.path.remove(str(SCRIPT_DIR))
+
+    return "9230"
 
 
 def run_loop_iteration(
@@ -437,7 +518,36 @@ def run_loop_iteration(
         print("  (dry-run mode - not executing)")
         return (True, "Dry run - would continue", 0)
 
-    # Step 3: Run the phase
+    # Step 3: Pre-flight check ONLY for browser phases
+    sys.path.insert(0, str(SCRIPT_DIR))
+    try:
+        from phase_registry import get_phase_metadata
+
+        phase_meta = get_phase_metadata(phase_to_run) if phase_to_run else {}
+        if phase_meta.get("requires_browser"):
+            cdp_port = resolve_cdp_port(project_ref)
+            ok, blocker = pre_flight_check(cdp_port)
+            if not ok:
+                # Persist action_required so status shows the blocker
+                from project_state import update_project_state
+                from project_ref_utils import resolve_project_ref
+
+                resolution = resolve_project_ref(project_ref)
+                if resolution.get("success"):
+                    project_dir = resolution["config_path"].parent
+                    update_project_state(
+                        project_dir,
+                        current_phase=phase_to_run,
+                        status="action_required",
+                        action_required=blocker,
+                        last_error=blocker.get("summary", "Pre-flight check failed"),
+                    )
+                return False, blocker["summary"], 2
+    finally:
+        if str(SCRIPT_DIR) in sys.path:
+            sys.path.remove(str(SCRIPT_DIR))
+
+    # Step 4: Run the phase
     if not phase_to_run:
         return (False, "No phase available to run", 1)
 

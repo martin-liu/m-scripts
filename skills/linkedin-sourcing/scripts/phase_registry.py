@@ -47,8 +47,8 @@ PHASE_METADATA: dict[str, dict[str, Any]] = {
     },
     "create_search": {
         "name": "Create Search",
-        "description": "Create LinkedIn Recruiter search from config",
-        "requires_browser": True,
+        "description": "Generate Copilot query for manual Recruiter search creation",
+        "requires_browser": False,
         "is_automated": True,
     },
     "confirm_search": {
@@ -62,6 +62,10 @@ PHASE_METADATA: dict[str, dict[str, Any]] = {
         "description": "Extract candidates from LinkedIn Recruiter",
         "requires_browser": True,
         "is_automated": True,
+        "expected_url_pattern": r"/discover/recruiterSearch",
+        "url_resolver": "extract_search_url",
+        "can_recover_from_wrong_page": True,
+        "max_wrong_page_recovery": 3,
     },
     "filter": {
         "name": "Filter",

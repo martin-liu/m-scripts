@@ -960,60 +960,6 @@ class TestFetchUrl:
         assert "Not Found" in content
 
 
-class TestFetchJdUrl:
-    """Tests for JD URL fetching strategy."""
-
-    @patch("bootstrap_project.fetch_url_via_agent_browser")
-    @patch("bootstrap_project.fetch_url")
-    def test_tiktok_url_prefers_agent_browser(self, mock_fetch_url, mock_browser_fetch):
-        """TikTok job pages should prefer agent-browser for dynamic content."""
-        mock_browser_fetch.return_value = (200, "<html>dynamic jd</html>")
-
-        status, content = bp.fetch_jd_url(
-            "https://lifeattiktok.com/search/7619156093767485701"
-        )
-
-        assert status == 200
-        assert content == "<html>dynamic jd</html>"
-        mock_browser_fetch.assert_called_once()
-        mock_fetch_url.assert_not_called()
-
-    @patch("bootstrap_project.fetch_url_via_agent_browser")
-    @patch("bootstrap_project.fetch_url")
-    def test_tiktok_url_falls_back_to_static_fetch(
-        self, mock_fetch_url, mock_browser_fetch
-    ):
-        """TikTok job pages should fall back to static fetch if agent-browser fails."""
-        mock_browser_fetch.return_value = (0, "agent-browser not found")
-        mock_fetch_url.return_value = (200, "<html>fallback jd</html>")
-
-        status, content = bp.fetch_jd_url(
-            "https://lifeattiktok.com/search/7619156093767485701"
-        )
-
-        assert status == 200
-        assert content == "<html>fallback jd</html>"
-        mock_browser_fetch.assert_called_once()
-        mock_fetch_url.assert_called_once()
-
-    @patch("subprocess.run")
-    def test_fetch_url_via_agent_browser_returns_html(self, mock_run):
-        """agent-browser fetch should return evaluated page HTML."""
-        mock_run.side_effect = [
-            Mock(returncode=0, stdout="", stderr=""),
-            Mock(
-                returncode=0,
-                stdout='{"html":"<html>jd</html>","title":"JD"}',
-                stderr="",
-            ),
-        ]
-
-        status, content = bp.fetch_url_via_agent_browser("https://example.com/job")
-
-        assert status == 200
-        assert content == "<html>jd</html>"
-
-
 class TestCheckExistingProjectByRecruiterId:
     """Tests for checking existing projects by recruiter ID."""
 
@@ -1335,81 +1281,6 @@ class TestBootstrapProject:
         assert result["project_id"] == "custom_id"
         assert result["reused"] is True
         assert result["match_type"] == "explicit_project_id"
-
-    @patch("run_create_search.inspect_search_state")
-    def test_reuse_clears_stale_search_blocker_when_search_is_visible(
-        self, mock_inspect_search_state, tmp_path, monkeypatch
-    ):
-        """Bootstrap reuse should clear stale create-search blocker when search is already ready."""
-        from project_state import (
-            create_initial_state,
-            load_project_state,
-            save_project_state,
-        )
-
-        monkeypatch.setattr(bp.Path, "home", lambda: tmp_path)
-
-        work_dir = tmp_path / "work"
-        existing_project = (
-            work_dir / "projects" / "1693735164_tiktok-engineering-position"
-        )
-        existing_project.mkdir(parents=True)
-        config_path = existing_project / "config.sh"
-        config_path.write_text(
-            'PROJECT_ID="1693735164"\n'
-            'RECRUITER_PROJECT_URL="https://linkedin.com/talent/hire/1693735164/discover/recruiterSearch"\n'
-        )
-
-        stale_state = create_initial_state(
-            "1693735164", current_phase="bootstrap", status="completed"
-        )
-        stale_state["action_required"] = {
-            "code": "search_not_configured",
-            "summary": "The Recruiter project needs a candidate search configured",
-            "steps": ["Open Recruiter"],
-            "can_retry": True,
-            "context": {},
-            "actor": "agent",
-        }
-        stale_state["last_error"] = (
-            "Open the Recruiter project and create the candidate search"
-        )
-        save_project_state(existing_project, stale_state)
-
-        mock_inspect_search_state.return_value = {
-            "success": True,
-            "status": "ready",
-            "current_url": "https://linkedin.com/talent/hire/1693735164/discover/recruiterSearch",
-            "failure_code": None,
-            "action_required": None,
-        }
-
-        args = Mock()
-        args.jd_url = None
-        args.jd_text = "JD content"
-        args.work_dir = str(work_dir)
-        args.recruiter_url = (
-            "https://linkedin.com/talent/hire/1693735164/discover/recruiterSearch"
-        )
-        args.cdp_port = "9230"
-        args.project_id = "1693735164"
-        args.position_title = "Engineer"
-        args.team_name = None
-        args.location = None
-        args.core_function = None
-        args.business_impact = None
-        args.keywords = None
-        args.companies = None
-        args.exclude_titles = None
-
-        result = bp.bootstrap_project(args)
-
-        assert result["reused"] is True
-        updated_state = load_project_state(existing_project)
-        assert updated_state["current_phase"] == "create_search"
-        assert updated_state["status"] == "completed"
-        assert updated_state["action_required"] is None
-        assert updated_state["last_error"] is None
 
     def test_explicit_project_id_missing_fails_clearly(self, tmp_path, monkeypatch):
         """Should fail clearly when explicit --project-id does not exist."""
@@ -2009,44 +1880,6 @@ class TestBootstrapProject:
         assert config_path.exists()
         original_content = config_path.read_text()
         assert "Original Title" in original_content
-
-    @patch("run_create_search.inspect_search_state")
-    def test_next_steps_with_ready_search_url(
-        self, mock_inspect_search_state, tmp_path, monkeypatch
-    ):
-        """Should point to status/loop when the search is already visible."""
-        monkeypatch.setattr(bp.Path, "home", lambda: tmp_path)
-
-        mock_inspect_search_state.return_value = {
-            "success": True,
-            "status": "ready",
-            "current_url": "https://linkedin.com/talent/hire/12345/discover/recruiterSearch",
-            "failure_code": None,
-            "action_required": None,
-        }
-
-        args = Mock()
-        args.jd_url = None
-        args.jd_text = "JD content"
-        args.work_dir = str(tmp_path / "work")
-        args.recruiter_url = "https://linkedin.com/talent/hire/12345/discover/recruiterSearch?searchContextId=abc"
-        args.cdp_port = "9230"
-        args.project_id = None
-        args.position_title = "Engineer"
-        args.team_name = None
-        args.location = None
-        args.core_function = None
-        args.business_impact = None
-        args.keywords = None
-        args.companies = None
-        args.exclude_titles = None
-
-        result = bp.bootstrap_project(args)
-
-        next_steps_text = "\n".join(result["next_steps"])
-        assert "recruiter search already shows candidates" in next_steps_text.lower()
-        assert "status.py 12345 --pretty" in next_steps_text
-        assert "run_reachout_loop.py --project 12345" in next_steps_text
 
     def test_next_steps_without_search_url(self, tmp_path, monkeypatch):
         """Should indicate need for ensure_recruiter_project when only overview URL."""
@@ -3056,6 +2889,7 @@ class TestBootstrapProjectBrowserAuth:
         args.keywords = None
         args.companies = None
         args.exclude_titles = None
+        args.hiring_company = None
 
         result = bp.bootstrap_project(args)
 
@@ -3091,6 +2925,7 @@ class TestBootstrapProjectBrowserAuth:
         args.keywords = None
         args.companies = None
         args.exclude_titles = None
+        args.hiring_company = None
 
         result = bp.bootstrap_project(args)
 
@@ -3134,6 +2969,7 @@ class TestBootstrapProjectBrowserAuth:
         args.keywords = None
         args.companies = None
         args.exclude_titles = None
+        args.hiring_company = None
 
         result = bp.bootstrap_project(args)
 
@@ -3238,6 +3074,7 @@ class TestBootstrapProjectFreshAuthBootstrap:
         args.keywords = None
         args.companies = None
         args.exclude_titles = None
+        args.hiring_company = None
 
         result = bp.bootstrap_project(args)
 
@@ -3302,6 +3139,7 @@ class TestBootstrapProjectFreshAuthBootstrap:
         args.keywords = None
         args.companies = None
         args.exclude_titles = None
+        args.hiring_company = None
 
         result = bp.bootstrap_project(args)
 
@@ -3475,9 +3313,16 @@ class TestNormalizeToPlainText:
 class TestProjectStateIntegration:
     """Tests for project_state.json creation during bootstrap."""
 
-    def test_creates_project_state_on_bootstrap(self, tmp_path, monkeypatch):
+    @patch("run_phase.run_phase")
+    def test_creates_project_state_on_bootstrap(self, mock_run_phase, tmp_path, monkeypatch):
         """Should create project_state.json during bootstrap."""
         monkeypatch.setattr(bp.Path, "home", lambda: tmp_path)
+
+        mock_run_phase.return_value = {
+            "success": True,
+            "status": "completed",
+            "phase": "create_search",
+        }
 
         args = Mock()
         args.jd_url = None
@@ -3508,7 +3353,7 @@ class TestProjectStateIntegration:
         state = json.loads(state_file.read_text())
         assert state["project_id"] == "12345"
         assert state["workflow_mode"] == "reachout"
-        assert state["current_phase"] == "bootstrap"
+        assert state["current_phase"] == "create_search"
         assert state["status"] == "completed"
 
     def test_saves_normalized_jd_not_html(self, tmp_path, monkeypatch):
@@ -3890,7 +3735,7 @@ class TestCreateSearchMessaging:
         )
 
         # Should have agent-actionable summary
-        assert "needs a candidate search" in action["summary"]
+        assert "Create the candidate search" in action["summary"]
         # Should NOT use "You need to" phrasing
         assert "You need to" not in action.get("message", "")
         # Should have clear message for agent
@@ -3910,9 +3755,9 @@ class TestCreateSearchMessaging:
         steps = action["steps"]
         # Steps should be actionable by agent
         assert any("Open the Recruiter project" in step for step in steps)
-        assert any("search brief" in step.lower() for step in steps)
-        # Should include retry instruction
-        assert any("re-run" in step.lower() for step in steps)
+        assert any("copilot" in step.lower() for step in steps)
+        # Should include confirm-search instruction
+        assert any("confirm-search" in step.lower() for step in steps)
 
 
 if __name__ == "__main__":

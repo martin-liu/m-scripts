@@ -1078,13 +1078,13 @@ class TestPortSelectionDuringBootstrap:
                 work_dir, "9230", allow_browser_launch=True
             )
 
-        # Should succeed using first free port (19235) with CDP mode
+        # Should succeed using first free port (19231) with CDP mode
         assert result["success"] is True
         assert result["mode"] == "cdp"
-        assert result["cdp_port"] == "19235"
+        assert result["cdp_port"] == "19231"
         mock_launch.assert_called_once()
         call_args = mock_launch.call_args
-        assert call_args[0][1] == 19235  # First free port after skipping occupied ones
+        assert call_args[0][1] == 19231  # First free port after skipping occupied ones
 
     @patch("auth_bootstrap.is_interactive_session")
     @patch("auth_bootstrap.find_system_chrome")

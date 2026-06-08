@@ -63,63 +63,14 @@ def build_confirm_search_entries(
     """Build normalized confirm-search summary entries for JSON and pretty output."""
     if structured_summary:
         entries: list[tuple[str, str]] = [
-            ("info", "Recruiter search verified with visible candidates")
+            ("info", "Recruiter search ready for verification")
         ]
-        filter_analysis = structured_summary.get("filter_analysis") or {}
-        reconciliation = structured_summary.get("reconciliation") or {}
-
-        if reconciliation.get("companies_added"):
-            entries.append(
-                ("success", f"Auto-added companies: {', '.join(reconciliation['companies_added'][:5])}")
-            )
-        if reconciliation.get("companies_failed"):
-            entries.append(
-                ("warning", f"Failed to add companies: {', '.join(reconciliation['companies_failed'][:5])}")
-            )
-        if reconciliation.get("keywords_added"):
-            entries.append(
-                ("success", f"Auto-added keywords: {', '.join(reconciliation['keywords_added'][:5])}")
-            )
-        if reconciliation.get("keywords_failed"):
-            entries.append(
-                ("warning", f"Failed to add keywords: {', '.join(reconciliation['keywords_failed'][:5])}")
-            )
-        if reconciliation.get("titles_removed"):
-            entries.append(
-                ("success", f"Auto-removed malformed titles: {', '.join(reconciliation['titles_removed'][:3])}")
-            )
-        if reconciliation.get("titles_failed"):
-            entries.append(
-                ("warning", f"Failed to remove titles: {', '.join(reconciliation['titles_failed'][:3])}")
-            )
-        if reconciliation.get("errors"):
-            entries.append(
-                ("warning", f"Reconciliation errors: {', '.join(reconciliation['errors'][:3])}")
-            )
-        if filter_analysis.get("issues"):
-            issues = filter_analysis["issues"]
-            entries.append(("info", f"Issues: {len(issues)}"))
-            entries.extend(("warning", issue) for issue in issues)
-        if filter_analysis.get("missing_companies"):
-            entries.append(
-                ("warning", f"Missing companies: {', '.join(filter_analysis['missing_companies'][:5])}")
-            )
-        if filter_analysis.get("missing_keywords"):
-            entries.append(
-                ("warning", f"Missing keywords: {', '.join(filter_analysis['missing_keywords'][:5])}")
-            )
-        if filter_analysis.get("malformed_titles"):
-            entries.append(
-                ("warning", f"Malformed titles: {', '.join(filter_analysis['malformed_titles'][:3])}")
-            )
-        if filter_analysis.get("observed_companies"):
-            entries.append(
-                ("info", f"Observed companies: {', '.join(filter_analysis['observed_companies'][:5])}")
-            )
-        if filter_analysis.get("observed_keywords"):
-            entries.append(
-                ("info", f"Observed keywords: {', '.join(filter_analysis['observed_keywords'][:5])}")
-            )
+        copilot_query = structured_summary.get("copilot_query", "")
+        search_brief = structured_summary.get("search_brief", "")
+        if copilot_query:
+            entries.append(("info", f"Copilot query: {copilot_query[:200]}"))
+        if search_brief:
+            entries.append(("info", f"Search brief: {search_brief[:200]}"))
         return entries
 
     if not legacy_summary:
@@ -130,24 +81,7 @@ def build_confirm_search_entries(
         text = part.strip()
         if not text:
             continue
-        if text.startswith(("Auto-added companies:", "Auto-added keywords:", "Auto-removed malformed titles:")):
-            entries.append(("success", text))
-        elif text.startswith("Issue:"):
-            entries.append(("warning", text[6:].strip()))
-        elif text.startswith(
-            (
-                "Failed to add companies:",
-                "Failed to add keywords:",
-                "Failed to remove titles:",
-                "Missing companies:",
-                "Missing keywords:",
-                "Malformed titles:",
-                "Reconciliation errors:",
-            )
-        ):
-            entries.append(("warning", text))
-        else:
-            entries.append(("info", text))
+        entries.append(("info", text))
     return entries
 
 
@@ -316,7 +250,8 @@ def determine_next_phase(
 
     # If there's an action_required field present, we're blocked regardless of status value
     # This handles cases like create_search persisting status='search_not_configured' with action_required
-    if action_required is not None:
+    # Note: action_required=False is explicitly cleared state, not a blocker
+    if action_required is not None and action_required is not False:
         return None, "Action required before proceeding", False
 
     # Bootstrap handoff: freshly bootstrapped projects should proceed to create_search
@@ -601,31 +536,30 @@ def main():
             # Boundary guidance with explicit loop resume command
             next_phase = status["next_phase"]
             if next_phase == "confirm_search":
-                print(f"\n🛑 USER CONFIRMATION REQUIRED: Verify search filters")
-                print(f"  The USER must review and confirm search filters in LinkedIn Recruiter:")
-                print(f"    - Check Job Titles filter (no duplicates/concatenation)")
-                print(f"    - Check Companies filter includes all target companies from config")
-                print(f"    - Confirm candidate results look correct")
-                print(f"    - Manually add any missing companies that could not be auto-added")
+                print(f"\n🛑 USER CONFIRMATION REQUIRED: Create and verify search")
+                print(f"  The USER must create the candidate search in LinkedIn Recruiter:")
+                print(f"    - Open the Recruiter project")
+                print(f"    - Use the AI Copilot to create a search (or configure filters manually)")
+                print(f"    - Verify Job Titles, Companies, and Keywords filters look correct")
+                print(f"    - Confirm candidate results are visible")
                 entries = status.get("confirm_search_entries") or build_confirm_search_entries(
                     structured_summary=status.get("create_search_summary"),
                     legacy_summary=status.get("last_result_summary"),
                 )
                 if entries:
-                    print(f"\n  Filter inspection findings:")
+                    print(f"\n  Search creation guidance:")
                     for kind, text in entries:
-                        if text == "Recruiter search verified with visible candidates":
+                        if text == "Recruiter search ready for verification":
                             continue
                         if kind == "success":
                             print(f"    ✅ {text}")
                         elif kind == "warning":
-                            suffix = " (USER must add these manually)" if text.startswith(("Failed to add companies:", "Failed to add keywords:")) else ""
-                            print(f"    ⚠️  {text}{suffix}")
+                            print(f"    ⚠️  {text}")
                         else:
                             print(f"    ℹ️  {text}")
-                print(f"\nAfter USER confirms filters are correct, run:")
+                print(f"\nAfter USER confirms the search is ready, run:")
                 print(f"  {status['loop_command']} --confirm-search")
-                print(f"\n⚠️  Only use --confirm-search after the USER has verified the filters")
+                print(f"\n⚠️  Only use --confirm-search after the USER has created and verified the search")
             elif next_phase == "send":
                 print(f"\n🛑 Boundary: Send confirmation required")
                 print(f"  Review drafted messages in workbook, then run with --confirm-send:")

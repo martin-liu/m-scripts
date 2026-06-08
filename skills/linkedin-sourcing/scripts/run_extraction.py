@@ -1899,6 +1899,73 @@ def extract_candidates_from_page(
     return extract_candidates(cdp_port, work_dir=work_dir, target_url=target_url)
 
 
+def _verify_extract_page(
+    cdp_port: str,
+    project_id: str,
+    target_url: str,
+) -> tuple[bool, str]:
+    """Verify browser is on the correct search page for extraction.
+
+    Args:
+        cdp_port: Chrome DevTools Protocol port number
+        project_id: Expected recruiter project ID
+        target_url: Expected search URL for recovery
+
+    Returns:
+        Tuple of (is_valid, current_url)
+        If URL cannot be determined, returns (True, "") to fail open.
+    """
+    result = run_browser_command(cdp_port, "eval", "({ url: window.location.href })")
+    if result.get("error"):
+        # Fail open if we can't determine current URL
+        return True, ""
+
+    current_url = result.get("parsed", {}).get("url", "")
+    if not current_url:
+        # Fail open if URL is empty
+        return True, ""
+
+    if not is_contextual_search_url(current_url, project_id):
+        return False, current_url
+
+    return True, current_url
+
+
+def _recover_extract_page(
+    cdp_port: str,
+    target_url: str,
+    project_id: str,
+    max_attempts: int = 1,
+) -> tuple[bool, str]:
+    """Attempt to recover to the correct search page.
+
+    Args:
+        cdp_port: Chrome DevTools Protocol port number
+        target_url: URL to navigate to
+        project_id: Expected project ID for validation
+        max_attempts: Maximum recovery attempts
+
+    Returns:
+        Tuple of (recovered, current_url)
+    """
+    from recruiter_page_utils import ensure_page_ready
+
+    for attempt in range(max_attempts):
+        run_browser_command(cdp_port, "open", target_url, timeout=30)
+
+        ready = ensure_page_ready(
+            cdp_port=cdp_port,
+            target_url=target_url,
+            max_wait_seconds=15.0,
+        )
+        if ready.get("ready"):
+            is_valid, current_url = _verify_extract_page(cdp_port, project_id, target_url)
+            if is_valid:
+                return True, current_url
+
+    return False, ""
+
+
 def process_candidates(
     candidates: list[dict],
     workbook_path: Path,
@@ -2439,6 +2506,20 @@ def run_extraction(args: argparse.Namespace) -> dict[str, Any]:
                         result["exit_code"] = 2
                         _copy_action_required_fields(result, nav_result)
                         return result
+                    # Update project state with structured failure
+                    try:
+                        from project_state import update_project_state
+
+                        action_required = nav_result.get("action_required")
+                        update_project_state(
+                            project_dir=config_path.parent,
+                            current_phase="extract",
+                            status="action_required" if action_required else "failed",
+                            action_required=action_required,
+                            last_error=f"Navigation failed on page {current_page}: {error_msg}",
+                        )
+                    except Exception:
+                        pass
                     result["message"] = (
                         f"Navigation failed on page {current_page}: {error_msg}"
                     )
@@ -2453,6 +2534,58 @@ def run_extraction(args: argparse.Namespace) -> dict[str, Any]:
                 )
 
             # Extract candidates from current page
+            # Phase 2: Verify we're on the correct page before extracting
+            is_valid, current_url = _verify_extract_page(cdp_port, project_id, page_url)
+            if not is_valid:
+                print(f"  Wrong page detected: {current_url}")
+                recovered, recovered_url = _recover_extract_page(
+                    cdp_port, page_url, project_id
+                )
+                if not recovered:
+                    state_saved = _persist_state(
+                        status="failed",
+                        last_completed_page=current_page - 1
+                        if current_page > 1
+                        else None,
+                        next_start_page=current_page,
+                        error=f"Wrong page: expected contextual search for project {project_id}, got {current_url}",
+                    )
+                    # Update project state so run_phase can detect the blocker
+                    try:
+                        from project_state import update_project_state
+
+                        update_project_state(
+                            project_dir=config_path.parent,
+                            current_phase="extract",
+                            status="action_required",
+                            action_required={
+                                "code": "wrong_page",
+                                "summary": f"Extraction failed on page {current_page}: wrong page",
+                                "steps": [
+                                    "Check browser is on the correct LinkedIn Recruiter search page",
+                                    "Navigate to the project search results if needed",
+                                    "Retry extraction",
+                                ],
+                                "can_retry": True,
+                                "context": {
+                                    "expected_url": page_url,
+                                    "actual_url": current_url,
+                                    "project_id": project_id,
+                                },
+                                "actor": "agent",
+                            },
+                            last_error=f"Wrong page: expected contextual search for project {project_id}, got {current_url}",
+                        )
+                    except Exception:
+                        pass  # Best effort
+                    result["message"] = (
+                        f"Extraction failed on page {current_page}: wrong page"
+                    )
+                    result["exit_code"] = 1
+                    result["failure_code"] = "wrong_page"
+                    return result
+                print(f"  Recovered to: {recovered_url}")
+
             extraction_result = extract_candidates_from_page(
                 cdp_port=cdp_port,
                 target_url=page_url,
@@ -2481,6 +2614,18 @@ def run_extraction(args: argparse.Namespace) -> dict[str, Any]:
                         )
                         result["exit_code"] = 2
                         return result
+                    # Update project state with structured failure
+                    try:
+                        from project_state import update_project_state
+
+                        update_project_state(
+                            project_dir=config_path.parent,
+                            current_phase="extract",
+                            status="failed",
+                            last_error=f"Extraction failed on page {current_page}: {extraction_result.get('message', 'Unknown error')}",
+                        )
+                    except Exception:
+                        pass
                     result["message"] = (
                         f"Extraction failed on page {current_page}: {extraction_result['message']}"
                     )

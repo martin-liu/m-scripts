@@ -427,6 +427,68 @@ PROFILE_EXTRACTION_JS = r"""
 """
 
 
+def _verify_profile_page(cdp_port: str, expected_url: str) -> tuple[bool, str]:
+    """Verify browser is on the expected profile page.
+
+    Args:
+        cdp_port: Chrome DevTools Protocol port
+        expected_url: Expected profile URL
+
+    Returns:
+        Tuple of (is_valid, current_url). Fail-open if URL cannot be read.
+    """
+    sys.path.insert(0, str(SCRIPT_DIR))
+    try:
+        from browser_utils import run_browser_command
+        from recruiter_page_utils import urls_match_allowing_params
+
+        result = run_browser_command(cdp_port, "eval", "({ url: window.location.href })")
+        if result.get("error"):
+            return True, ""  # Fail open
+
+        current_url = result.get("parsed", {}).get("url", "")
+        if not current_url:
+            return True, ""  # Fail open
+
+        current_url_normalized = current_url.rstrip("/")
+        expected_url_normalized = expected_url.rstrip("/")
+        return urls_match_allowing_params(current_url_normalized, expected_url_normalized), current_url
+    finally:
+        if str(SCRIPT_DIR) in sys.path:
+            sys.path.remove(str(SCRIPT_DIR))
+
+
+def _recover_profile_page(cdp_port: str, expected_url: str) -> tuple[bool, str]:
+    """Retry navigation to profile page once with ensure_page_ready.
+
+    Args:
+        cdp_port: Chrome DevTools Protocol port
+        expected_url: URL to navigate to
+
+    Returns:
+        Tuple of (recovered, current_url)
+    """
+    sys.path.insert(0, str(SCRIPT_DIR))
+    try:
+        from browser_utils import run_browser_command
+        from recruiter_page_utils import ensure_page_ready
+
+        run_browser_command(cdp_port, "open", expected_url, timeout=30)
+
+        ready = ensure_page_ready(
+            cdp_port=cdp_port,
+            target_url=expected_url,
+            max_wait_seconds=10.0,
+        )
+        if ready.get("ready"):
+            return _verify_profile_page(cdp_port, expected_url)
+
+        return False, ""
+    finally:
+        if str(SCRIPT_DIR) in sys.path:
+            sys.path.remove(str(SCRIPT_DIR))
+
+
 def _enrich_via_browser(
     profile_url: str,
     cdp_port: str,
@@ -551,6 +613,33 @@ def _enrich_via_browser(
             safe_to_retry=False,
             resume_hint="Install agent-browser, then retry",
         )
+
+    # Step 1b: Verify we're on the expected profile page
+    is_valid, current_url = _verify_profile_page(cdp_port, profile_url)
+    if not is_valid:
+        # Retry once with ensure_page_ready
+        recovered, recovered_url = _recover_profile_page(cdp_port, profile_url)
+        if not recovered:
+            return EnrichmentResult(
+                success=False,
+                failure_code="wrong_page",
+                action_required=_build_action_required(
+                    code="wrong_page",
+                    summary=f"Browser landed on wrong page after navigation: {current_url or 'unknown'}",
+                    steps=[
+                        "Check browser state: verify Chrome is on the correct profile",
+                        "Navigate to the profile manually if needed",
+                        "Retry enrichment after resolving the page issue",
+                    ],
+                    context={
+                        "expected_url": profile_url,
+                        "actual_url": current_url,
+                    },
+                    can_retry=True,
+                ),
+                safe_to_retry=True,
+                resume_hint="Check browser page, then retry",
+            )
 
     # Step 2: Extract profile data via JavaScript evaluation
     eval_cmd = [

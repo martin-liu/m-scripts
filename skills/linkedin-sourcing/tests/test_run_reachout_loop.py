@@ -398,22 +398,24 @@ class TestClassifyPhaseResult:
 class TestFormatStopGuidance:
     """Tests for format_stop_guidance function."""
 
-    def test_confirm_search_guidance_includes_filter_summary(self):
-        """Confirm search guidance should include filter analysis summary if available."""
+    def test_confirm_search_guidance_includes_copilot_query(self):
+        """Confirm search guidance should include copilot query if available."""
         status_result = {
             "next_phase": "confirm_search",
             "loop_command": "python3 run_reachout_loop.py --project test",
-            "confirm_search_summary": "Recruiter search verified; Issue: Missing companies: amazon; Issue: Malformed titles: EngineerManager",
+            "create_search_summary": {
+                "copilot_query": "Create a LinkedIn Recruiter candidate search for Software Engineer in San Francisco",
+                "search_brief": "Search for Software Engineer candidates",
+            },
         }
 
         guidance = loop.format_stop_guidance(status_result, "Stopped at boundary", 0)
 
         assert "--confirm-search" in guidance
-        assert "Missing companies: amazon" in guidance
-        assert "Malformed titles: EngineerManager" in guidance
+        assert "Copilot query" in guidance
 
-    def test_confirm_search_guidance_without_filter_summary(self):
-        """Confirm search guidance should work even without filter summary."""
+    def test_confirm_search_guidance_without_search_summary(self):
+        """Confirm search guidance should work even without search summary."""
         status_result = {
             "next_phase": "confirm_search",
             "loop_command": "python3 run_reachout_loop.py --project test",
@@ -422,14 +424,13 @@ class TestFormatStopGuidance:
         guidance = loop.format_stop_guidance(status_result, "Stopped at boundary", 0)
 
         assert "--confirm-search" in guidance
-        assert "Verify search filters" in guidance
+        assert "Create and verify search" in guidance
 
     def test_confirm_search_guidance_emphasizes_user_confirmation(self):
         """Confirm search guidance must emphasize USER confirmation, not agent self-approval."""
         status_result = {
             "next_phase": "confirm_search",
             "loop_command": "python3 run_reachout_loop.py --project test",
-            "confirm_search_summary": "Recruiter search verified; Auto-added companies: Amazon; Missing companies: netflix",
         }
 
         guidance = loop.format_stop_guidance(status_result, "Stopped at boundary", 0)
@@ -437,31 +438,26 @@ class TestFormatStopGuidance:
         # Should emphasize USER confirmation
         assert "USER" in guidance
         assert "USER CONFIRMATION REQUIRED" in guidance
-        assert "USER must review" in guidance or "USER has verified" in guidance
+        assert "USER must create" in guidance or "USER has created" in guidance
         # Should warn about using --confirm-search only after user verification
-        assert "Only use --confirm-search after the USER has verified" in guidance
+        assert "Only use --confirm-search after the USER has created" in guidance
 
-    def test_confirm_search_guidance_shows_reconciliation_results(self):
-        """Confirm search guidance should show auto-added companies and failed additions."""
+    def test_confirm_search_guidance_shows_copilot_query(self):
+        """Confirm search guidance should show copilot query if available."""
         status_result = {
             "next_phase": "confirm_search",
             "loop_command": "python3 run_reachout_loop.py --project test",
-            "confirm_search_summary": (
-                "Recruiter search verified; "
-                "Auto-added companies: Amazon, Meta; "
-                "Failed to add companies: Netflix; "
-                "Auto-removed malformed titles: EngineerManager"
-            ),
+            "create_search_summary": {
+                "copilot_query": "Create a LinkedIn Recruiter candidate search for Software Engineer",
+                "search_brief": "Search for Software Engineer candidates",
+            },
         }
 
         guidance = loop.format_stop_guidance(status_result, "Stopped at boundary", 0)
 
-        # Should show reconciliation results
-        assert "Auto-added companies:" in guidance
-        assert "Failed to add companies:" in guidance
-        assert "Auto-removed malformed titles:" in guidance
-        # Should indicate user must handle failed additions
-        assert "USER must add these manually" in guidance
+        # Should show copilot query
+        assert "Copilot query" in guidance
+        assert "Software Engineer" in guidance
 
 
 class TestRunLoopIteration:
@@ -772,65 +768,67 @@ class TestIntegrationScenarios:
 
     def test_full_workflow_to_send_boundary(self):
         """Test loop runs through phases until send boundary."""
-        status_sequence = [
-            # Initial: extract complete, filter ready
-            {
-                "current_phase": "extract",
-                "status": "completed",
-                "next_phase": "filter",
-                "action_required": None,
-                "workbook_summary": {"total_rows": 5, "by_next_action": {"filter": 5}},
-            },
-            # After filter: enrich ready
-            {
-                "current_phase": "filter",
-                "status": "completed",
-                "next_phase": "enrich",
-                "action_required": None,
-                "workbook_summary": {"total_rows": 5, "by_next_action": {"enrich": 5}},
-            },
-            # After enrich: draft ready
-            {
-                "current_phase": "enrich",
-                "status": "completed",
-                "next_phase": "draft",
-                "action_required": None,
-                "workbook_summary": {"total_rows": 5, "by_next_action": {"draft": 5}},
-            },
-            # After draft: review ready (automated)
-            {
-                "current_phase": "draft",
-                "status": "completed",
-                "next_phase": "review",
-                "action_required": None,
-                "workbook_summary": {"total_rows": 5, "by_next_action": {"review": 5}},
-            },
-            # After review: send boundary (should stop)
-            {
-                "current_phase": "review",
-                "status": "completed",
-                "next_phase": "send",
-                "action_required": None,
-                "workbook_summary": {"total_rows": 5, "by_next_action": {"send": 5}},
-            },
-        ]
+        with patch.object(loop, "pre_flight_check") as mock_preflight:
+            mock_preflight.return_value = (True, None)
+            status_sequence = [
+                # Initial: extract complete, filter ready
+                {
+                    "current_phase": "extract",
+                    "status": "completed",
+                    "next_phase": "filter",
+                    "action_required": None,
+                    "workbook_summary": {"total_rows": 5, "by_next_action": {"filter": 5}},
+                },
+                # After filter: enrich ready
+                {
+                    "current_phase": "filter",
+                    "status": "completed",
+                    "next_phase": "enrich",
+                    "action_required": None,
+                    "workbook_summary": {"total_rows": 5, "by_next_action": {"enrich": 5}},
+                },
+                # After enrich: draft ready
+                {
+                    "current_phase": "enrich",
+                    "status": "completed",
+                    "next_phase": "draft",
+                    "action_required": None,
+                    "workbook_summary": {"total_rows": 5, "by_next_action": {"draft": 5}},
+                },
+                # After draft: review ready (automated)
+                {
+                    "current_phase": "draft",
+                    "status": "completed",
+                    "next_phase": "review",
+                    "action_required": None,
+                    "workbook_summary": {"total_rows": 5, "by_next_action": {"review": 5}},
+                },
+                # After review: send boundary (should stop)
+                {
+                    "current_phase": "review",
+                    "status": "completed",
+                    "next_phase": "send",
+                    "action_required": None,
+                    "workbook_summary": {"total_rows": 5, "by_next_action": {"send": 5}},
+                },
+            ]
 
-        phase_results = [
-            {"success": True, "phase": "filter"},
-            {"success": True, "phase": "enrich"},
-            {"success": True, "phase": "draft"},
-            {"success": True, "phase": "review"},
-        ]
+            phase_results = [
+                {"success": True, "phase": "filter"},
+                {"success": True, "phase": "enrich"},
+                {"success": True, "phase": "draft"},
+                {"success": True, "phase": "review"},
+            ]
 
-        with patch.object(loop, "load_status") as mock_load:
-            with patch.object(loop, "run_single_phase") as mock_run:
-                mock_load.side_effect = status_sequence
-                mock_run.side_effect = phase_results
+            with patch.object(loop, "load_status") as mock_load:
+                with patch.object(loop, "run_single_phase") as mock_run:
+                    mock_load.side_effect = status_sequence
+                    mock_run.side_effect = phase_results
 
-                exit_code = loop.run_reachout_loop("test_project")
+                    exit_code = loop.run_reachout_loop("test_project")
 
-                assert exit_code == 0
-                assert mock_run.call_count == 4  # filter, enrich, draft, review
+                    assert exit_code == 0
+                    assert mock_run.call_count == 4  # filter, enrich, draft, review
 
     def test_stops_at_send_without_confirm(self):
         """Test loop stops at send boundary without --confirm-send."""
@@ -851,35 +849,37 @@ class TestIntegrationScenarios:
 
     def test_proceeds_to_send_with_confirm(self):
         """Test loop proceeds to send with --confirm-send."""
-        status_sequence = [
-            {
-                "current_phase": "review",
-                "status": "completed",
-                "next_phase": "send",
-                "action_required": None,
-                "ready": True,
-                "workbook_summary": {"total_rows": 5, "by_next_action": {"send": 5}},
-            },
-            {
-                "current_phase": "send",
-                "status": "completed",
-                "next_phase": None,
-                "action_required": None,
-                "ready": True,
-                "message": "All rows completed",
-                "workbook_summary": {"total_rows": 5, "by_next_action": {"done": 5}},
-            },
-        ]
+        with patch.object(loop, "pre_flight_check") as mock_preflight:
+            mock_preflight.return_value = (True, None)
+            status_sequence = [
+                {
+                    "current_phase": "review",
+                    "status": "completed",
+                    "next_phase": "send",
+                    "action_required": None,
+                    "ready": True,
+                    "workbook_summary": {"total_rows": 5, "by_next_action": {"send": 5}},
+                },
+                {
+                    "current_phase": "send",
+                    "status": "completed",
+                    "next_phase": None,
+                    "action_required": None,
+                    "ready": True,
+                    "message": "All rows completed",
+                    "workbook_summary": {"total_rows": 5, "by_next_action": {"done": 5}},
+                },
+            ]
 
-        with patch.object(loop, "load_status") as mock_load:
-            with patch.object(loop, "run_single_phase") as mock_run:
-                mock_load.side_effect = status_sequence
-                mock_run.return_value = {"success": True, "phase": "send"}
+            with patch.object(loop, "load_status") as mock_load:
+                with patch.object(loop, "run_single_phase") as mock_run:
+                    mock_load.side_effect = status_sequence
+                    mock_run.return_value = {"success": True, "phase": "send"}
 
-                exit_code = loop.run_reachout_loop("test_project", confirm_send=True)
+                    exit_code = loop.run_reachout_loop("test_project", confirm_send=True)
 
-                assert exit_code == 0
-                mock_run.assert_called_once_with("test_project", "send", dry_run=False, reset_retry_count=False)
+                    assert exit_code == 0
+                    mock_run.assert_called_once_with("test_project", "send", dry_run=False, reset_retry_count=False)
 
 
 if __name__ == "__main__":

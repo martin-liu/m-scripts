@@ -352,6 +352,28 @@ def find_system_chrome() -> str | None:
     return None
 
 
+def get_default_chrome_user_data_dir() -> Path | None:
+    """Return the path to the default Chrome user data directory.
+
+    This is where Chrome stores profiles, cookies, and login state.
+    Returns None if the platform is unsupported or the directory doesn't exist.
+    """
+    system = platform.system()
+
+    if system == "Darwin":  # macOS
+        path = Path.home() / "Library" / "Application Support" / "Google" / "Chrome"
+    elif system == "Linux":
+        path = Path.home() / ".config" / "google-chrome"
+    elif system == "Windows":
+        path = Path(os.path.expandvars(r"%LOCALAPPDATA%")) / "Google" / "Chrome" / "User Data"
+    else:
+        return None
+
+    if path.exists():
+        return path
+    return None
+
+
 def is_normal_chrome_running() -> bool:
     """Check if the user's normal Chrome (not CDP/isolated) is currently running.
 
@@ -450,6 +472,11 @@ def launch_chrome_with_default_profile(
         "--start-maximized",
         RECRUITER_HOME_URL,
     ]
+
+    # Explicitly use the default user data dir so LinkedIn cookies/auth are inherited
+    user_data_dir = get_default_chrome_user_data_dir()
+    if user_data_dir:
+        cmd.insert(1, f"--user-data-dir={user_data_dir}")
 
     try:
         if platform.system() == "Windows":
