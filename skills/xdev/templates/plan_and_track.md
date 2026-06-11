@@ -185,6 +185,7 @@ Issues (if FAIL):
 
 ## Feedback Log
 
-<!-- Used only during warm-session feedback integration after [APPROVED: PRODUCTION]. -->
+<!-- Used for post-production revision: external review comments after [APPROVED: PRODUCTION]. -->
 <!-- Triage entries: [comment summary] → implement | defer | reject — [rationale] -->
-<!-- FB sprint blocks appended below (same structure as sprint_block.md). -->
+<!-- Implement items become ordinary sprints appended to the Sprint List (standard SPRINT_N markers). -->
+<!-- Origin noted under Design Revisions as "external review". -->
