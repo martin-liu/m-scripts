@@ -13,6 +13,8 @@ zsh $DIR/shell/install.sh "$@"
 
 # build cli (skip in lite mode)
 if [[ "$1" != "--lite" ]]; then
+    # Ensure cargo is available (rustup may have been installed in the child zsh process)
+    [[ -f "$HOME/.cargo/env" ]] && source "$HOME/.cargo/env"
     pushd $DIR
     cargo build --release && cp target/release/m bin/
     popd

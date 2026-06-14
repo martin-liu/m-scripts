@@ -116,7 +116,7 @@ Issues (if FAIL — at least one critical or major):
 ### Open Questions
 
 <!-- Unresolved at design time. Must be resolved before [APPROVED: DESIGN]. -->
--
+<!-- Format: Q: [question] → A: [answer] -->
 
 ## Design Review
 

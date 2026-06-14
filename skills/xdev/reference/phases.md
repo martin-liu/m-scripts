@@ -30,7 +30,7 @@ Happy path: `(none)` → `[APPROVED: REQUIREMENTS]` → `[APPROVED: DESIGN]` →
 2. Explore codebase for prior art. Delegate to `{researcher}` (if bound) for broad searches or unfamiliar libraries.
 3. `{planner}` fills the `## Requirements` section. All open questions must be resolved — leave none blank.
 4. `{evaluator}` reviews: clarity, scope discipline, missing constraints, unresolved open questions. Appends verdict to `## Requirements Review` using the format pre-seeded in that section. Increments `Requirements: Rounds:`.
-5. `{planner}` (fresh instance) fixes; `{evaluator}` re-reviews (writes new verdict in `## Requirements Review`). Cap: 3 rounds total. Cap hit → write `[RAISED: REQUIREMENTS]` + escalation summary under `## Escalations`.
+5. `{planner}` (fresh instance) fixes; `{evaluator}` re-reviews (writes new verdict in `## Requirements Review`). Cap: 3 rounds total. Cap hit → run **Oracle Consultation Protocol** (see `SKILL.md`) → if ESCALATE: write `[RAISED: REQUIREMENTS]` + escalation summary under `## Escalations`.
 6. On PASS: `{evaluator}` writes `[APPROVED: REQUIREMENTS]` as `Latest marker:`.
 
 **Scope change after approval:** orchestrator writes `[ABORTED: REQUIREMENTS — {reason}]`; re-enter step 3.
@@ -46,7 +46,7 @@ Happy path: `(none)` → `[APPROVED: REQUIREMENTS]` → `[APPROVED: DESIGN]` →
 1. `{planner}` fills the `## Design` section.
 2. `{planner}` drafts the `## Sprint List` table: titles + one-line scope only. Leave empty if no implementation needed.
 3. `{evaluator}` reviews design for correctness, security, over-engineering, gaps. Writes verdict in `## Design Review` in `plan_and_track.md`. Increments `Design: Rounds:`.
-4. `{planner}` (fresh instance) fixes; `{evaluator}` re-reviews (writes new verdict in `## Design Review`). Cap: 3 rounds. Cap hit → write `[RAISED: DESIGN]` + escalation summary.
+4. `{planner}` (fresh instance) fixes; `{evaluator}` re-reviews (writes new verdict in `## Design Review`). Cap: 3 rounds. Cap hit → run **Oracle Consultation Protocol** → if ESCALATE: write `[RAISED: DESIGN]` + escalation summary.
 5. On PASS: `{evaluator}` writes `[APPROVED: DESIGN]`. Orchestrator updates `Current sprint:` to `(none — zero sprints)` if Sprint List is empty.
 
 **Design change after approval:** orchestrator writes `[ABORTED: DESIGN — {reason}]`; re-enter step 1.
@@ -65,12 +65,26 @@ For each new sprint, `{planner}` appends `sprint_block.md` content (with N and t
 
 `{planner}` writes the contract. Consult `{researcher}` (if bound) before finalizing criteria referencing unfamiliar libraries.
 
+**Live verification obligation:** if the sprint includes user-facing changes (UI, API endpoints, file ingestion, or any state visible to end-users), at least one success criterion must be a live verification check — real running system, real data, not a unit test or committed test suite.
+
+Before writing the criterion, consult `AGENTS.md` / `CLAUDE.md` for the repo's live verification command, local env setup, and test data preparation steps.
+
+**If no live verification instructions are found**, do not silently skip — follow this protocol:
+
+1. Surface the gap to the user: *"This sprint has user-facing changes but `AGENTS.md` has no live verification instructions. Choose one: (a) update `AGENTS.md` now, (b) provide the command and I'll write it there for you, (c) waive live verification for this sprint with a reason."*
+2. **Exit A — user updates `AGENTS.md`:** re-read the file, extract the command, draft the criterion, continue to 3a normally.
+3. **Exit B — user provides the command inline:** orchestrator writes it to `AGENTS.md` under `## Live Verification` (creating the section if absent), then continues as Exit A.
+4. **Exit C — user waives:** orchestrator records `Live verification: waived — [user's reason]` in the contract's `Out-of-scope`. The Phase 4 checklist item is skipped for this feature without evaluator penalty.
+
+Never proceed to 3b without one of these exits resolved.
+
 ```markdown
 #### Contract
 - **Scope:** which subsections of ## Design apply
 - **Success criteria:** (hard thresholds — each independently verifiable)
   - [ ] `<test command>` exits 0
   - [ ] `<file or output>` exists / matches expected
+  - [ ] Live verification: `<command from AGENTS.md>` passes  ← required if user-facing
 - **Out-of-scope:** what NOT to touch this sprint; pre-existing failures to exclude
 - **Validation command:** `<scoped command that proves all criteria>`
 ```
@@ -82,7 +96,7 @@ For each new sprint, `{planner}` appends `sprint_block.md` content (with N and t
 `{evaluator}` checks: are all success criteria hard thresholds verifiable without interpretation? Appends verdict to the `#### Contract Review Verdict` block using the format pre-seeded there.
 
 - **PASS** → write `[APPROVED: SPRINT_N_CONTRACT]`. **Minor-only findings are PASS** — note them, don't fail.
-- **FAIL** (critical or major only) → `{planner}` (fresh instance) rewrites. Cap: 2 rounds. Cap hit → write `[RAISED: SPRINT_N_CONTRACT]` + escalation summary.
+- **FAIL** (critical or major only) → `{planner}` (fresh instance) rewrites. Cap: 2 rounds. Cap hit → run **Oracle Consultation Protocol** → if ESCALATE: write `[RAISED: SPRINT_N_CONTRACT]` + escalation summary.
 
 #### 3c — Implement
 
@@ -113,11 +127,11 @@ All new-code criteria must be `[x] — passed`. The only allowed `[ ]` entries a
 
 #### 3e — Fix
 
-`{generator}` addresses critical and major issues, updates Completion Report. Minor issues are advisory — but since a round is already running, generator also applies the quick-win minors (low-risk, bounded, in-scope) here per the Severity Levels rule (in `SKILL.md`); the rest stay in the verdict notes for the user. Back to 3d. **Cap: 2 rounds total (tracked in `Rounds:` of the Evaluation Verdict).** Cap hit → write `[RAISED: SPRINT_N]` + escalation summary.
+`{generator}` addresses critical and major issues, updates Completion Report. Minor issues are advisory — but since a round is already running, generator also applies the quick-win minors (low-risk, bounded, in-scope) here per the Severity Levels rule (in `SKILL.md`); the rest stay in the verdict notes for the user. Back to 3d. **Cap: 2 rounds total (tracked in `Rounds:` of the Evaluation Verdict).** Cap hit → run **Oracle Consultation Protocol** → if ESCALATE: write `[RAISED: SPRINT_N]` + escalation summary.
 
 **Mid-sprint design change:** if implementation reveals a design error → write `Design Rev N: Paused sprint: M — [what changed and why]` under `## Design Revisions` and add `Design Rev N: Rounds: 0/2` under `## Phase Rounds` → `{planner}` updates the `## Design` section → `{evaluator}` appends verdict to `## Design Revisions` using the format pre-seeded in that section.
 
-Cap: 2 rounds total. Cap hit → write `[RAISED: DESIGN_REV_N]`. On PASS → write `[APPROVED: DESIGN_REV_N]`. Resume per marker table conditional (evaluator checks if contract is now stale → 3a if stale). If change invalidates an approved sprint, add `[INVALIDATED: SPRINT_M]` to that sprint's verdict section.
+Cap: 2 rounds total. Cap hit → run **Oracle Consultation Protocol** → if ESCALATE: write `[RAISED: DESIGN_REV_N]`. On PASS → write `[APPROVED: DESIGN_REV_N]`. Resume per marker table conditional (evaluator checks if contract is now stale → 3a if stale). If change invalidates an approved sprint, add `[INVALIDATED: SPRINT_M]` to that sprint's verdict section.
 
 ---
 
@@ -130,7 +144,7 @@ Cap: 2 rounds total. Cap hit → write `[RAISED: DESIGN_REV_N]`. On PASS → wri
 **Close checklist** (evaluator confirms each; skip lines that don't apply to the project):
 - [ ] Full test suite passes (or pre-existing failures documented, not introduced)
 - [ ] Lint / typecheck / build clean
-- [ ] e2e or manual verification of the user-facing path, if the feature has one
+- [ ] **Live verification passes** — required if the feature touches UI, external API, file ingestion, or any user-visible state; run against a real local system with real data per `AGENTS.md` (browser automation, real DB writes, real file ingestion, API round-trips — whatever applies); this is not a committed test suite. Skip only if every sprint in the Sprint List has `Live verification: waived` in its Out-of-scope, or the Sprint List is empty (zero-sprint) and the feature has no user-facing path.
 - [ ] No unrelated or stray files in the diff
 - [ ] PR description / changelog reflects what shipped
 - [ ] Red lines from `CLAUDE.md` / `AGENTS.md` respected
@@ -140,10 +154,10 @@ Cap: 2 rounds total. Cap hit → write `[RAISED: DESIGN_REV_N]`. On PASS → wri
 - b. Collect the union of all `**Files changed:**` lists from every sprint's Completion Report.
 - c. Flag any modified file that does **not** appear in any sprint's Files changed — surface to the user and resolve (revert or acknowledge as intentional) before proceeding. This prevents workspace contamination from failing the production review.
 
-1. `{generator}` runs full test suite across affected packages. **Affected packages** = all packages containing files listed in any sprint's Completion Report `**Files changed:**`. Zero-sprint projects: generator runs the full suite against all packages whose paths appear in the `## Design` section under Architecture or Data Model. Document pre-existing failures — don't fix unrelated things.
+1. `{generator}` runs full test suite across affected packages. **Affected packages** = all packages containing files listed in any sprint's Completion Report `**Files changed:**`. Zero-sprint projects: generator runs the full suite against all packages whose paths appear in the `## Design` section under Architecture or Data Model. For features with a user-facing path, this sweep also includes live verification per `AGENTS.md` (start local env, prepare real test data, run browser/API/ingestion commands). Document pre-existing failures — don't fix unrelated things.
 2. `{evaluator}` holistic review: security, reliability, observability, data integrity, performance, red-line compliance (re-read `CLAUDE.md` / `AGENTS.md` if present). Appends verdict to `## Production Review` using the format pre-seeded in that section. Increments `Production: Rounds:`.
 
-3. `{generator}` fixes implementation issues (no format required for fix work itself); `{planner}` updates the `## Design` section only if a doc-level concern arises. `{evaluator}` re-reviews. Cap: 3 rounds total. Cap hit → write `[RAISED: PRODUCTION]` + escalation summary.
+3. `{generator}` fixes implementation issues (no format required for fix work itself); `{planner}` updates the `## Design` section only if a doc-level concern arises. `{evaluator}` re-reviews. Cap: 3 rounds total. Cap hit → run **Oracle Consultation Protocol** → if ESCALATE: write `[RAISED: PRODUCTION]` + escalation summary.
 4. On PASS: `{evaluator}` writes `[APPROVED: PRODUCTION]` as `Latest marker:` and sets `Current sprint:` to `(complete)`.
 
 ---

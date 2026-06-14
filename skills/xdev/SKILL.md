@@ -16,8 +16,8 @@ xdev turns one large feature into a resumable, human-gated lifecycle. The orches
 
 1. **One state file:** `.tmp/xdev/{feature}/plan_and_track.md`. Its `## Status` block (`Latest marker:` + `Current sprint:`) is the **single source of truth** — do not keep a parallel orchestrator todo list.
 2. **Resume = read the Status block, route via the Marker Reference table.** Always start there, new run or resumed.
-3. **Four phases, each gated by an evaluator verdict:** Frame → Design → Sprint loop → Close. Generator and evaluator are always different instances.
-4. **Caps stop loops:** N failed review rounds → `[RAISED]` marker → stop and ask the user.
+3. **Four phases, each gated by an evaluator verdict:** Frame → Design → Sprint loop → Close. Three roles do the work — planner (writes artifacts), generator (implements), evaluator (judges). Generator and evaluator are always different instances; a role cannot judge its own output.
+4. **Caps stop loops:** N failed review rounds → oracle consultation (evaluator, fresh instance, full context) → if oracle unblocks: one bonus round; if oracle can't → `[RAISED]` marker → stop and ask the user.
 5. **Handover to another agent = point it at `plan_and_track.md` and this Golden Rule.** The file *is* the handover; there is nothing to generate.
 
 Everything below is reference. If you've run xdev before, the Status block + Marker Reference table are all you need to operate.
@@ -93,7 +93,7 @@ xdev assumes sequential execution — only one role is active at a time writing 
 
 | Role           | Owns                                                                 |
 |----------------|----------------------------------------------------------------------|
-| `orchestrator` | Runs this skill (the host loop). Reads markers and routes; writes only `[ABORTED]` markers and `## Escalations` notes; never writes `[APPROVED]` or `[RAISED]` markers |
+| `orchestrator` | Runs this skill (the host loop). Reads markers and routes; writes `[ABORTED]` markers, `## Escalations` notes, `Current sprint:` field, and `Rounds:` resets after RAISED recovery; never writes `[APPROVED]` or `[RAISED]` markers |
 | `planner`      | Requirements, design, sprint contracts, design-change updates        |
 | `generator`    | Sprint implementation, test runs, completion reports                 |
 | `evaluator`    | Contract quality verdicts, completion-report verdicts, all `[APPROVED]` and `[RAISED]` markers |
@@ -171,7 +171,7 @@ Markers compose **3 verbs** — `APPROVED` / `RAISED` / `ABORTED` — with lifec
 | `(none)` | — | Not started | Enter Phase 1 |
 | `[APPROVED: REQUIREMENTS]` | evaluator | Scope locked | Enter Phase 2 |
 | `[APPROVED: DESIGN]` | evaluator | Architecture locked | If Sprint List is empty → Phase 4; otherwise → Phase 3 Sprint 1 (3a) |
-| `[APPROVED: DESIGN_REV_N]` | evaluator | Design revised mid-sprint | Orchestrator reads `Current sprint:`, then asks evaluator to assess whether the sprint's contract criteria are still valid. If contract stale → orchestrator routes to 3a (planner rewrites contract); if contract valid and Completion Report submitted → 3d; if contract valid and no submitted report → 3c |
+| `[APPROVED: DESIGN_REV_N]` | evaluator | Design revised mid-sprint | Orchestrator reads `Current sprint:`, then asks evaluator to assess whether the sprint's contract criteria are still valid (evaluator appends this assessment to `## Design Revisions`). If contract stale → orchestrator routes to 3a (planner rewrites contract); if contract valid and Completion Report submitted → 3d; if contract valid and no submitted report → 3c |
 | `[APPROVED: SPRINT_N_CONTRACT]` | evaluator | Contract verified | Check if Completion Report is **submitted** under Sprint N: submitted → 3d; not submitted → 3c |
 | `[APPROVED: SPRINT_N]` | evaluator | Sprint N complete | If Sprint N is last in Sprint List → Phase 4; otherwise → Sprint N+1 at 3a |
 | `[APPROVED: PRODUCTION]` | evaluator | Done | Lifecycle complete |
@@ -194,6 +194,28 @@ If `Current sprint:` is missing, malformed, or inconsistent with `Latest marker:
 
 ---
 
+## Oracle Consultation Protocol
+
+Triggered **once per cap event**, before writing any `[RAISED: ...]` marker.
+
+When `Rounds:` reaches `N/N` and the evaluator's verdict is still FAIL, the orchestrator runs an oracle consultation **before** writing `[RAISED: ...]`. The oracle is `{evaluator}` — a fresh instance, never the same instance that wrote the final failing verdict.
+
+**Oracle brief:** point it at `plan_and_track.md` — the full history of all prior verdicts, fix attempts, and completion reports for the blocked phase/sprint. Prompt:
+
+> "You are reviewing a stuck phase. Read all prior verdicts and fix attempts in `plan_and_track.md`. Your task: identify the root cause of repeated failure and provide concrete, executable fix steps the generator can follow next. Choose one: (A) output `UNBLOCK: [specific steps]` if you can identify a clear fix path; (B) output `ESCALATE: [what the user must decide or provide]` if the blocker requires information or decisions only the user can give."
+
+**If oracle says UNBLOCK:**
+1. Orchestrator writes `Oracle direction: [steps]` under `## Escalations`, tagged with the blocked phase/sprint (e.g. `Sprint N oracle:`).
+2. Generator gets **one bonus round** — the orchestrator gives it the oracle direction as part of its brief. This bonus round does **not** increment `Rounds:` (the cap counter stays at `N/N`).
+3. Evaluator re-reviews. **PASS** → write `[APPROVED: ...]`. **FAIL** → write `[RAISED: ...]` + escalation summary. No second oracle consultation for this cap event.
+
+**If oracle says ESCALATE:**
+- Write `[RAISED: ...]` + escalation summary immediately (oracle's explanation becomes the escalation body).
+
+**Delegation failure in oracle:** if the oracle itself fails (malformed output, refusal, timeout), treat as a delegation failure — log under `## Escalations`, skip the bonus round, and write `[RAISED: ...]`.
+
+---
+
 ## Raised-State Recovery Protocol
 
 When a `[RAISED: ...]` marker exists and the user has responded:
@@ -208,7 +230,7 @@ When a `[RAISED: ...]` marker exists and the user has responded:
 
 ## Phase Procedures
 
-The marker table above routes you into a phase. Read `$SKILL_DIR/reference/phases.md` for that phase's step-by-step mechanics (if `$SKILL_DIR` is unset, use the same fallback paths as Bootstrap step 5). The invariants in this file (roles, severity, caps, doc-as-state) apply across all phases and are assumed already in context when reading that file.
+The marker table above routes you into a phase. Read `$SKILL_DIR/reference/phases.md` for that phase's step-by-step mechanics (if `$SKILL_DIR` is unset: `~/.agents/skills/xdev/reference/phases.md` or the project-local skill path). The invariants in this file (roles, severity, caps, doc-as-state) apply across all phases and are assumed already in context when reading that file.
 
 ---
 
@@ -224,6 +246,19 @@ The marker table above routes you into a phase. Read `$SKILL_DIR/reference/phase
 - **Single source of truth.** The `## Status` block supersedes any orchestrator todo list — do not maintain both. Derive the next action from `Latest marker:` + the Marker Reference table, not from a parallel tracker.
 - **Handover is the file, not a generated prompt.** To hand work to another agent (or a fresh you), give it the path to `plan_and_track.md` and the Golden Rule — it resumes from the Status block. Do not summarize state into a separate brief; a summary goes stale, the file does not.
 - If a fact isn't in the docs, it doesn't exist for `xdev`.
+
+---
+
+## Repo AGENTS.md Checklist
+
+xdev is repo-agnostic. For live verification (real running system, real data — not a committed test suite) to work inside xdev contracts, the repo's `AGENTS.md` (or `CLAUDE.md`) must document:
+
+- **Live verification command** — the command to run: browser automation, API round-trips, file ingestion, DB write checks, etc. (e.g. `agent-browser`, a shell script, `playwright test` used ad-hoc locally)
+- **Local env setup** — how to start the local stack before verification runs (e.g. `docker-compose up -d`, seed command, required env vars)
+- **Test data preparation** — how to write real entries to the DB or prepare real files; how to clean up afterward
+- **Pass criteria** — what a passing live verification looks like (exit code, log line, screenshot, observable state change, etc.)
+
+If any of these are absent, xdev will surface the gap to the user at 3a (contract draft) rather than silently skip live verification.
 
 ---
 

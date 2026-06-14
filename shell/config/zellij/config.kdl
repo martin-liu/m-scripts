@@ -1,3 +1,14 @@
+// zellij-attention: marks the tab whose pane is waiting for agent input
+// ⚡ appears when agent needs input; clears automatically when you focus that tab
+// Driven by `zellij pipe --name "zellij-attention::waiting::$ZELLIJ_PANE_ID"`
+// fired from Claude Code (Notification hook) and opencode (session.idle event plugin)
+load_plugins {
+    "file:~/.config/zellij/plugins/zellij-attention.wasm" {
+        enabled "true"
+        waiting_icon "⚡"
+    }
+}
+
 theme "dracula"
 pane_frames false
 simplified_ui true

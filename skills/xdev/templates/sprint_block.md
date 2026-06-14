@@ -5,6 +5,7 @@
 - **Success criteria:** (hard thresholds — each independently verifiable)
   - [ ] `<test command>` exits 0
   - [ ] `<file or output>` exists / matches expected
+  - [ ] Live verification: `<command from AGENTS.md>` passes  ← include if sprint is user-facing; omit or replace with `Live verification: waived — <reason>` in Out-of-scope if not applicable
 - **Out-of-scope:** (what NOT to touch; list pre-existing failing tests to exclude)
 - **Validation command:** `<scoped command that proves all criteria>`
 
