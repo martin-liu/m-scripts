@@ -48,7 +48,7 @@ if [ "${CLAUDE_ATTENTION_DEBUG:-}" = "1" ]; then
     printf '%s %s\n' "$(date -Iseconds)" "$(printf '%s' "$PAYLOAD" | jq -c .)" >> /tmp/claude-attention-hooks.log
 fi
 
-if [ "$HOOK" = "Stop" ]; then
+if [ "$HOOK" = "Stop" ] || [ "$HOOK" = "StopFailure" ]; then
     _flag_and_notify
 elif [ "$HOOK" = "Notification" ]; then
     case "$NOTIF_TYPE" in

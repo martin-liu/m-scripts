@@ -26,7 +26,15 @@ brew install \
      starship zoxide ripgrep bat eza git-delta zellij fd `# rust cli tools` \
      atuin `# smart shell history (replaces fzf Ctrl-R)` \
      node pnpm bun `# js runtimes` \
-     git gh zsh-syntax-highlighting jq yq `# others`
+     git gh zsh-syntax-highlighting jq yq `# others` \
+     whisper-cpp sox `# voice dictation dependencies (Raycast Whisper)`
+
+## Talon Voice (optional — voice control for Zellij + AI CLI tools)
+if brew install --cask talon 2>/dev/null; then
+    echo "Talon Voice installed. Run 'bin/setup-talon.sh' after setup completes to link configs."
+else
+    echo "WARN: Talon Voice install skipped. Install manually from https://talonvoice.com"
+fi
 
 ## zellij-attention — marks the zellij tab whose pane is waiting for input
 ## Built from vendored source at plugins/zellij-attention/ (patched fork of KiryuuLight/zellij-attention v0.3.1)

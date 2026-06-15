@@ -12,6 +12,7 @@ This is m-scripts, a personal CLI tools and shell scripts collection by Martin L
 - `shell/` - Shell scripts for setup, aliases, and utilities
 - `bin/` - Executable scripts (including `setup.sh`)
 - `raycast/` - Raycast script commands
+- `talon/` - Minimal Talon Voice config for Ghostty + Zellij terminal control and local Whisper dictation
 
 ### Key Components
 
@@ -23,6 +24,12 @@ This is m-scripts, a personal CLI tools and shell scripts collection by Martin L
    - `shell/install.sh` - Tool installation
    - `shell/alias.sh` - Shell aliases
    - `shell/zsh.sh` - Zsh configuration
+
+3. **Talon Voice Config**: Minimal voice-control setup for terminal workflows
+   - `talon/*.talon` - Voice command grammars
+   - `talon/*.py` - Talon action implementations
+   - `talon/bin/dictate-terminal.sh` - sox + whisper-cli dictation script
+   - `bin/setup-talon.sh` - New-Mac Talon setup
 
 ## Coding Standards
 
@@ -46,6 +53,14 @@ This is m-scripts, a personal CLI tools and shell scripts collection by Martin L
 - Include header comments explaining script purpose
 - Use meaningful variable names
 - Quote all variable expansions
+
+### Talon Config
+
+- Keep commands scoped to Ghostty unless intentionally global
+- Avoid short/common destructive phrases (use prefixes like `zel`, `term`, `pane`)
+- Do not depend on talonhub/community scripts
+- Keep dictation recording parameters conservative; verify speed before changing `rec silence` settings
+- Use `actions.speech.disable()` for true sleep, not mode switching
 
 ## Testing
 

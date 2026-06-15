@@ -95,7 +95,7 @@ export default {
                 onIdle(sessionID);
             } else if (event.type === "session.busy" || event.type === "session.active") {
                 onBusy(sessionID);
-            } else if (event.type === "question.asked") {
+            } else if (event.type === "question.asked" || event.type === "permission.asked") {
                 flagTab();
                 notify("Waiting for your input");
             }

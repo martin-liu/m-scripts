@@ -11,6 +11,9 @@ grep -qxF "source $DIR/register.sh" ~/.zshrc || echo "source $DIR/register.sh" >
 # install tools (pass --lite flag through if present)
 zsh $DIR/shell/install.sh "$@"
 
+# setup talon voice config (optional, warns if talon not installed)
+$DIR/bin/setup-talon.sh || true
+
 # build cli (skip in lite mode)
 if [[ "$1" != "--lite" ]]; then
     # Ensure cargo is available (rustup may have been installed in the child zsh process)

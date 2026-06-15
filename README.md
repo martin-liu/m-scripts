@@ -17,6 +17,7 @@ Both modes will:
 * add `register.sh` to `~/.zshrc`
 * sync config files (Ghostty, Zellij, Git, opencode, Claude Code settings)
 * install and configure [zellij-attention](https://github.com/KiryuuLight/zellij-attention) — marks the correct zellij tab ⚡ and sends a macOS notification (with sound) when an AI agent needs input
+* install and configure [Talon Voice](https://talonvoice.com) for hands-free Zellij navigation, AI pane switching, and local Whisper dictation — see `talon/README.md` for commands
 
 Full mode additionally:
 * install Rust toolchain and build the `m` CLI
@@ -86,6 +87,7 @@ npx -y skills update linkedin-sourcing
 * [Ghostty](https://github.com/ghostty-org/ghostty) terminal emulator
 * [Zellij](https://github.com/zellij-org/zellij), replacement of tmux/screen
 * [zellij-attention](https://github.com/KiryuuLight/zellij-attention), marks the zellij tab needing input with ⚡ (for multi-agent workflows)
+* [Talon Voice](https://talonvoice.com), hands-free voice control for Zellij navigation and AI pane switching — see `talon/README.md` for commands
 
 ---
 
