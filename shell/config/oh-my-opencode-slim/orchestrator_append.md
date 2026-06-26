@@ -34,6 +34,8 @@ Classify internally — do not print the tier.
 - Spans multiple packages, services, or sessions
 - You'd naturally break it into sprints
 
+**Classification scope:** classification applies only to top-level user asks or new tasks. If an active xdev `plan_and_track.md` exists for the feature, do not classify its substeps as Trivial or Medium; continue routing through xdev markers, phase procedures, Completion Reports, and xdev round caps until the feature reaches `[APPROVED: PRODUCTION]` or `[RAISED: ...]`.
+
 ## @oracle Review Triggers (Medium tasks)
 
 Review is **required** when any apply:

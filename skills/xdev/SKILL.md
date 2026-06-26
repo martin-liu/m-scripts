@@ -40,6 +40,12 @@ Also check `## Escalations` for any unresolved `Delegation failure:` entries. Do
 
 **Pointer sections:** if `## Requirements` or `## Design` contains only a `→ see <file>` line, read that file for the section's content. This is the escape hatch for large sections — treat it as if the content were inline.
 
+**Format compatibility on resume:** before routing an existing `plan_and_track.md`, compare its required headings and fields against the current xdev template. The orchestrator may perform only additive, semantics-preserving migrations: add missing non-state sections, add newly introduced optional fields with empty/default values documented by the template, and record `Format migration: [changes]` under `## Escalations`.
+
+Do not invent, reset, rename, or infer state-bearing values: `Latest marker:`, `Current sprint:`, `Rounds:`, markers, verdict history, Completion Reports, approvals, RAISED/ABORTED state, or sprint order.
+
+If migration requires judgment or a required state-bearing field is missing/malformed, write `Delegation failure: plan_and_track.md format migration required — [reason]` under `## Escalations` (create the section if missing) and stop. Resume only after user direction or an oracle checkpoint directive.
+
 **If the expected `plan_and_track.md` path is missing but the feature directory exists:** if any non-empty `plan_and_track.md` is present in that directory, resume from it. Otherwise write `Delegation failure: plan_and_track.md missing but feature directory exists` under `## Escalations` if possible, then stop until user direction.
 
 **If the file doesn't exist and neither does the directory → follow Bootstrap below.**
@@ -113,6 +119,8 @@ xdev uses the standard opencode agents directly.
 
 If unresolved `Delegation failure:` entries block every safe next route, orchestrator asks oracle for a checkpoint directive. Oracle must either provide an executable route or append `Checkpoint unresolved: [reason]` under `## Escalations`; do not write `[RAISED: ...]` unless the blocked state is already in a cap-hit path.
 
+When a Delegation failure says user direction or confirmation is needed, the orchestrator does not ask directly during xdev execution. It stops or asks oracle for a checkpoint directive; user contact happens only if the checkpoint directive or a `[RAISED: ...]` state instructs escalation.
+
 ---
 
 ## Severity
@@ -153,7 +161,7 @@ Markers compose **3 verbs** — `APPROVED` / `RAISED` / `ABORTED` — with lifec
 | `[APPROVED: DESIGN_REV_N]` | oracle | Design revised mid-sprint | Orchestrator reads `Current sprint:`, then asks oracle to assess whether the sprint's contract criteria are still valid (oracle appends this assessment to `## Design Revisions`). If contract stale → orchestrator routes to 3a (oracle rewrites contract); if contract valid and Completion Report submitted → 3d; if contract valid and no submitted report → 3c |
 | `[APPROVED: SPRINT_N_CONTRACT]` | oracle | Contract verified | Check if Completion Report is **submitted** under Sprint N: submitted → 3d; not submitted → 3c |
 | `[APPROVED: SPRINT_N]` | oracle | Sprint N complete | If Sprint N is last in Sprint List → Phase 4; otherwise → Sprint N+1 at 3a |
-| `[APPROVED: PRODUCTION]` | oracle | Done | Lifecycle complete |
+| `[APPROVED: PRODUCTION]` | oracle | Done | If Current sprint: is (complete) → lifecycle complete. If Current sprint: is an integer N → post-production revision active; route to Sprint N at 3a |
 | `[RAISED: REQUIREMENTS]` | oracle | Requirements cap hit | See Raised-State Recovery; re-entry: oracle integrates user direction → Phase 1 step 4 |
 | `[RAISED: DESIGN]` | oracle | Design cap hit | See Raised-State Recovery; re-entry: oracle integrates → Phase 2 step 3 |
 | `[RAISED: DESIGN_REV_N]` | oracle | Design revision cap hit | See Raised-State Recovery; re-entry: oracle revises changed section → oracle re-reviews in a fresh review session → on PASS write `[APPROVED: DESIGN_REV_N]` and resume sprint |
@@ -181,11 +189,11 @@ When `Rounds:` reaches `N/N` and the oracle's verdict is still FAIL, the orchest
 
 **Oracle brief:** point it at `plan_and_track.md` — the full history of all prior verdicts, fix attempts, and completion reports for the blocked phase/sprint. Prompt:
 
-> "You are reviewing a stuck phase. Read all prior verdicts and fix attempts in `plan_and_track.md`. Your task: identify the root cause of repeated failure and provide concrete, executable fix steps the fixer can follow next. Choose one: (A) output `UNBLOCK: [specific steps]` if you can identify a clear fix path; (B) output `ESCALATE: [what the user must decide or provide]` if the blocker requires information or decisions only the user can give."
+> "You are reviewing a stuck phase. Read all prior verdicts and fix attempts in `plan_and_track.md`. Your task: identify the root cause of repeated failure and provide concrete, executable next steps for the responsible agent. The responsible agent is oracle for requirements, design, design revisions, and sprint contracts; fixer for sprint implementation and production implementation fixes. Choose one: (A) output `UNBLOCK: [specific steps]` if you can identify a clear fix path; (B) output `ESCALATE: [what the user must decide or provide]` if the blocker requires information or decisions only the user can give."
 
 **If oracle says UNBLOCK:**
 1. Orchestrator writes `Oracle direction: [steps]` under `## Escalations`, tagged with the blocked phase/sprint (e.g. `Sprint N oracle:`).
-2. Fixer gets **one bonus round** — the orchestrator gives it the oracle direction as part of its brief. This bonus round does **not** increment `Rounds:` (the cap counter stays at `N/N`).
+2. The responsible agent gets **one bonus round** — oracle revises requirements/design/design revisions/sprint contracts; fixer handles sprint or production implementation fixes. This bonus round does **not** increment `Rounds:` (the cap counter stays at `N/N`).
 3. Oracle re-reviews in a fresh review session. **PASS** → write `[APPROVED: ...]`. **FAIL** → write `[RAISED: ...]` + escalation summary. No second oracle consultation for this cap event.
 
 **If oracle says ESCALATE:**
@@ -227,6 +235,7 @@ The marker table above routes you into a phase. Read `$SKILL_DIR/reference/phase
 - **Single source of truth.** The `## Status` block supersedes any orchestrator todo list — do not maintain both. Derive the next action from `Latest marker:` + the Marker Reference table, not from a parallel tracker.
 - **Handover is the file, not a generated prompt.** To hand work to another agent (or a fresh you), give it the path to `plan_and_track.md` and the Golden Rule — it resumes from the Status block. Do not summarize state into a separate brief; a summary goes stale, the file does not.
 - If a fact isn't in the docs, it doesn't exist for `xdev`.
+- Exception: `[APPROVED: PRODUCTION]` with integer `Current sprint:` is valid only for Post-Production Revision and routes to Sprint N at 3a.
 
 ---
 
