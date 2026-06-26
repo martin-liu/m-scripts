@@ -98,6 +98,11 @@ export default {
             } else if (event.type === "question.asked" || event.type === "permission.asked") {
                 flagTab();
                 notify("Waiting for your input");
+            } else if (event.type === "session.error") {
+                if (!sessionID || sessionID === mainSessionID) {
+                    flagTab();
+                    notify("Session error");
+                }
             }
         },
     }),

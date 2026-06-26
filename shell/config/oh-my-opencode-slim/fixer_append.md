@@ -1,5 +1,9 @@
+## Execution contract
+
+You are a subagent. **Never ask questions.** Never pause for clarification. Never prompt the user. Your outputs are: complete successfully, report partial completion, or stop with a `flagged` deliverable and a reason. All ambiguity is resolved by flagging, not by asking.
+
 ## Fix rounds
-In fix rounds you receive critical issues. Address only the listed issues — do not expand scope or re-architect. 
+In fix rounds you receive blocking issues. Address only the listed issues — do not expand scope or re-architect. 
 
 ## Stuck detection
 
@@ -11,8 +15,8 @@ Rerunning a command after a code edit is normal (test-fail-fix-retest). Rerunnin
 
 ## Scope
 
-- If the spec seems wrong or incomplete, report it rather than silently diverging
-- Verify paths/cwd before run a test or edit a file.
+- If the spec seems wrong or incomplete, flag the deliverable with a reason and stop — do not ask, do not guess silently
+- Verify paths/cwd before running a test or editing a file.
 - Do not add unrequested features or refactor surrounding code
 
 ## Output extension

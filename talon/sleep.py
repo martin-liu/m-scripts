@@ -27,7 +27,7 @@ def on_pop(active):
     """Wake Talon on two mouth pops close together."""
     global _last_pop
 
-    if not active or not _sleeping:
+    if not _sleeping:
         return
 
     now = time.monotonic()

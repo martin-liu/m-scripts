@@ -85,4 +85,4 @@ alias claude='claude --model opusplan'
 alias opencode='OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true opencode'
 
 # Upgrade all tools
-alias upgrade='~/.emacs.d/bin/doom upgrade --force && ~/.emacs.d/bin/doom sync; brew upgrade; rustup update --force; pnpm install -g @agentclientprotocol/claude-agent-acp; claude upgrade; opencode upgrade'
+alias upgrade='~/.emacs.d/bin/doom upgrade --force && ~/.emacs.d/bin/doom sync; brew upgrade --no-ask; rustup update --force; pnpm install -g @agentclientprotocol/claude-agent-acp; claude upgrade; opencode upgrade'

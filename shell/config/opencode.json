@@ -2,14 +2,15 @@
   "$schema": "https://opencode.ai/config.json",
   "lsp": false,
   "plugin": [
-    "oh-my-opencode-slim@2.0.0-beta.15"
+    "oh-my-opencode-slim@latest"
   ],
   "enabled_providers": [
     "openrouter",
     "azure",
     "azure-westus3",
     "azure-openai",
-    "ollama"
+    "ollama",
+    "amazon-bedrock"
   ],
   "permission": {
     "external_directory": {
@@ -90,6 +91,52 @@
       }
     },
 
+    "amazon-bedrock": {
+      "options": {
+        "region": "{env:AWS_REGION_BEDROCK}"
+      },
+      "models": {
+        "us.anthropic.claude-opus-4-8-20251101-v1:0": {
+          "name": "claude-opus-4.8 (cross-region)",
+          "cost": {
+            "input": 5,
+            "output": 25,
+            "cache_read": 0.5,
+            "cache_write": 6.25
+          },
+          "limit": {
+            "context": 200000,
+            "output": 32000
+          }
+        },
+        "anthropic.claude-opus-4-8": {
+          "name": "claude-opus-4.8",
+          "cost": {
+            "input": 5,
+            "output": 25,
+            "cache_read": 0.5,
+            "cache_write": 6.25
+          },
+          "limit": {
+            "context": 200000,
+            "output": 32000
+          }
+        },
+        "anthropic.claude-fable-5": {
+          "name": "claude-fable-5",
+          "cost": {
+            "input": 10,
+            "output": 50,
+            "cache_read": 1,
+            "cache_write": 12.5
+          },
+          "limit": {
+            "context": 200000,
+            "output": 32000
+          }
+        }
+      }
+    },
     "azure-openai": {
       "npm": "@ai-sdk/openai",
       "name": "Azure OpenAI",

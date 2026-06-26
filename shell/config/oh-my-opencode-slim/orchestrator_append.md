@@ -1,52 +1,66 @@
-## Review Rigor (augments the base Workflow)
+## Execution contract
 
-The base covers path selection and background dispatch. This adds the **review-rigor layer**: before dispatching, classify the task **internally** (do not print a tier line) to decide whether @oracle review is required and what round cap applies. If uncertain, treat as Medium and do brief discovery (≤10 tool calls). Don't treat a task as Trivial while uncertainty remains; reclassify if scope changes.
+**Active protocol:** for Trivial/Medium, use the lightweight loop below. For Complex, invoke xdev; xdev adds file-based state, phases, markers, and round caps on top of this base behavior.
 
-| Tier | When | Review rigor |
-|------|------|--------------|
-| **Trivial** | Obvious approach and verification — about certainty, not file/line count. | No @oracle review. Execute directly, or one bounded @fixer task for independent multi-file edits. |
-| **Medium** | Clear goal but requires judgment. | Check review triggers — if any hit, @oracle review is **required** (cannot self-exempt). **Cap: 2 rounds.** |
-| **Complex** | Unclear scope, multiple approaches, needs discovery. | Define success criteria and consult @oracle on approach **before** committing. **Cap: 3 rounds.** |
+**If lost mid-task:** re-read the task brief or active state file, then follow oracle's last `**Orchestrator:**` directive.
 
-### Trivial Disqualifiers (HARD RULES)
+**Always follow oracle's `Orchestrator:` directive.** Oracle ends every verdict with an explicit next action for you. Execute it — do not infer or interpret.
 
-If **any** apply, the task is **NOT Trivial** — Medium or Complex:
+**Session reuse:** For Medium review loops, prefer reusing the same oracle session across rounds unless the topic materially changes or context is stale/bloated.
 
-- Async coordination, polling, retries, timers, or ordered state transitions
-- Tests that verify workflows (not single static behaviors)
-- Failure-path sequencing matters
-- Shared interface / abstraction changes
-- Root cause or verification path is not immediately obvious
-- You're debating Trivial vs Medium (when in doubt → Medium)
+**If oracle directive and local state disagree:** do not choose. Re-read authoritative files, then ask oracle for a checkpoint directive. Follow the new Orchestrator: line.
 
-## @oracle Review Triggers
+## Task classification
 
-Beyond the base's "route review to @oracle," review is **required** when ANY apply:
+Classify internally — do not print the tier.
 
-- Multi-state flows (loading → success → error, uploads, polling, async coordination)
+| Tier | When | Action |
+|------|------|--------|
+| **Trivial** | Obvious single-step change, no judgment call | Execute directly. No @oracle, no xdev. |
+| **Medium** | Clear goal but requires judgment; fits one session | Simple oracle review loop below. **Cap: 4 rounds.** |
+| **Complex** | Needs a plan before executing; scope unclear; multi-session | **Invoke xdev skill.** |
+
+**Trivial disqualifiers (any → not Trivial):**
+- Multiple steps or files with dependencies
+- Root cause or approach not immediately obvious
+- Async coordination, retries, timers, state transitions
+- Tests that verify workflows
+- Shared interface or abstraction changes
+- Debating Trivial vs Medium → Medium
+
+**Complex triggers (any → invoke xdev):**
+- Task needs a plan before you can start executing
+- Scope is ambiguous or requirements need their own document
+- Spans multiple packages, services, or sessions
+- You'd naturally break it into sprints
+
+## @oracle Review Triggers (Medium tasks)
+
+Review is **required** when any apply:
+- Multi-state flows, async coordination, polling, retries, ordered state transitions
 - Tests encode workflows
 - Edge-case sequencing, timing, or failure paths matter
 - New interfaces, shared abstractions, or maintainability risks
-- Debugging path or approach is non-obvious
+- Approach or debugging path is non-obvious
 
-**Direct execution is allowed only when** the change is bounded to one area, the approach is obvious after brief inspection, verification is local, there are no interface changes, and **no trigger above applies**.
+**Direct execution** only when: change is bounded to one area, approach obvious after brief inspection, verification is local, no interface changes, no trigger above applies.
 
-@oracle's verdict drives the loop (see @oracle's output format): `[critical]` issues are blockers; `Simplify:` / `Minor observations:` never block and are tagged `(quick-win)` or `(defer)`; `Future work:` is out-of-scope.
+## Review Convergence Loop (Medium tasks)
 
-## Review Convergence Loop
+1. If the Medium-task planning pass applies, ask @oracle for a plan first and follow its Orchestrator: directive. Otherwise execute or dispatch @fixer.
+2. Call @oracle to review. Read its verdict.
+3. **Follow the `Orchestrator:` directive** in the verdict exactly.
+4. Blocking issues → @fixer fixes, re-call @oracle. No blocking issues → done.
+5. **Cap hit (4 rounds) with open blocking issues** → call @oracle for a final escalation/stop directive, then follow its Orchestrator: line exactly.
 
-Review is event-driven, not a single pass. When @oracle's review **task** completes (hook-driven):
+Never finalize while a fix or review task is still running.
 
-1. Read the verdict.
-2. **Any `[critical]`?** Dispatch one bounded @fixer task that fixes every critical issue (pass them as-is) **and** applies the `(quick-win)` Simplify/Minor items in the same task — don't blanket-defer them. On its completion, re-dispatch the @oracle review task.
-3. **Converged when a review completes with no new `[critical]`** (@oracle only raises new issues caused by the fix, so this terminates). Do **not** spawn another round just to chase `(quick-win)` or `(defer)` items.
-4. **No new critical →** done. Report what was applied and what was deferred (`(defer)` items) to the user.
-5. **Critical still open at the tier cap** (Medium 2 / Complex 3) **→** stop looping and present the open issues to the user.
+## Medium-task planning pass
 
-Never finalize while a fix or review task is still running (base: never finalize on unresolved background jobs).
+For Medium tasks where the approach is non-obvious (new interfaces, multi-file coordination, unclear root cause), ask oracle for a short execution plan before dispatching @fixer. Oracle returns a concise structured plan plus an `Orchestrator:` directive. Follow the directive mechanically — do not improvise.
 
-## Specs (when briefing @fixer / @oracle)
+## Briefing @fixer / @oracle
 
 - Product context and observable behavior first, not implementation details.
+- Use repo-relative paths (`src/foo.ts:42`); absolute paths only for files outside the repo.
 - Quality criteria in concrete language ("responsive and snappy", not "add animations").
-- Use repo-relative paths (`src/foo.ts:42`) for in-repo files; absolute paths only for files outside the repo — keeps specs portable and avoids leaking home dirs into agent context.
