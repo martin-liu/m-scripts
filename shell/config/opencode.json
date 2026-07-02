@@ -24,7 +24,7 @@
     "preserve_recent_tokens": 50000,
     "reserved": 62144
   },
-  "small_model": "azure/kimi-k2.6",
+  "small_model": "azure/Kimi-K2.7-Code",
   "provider": {
     "ollama": {
       "models": {
@@ -43,7 +43,7 @@
       "npm": "@ai-sdk/openai-compatible",
       "name": "Azure WestUS",
       "options": {
-        "baseURL": "{env:AZURE_API_BASE_NANDDEVWESTUS3}/openai/deployments/kimi-k2.6",
+        "baseURL": "{env:AZURE_API_BASE_NANDDEVWESTUS3}/openai/deployments/Kimi-K2.7-Code",
         "headers": {
           "api-key": "{env:AZURE_API_KEY_NANDDEVWESTUS3}"
         },
@@ -52,8 +52,8 @@
         }
       },
       "models": {
-        "kimi-k2.6": {
-          "name": "kimi-k2.6",
+        "Kimi-K2.7-Code": {
+          "name": "Kimi-K2.7-Code",
           "cost": {
             "input": 0.95,
             "output": 4
@@ -201,7 +201,7 @@
       "disable": true
     }
   },
-  "model": "azure/kimi-k2.6",
+  "model": "azure/Kimi-K2.7-Code",
   "default_agent": "orchestrator",
   "share": "manual",
   "logLevel": "DEBUG"

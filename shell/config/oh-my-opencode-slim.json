@@ -4,7 +4,7 @@
   "presets": {
     "azure-openai": {
       "orchestrator": {
-        "model": "azure/kimi-k2.6",
+        "model": "azure/Kimi-K2.7-Code",
         "skills": [
           "*"
         ],
@@ -37,7 +37,7 @@
         "mcps": []
       },
       "designer": {
-        "model": "azure/kimi-k2.6",
+        "model": "azure/Kimi-K2.7-Code",
         "variant": "medium",
         "skills": [
           "agent-browser"
@@ -70,7 +70,7 @@
           "variant": "low"
         },
         "balanced": {
-          "model": "azure/kimi-k2.6"
+          "model": "azure/Kimi-K2.7-Code"
         },
         "fast": {
           "model": "azure-westus3/deepseek-v4-flash"
