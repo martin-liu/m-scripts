@@ -18,7 +18,7 @@ _flag_and_notify() {
     # further out, so we only notify after the last Stop in a burst.
     local old_pid
     old_pid=$(cat "$pid_file" 2>/dev/null)
-    [ -n "$old_pid" ] && kill "$old_pid" 2>/dev/null
+    [ -n "$old_pid" ] && kill "$old_pid" 2>/dev/null || true
 
     (
         # 13s window: long enough to outlast the ~11s gap between an intermediate

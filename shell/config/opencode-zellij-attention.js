@@ -35,28 +35,46 @@ function logEvent(event) {
 }
 
 // Capture the first session ID — this is the main agent.
-// All subsequent sessions are subagents and ignored.
+// All subsequent sessions are subagents.
 let mainSessionID = null;
 
-// Dedup: session.status(idle) and session.idle often fire together
-// for the same session. Track which sessions we've already notified.
-const notifiedSessions = new Set();
+// Whether the main agent has reported idle since it last went busy.
+let mainIsIdle = false;
+
+// Sessions (main + subagents) currently busy. Only notify once this is empty,
+// so a subagent still running after the main agent returns doesn't fire early.
+const busySessions = new Set();
+
+// Whether we've already notified for the current idle cycle.
+let notified = false;
 
 // Debounce timer: wait 3 seconds before notifying.
-// If busy arrives during the window, cancel the notification.
+// If any session goes busy during the window, cancel the notification.
 let debounceTimer = null;
 
-function onIdle(sessionID) {
-    if (!sessionID || sessionID !== mainSessionID) return;
-    if (notifiedSessions.has(sessionID)) return;
+function scheduleNotifyCheck() {
+    if (debounceTimer) {
+        clearTimeout(debounceTimer);
+        debounceTimer = null;
+    }
+    if (!mainIsIdle || busySessions.size > 0 || notified) return;
 
-    if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
         debounceTimer = null;
-        notifiedSessions.add(sessionID);
+        if (!mainIsIdle || busySessions.size > 0) return;
+        notified = true;
         flagTab();
         notify("Waiting for your input");
     }, 3000);
+}
+
+function onIdle(sessionID) {
+    if (!sessionID) return;
+    busySessions.delete(sessionID);
+    if (sessionID === mainSessionID) {
+        mainIsIdle = true;
+    }
+    scheduleNotifyCheck();
 }
 
 function onBusy(sessionID) {
@@ -64,8 +82,11 @@ function onBusy(sessionID) {
         clearTimeout(debounceTimer);
         debounceTimer = null;
     }
-    if (sessionID) {
-        notifiedSessions.delete(sessionID);
+    if (!sessionID) return;
+    busySessions.add(sessionID);
+    if (sessionID === mainSessionID) {
+        mainIsIdle = false;
+        notified = false;
     }
 }
 

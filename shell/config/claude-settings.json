@@ -50,6 +50,7 @@
     }
   },
   "effortLevel": "medium",
+  "tui": "fullscreen",
   "skipAutoPermissionPrompt": true,
-  "tui": "fullscreen"
+  "skipWorkflowUsageWarning": true
 }
