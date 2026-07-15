@@ -176,6 +176,21 @@
             }
           }
         },
+        "gpt-5.6-sol": {
+          "name": "gpt-5.6-sol",
+          "cost": {
+            "input": 5,
+            "output": 30,
+            "cache_read": 0.5,
+            "cache_write": 6.25,
+            "context_over_200k": {
+              "input": 10,
+              "output": 45,
+              "cache_read": 1,
+              "cache_write": 12.5
+            }
+          }
+        },
         "gpt-5.4-mini": {
           "name": "gpt-5.4-mini",
           "cost": {
