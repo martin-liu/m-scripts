@@ -3,21 +3,20 @@
 ## Bindings
 
 <!-- Resolved once at bootstrap. Do not change after first sprint begins. -->
-- **planner:** {agent or @handle}
-- **generator:** {agent or @handle}
-- **evaluator:** {agent or @handle}
-- **researcher:** {agent or @handle} ← omit if not available
+- **orchestrator:** {agent or @handle}
+- **oracle:** {agent or @handle}
+- **fixer:** {agent or @handle}
 - **doc location:** .tmp/xdev/{feature}/
 
 ## Status
 
-<!-- CANONICAL RESUME ANCHOR — evaluator writes APPROVED/RAISED markers; orchestrator writes ABORTED markers. -->
+<!-- CANONICAL RESUME ANCHOR — oracle writes APPROVED/GATE/RAISED markers; orchestrator writes ABORTED markers. -->
 **Latest marker:** (none)
 **Current sprint:** (none)
 
 ## Phase Rounds
 
-<!-- Evaluator increments on every verdict. Orchestrator resets to 0/CAP after a RAISED state is resolved. -->
+<!-- Oracle increments on every verdict. Orchestrator resets to 0/CAP after a RAISED state is resolved. -->
 - Requirements: Rounds: 0/3
 - Design: Rounds: 0/3
 - Production: Rounds: 0/3
@@ -25,14 +24,16 @@
 
 ## Research Log
 
-<!-- Confirmed external/codebase findings, reconciled and accepted. Reviewers treat these as
-     shared accepted context — do NOT re-research what is recorded here.
+<!-- Confirmed external/codebase findings, reconciled and accepted. Written by oracle during
+     Phase 1 step 2 and Phase 2 exploration. Reviewers treat these as shared accepted context —
+     do NOT re-research what is recorded here.
      Reference files by path only; never paste file contents.
-     Format per entry: [finding] — source: [path or URL] — confirmed by: {researcher|planner} -->
+     Format per entry: [finding] — source: [path or URL] — confirmed by: oracle -->
 
 ## Requirements
 
-<!-- Filled by planner during Phase 1. All Open Questions must be resolved before [APPROVED: REQUIREMENTS].
+<!-- Filled by oracle during Phase 1. All Open Questions must be resolved before [APPROVED: REQUIREMENTS].
+     New user asks after approval land here as "### Amendment N" subsections (see SKILL.md).
      If this section grows unwieldy, extract it to requirements.md and replace the body with:
      → see requirements.md -->
 
@@ -62,12 +63,26 @@
 
 ### Open Questions
 
-<!-- Unresolved decisions that block design. ALL must be answered before [APPROVED: REQUIREMENTS]. -->
-<!-- Format: Q: [question] → A: [answer] -->
+<!-- ALL must be answered before [APPROVED: REQUIREMENTS]. Classified by oracle at Phase 1 step 3:
+     self-resolved  — answerable from codebase/brief/conventions; answer must cite evidence.
+     user-decision  — product/scope/tradeoff call; must carry a recommended default + consequence;
+                      blocking: yes only if a wrong guess would invalidate the feature.
+     Format:
+     Q: [question] — class: self-resolved → A: [answer] — source: [path or Research Log entry]
+     Q: [question] — class: user-decision — blocking: yes|no — default: [choice] — consequence: [impact]
+        → A: [answer] — source: user | default
+     User input: [verbatim user answer]   ← appended by orchestrator after the clarification gate -->
+
+### Assumptions
+
+<!-- The ledger of every interpretive choice made in this feature. One entry per defaulted or
+     user-confirmed user-decision question, plus any ambiguity defaulted later in the lifecycle.
+     Reviewers check: every entry has default + consequence; nothing blocking was silently defaulted.
+     Format: A: [assumption] — default: [choice] — consequence: [impact] — status: defaulted | user-confirmed -->
 
 ## Requirements Review
 
-<!-- Evaluator APPENDS verdict here each round during Phase 1. Never overwrite — preserve history.
+<!-- Fresh oracle session APPENDS verdict here each round during Phase 1. Never overwrite — preserve history.
 Format:
 Requirements verdict: PASS | FAIL
 Rounds: N/3
@@ -77,7 +92,7 @@ Issues (if FAIL — at least one critical or major):
 
 ## Design
 
-<!-- Filled by planner during Phase 2. All Open Questions must be resolved before [APPROVED: DESIGN].
+<!-- Filled by oracle during Phase 2. All Open Questions must be resolved before [APPROVED: DESIGN].
      If this section grows unwieldy, extract it to design.md and replace the body with:
      → see design.md -->
 
@@ -115,12 +130,13 @@ Issues (if FAIL — at least one critical or major):
 
 ### Open Questions
 
-<!-- Unresolved at design time. Must be resolved before [APPROVED: DESIGN]. -->
-<!-- Format: Q: [question] → A: [answer] -->
+<!-- Unresolved at design time. Must be resolved before [APPROVED: DESIGN] — by oracle with evidence,
+     never a user gate (see Phase 2 step 1). -->
+<!-- Format: Q: [question] → A: [answer] — source: [path or Research Log entry] -->
 
 ## Design Review
 
-<!-- Evaluator APPENDS verdict here each round during Phase 2. Never overwrite — preserve history.
+<!-- Fresh oracle session APPENDS verdict here each round during Phase 2. Never overwrite — preserve history.
 Format:
 Design verdict: PASS | FAIL
 Rounds: N/3
@@ -141,13 +157,13 @@ Issues (if FAIL — at least one critical or major):
 
 ## Sprint Log
 
-<!-- Planner appends sprint_block.md content here for each new sprint at step 3a. -->
+<!-- Oracle appends sprint_block.md content here for each new sprint at step 3a. -->
 
 ---
 
 ## Production Review
 
-<!-- Evaluator APPENDS verdict here each round during Phase 4. Never overwrite — preserve history.
+<!-- Fresh oracle session APPENDS verdict here each round during Phase 4. Never overwrite — preserve history.
 Format:
 Production verdict: PASS | FAIL
 Rounds: N/3
@@ -159,7 +175,7 @@ Issues (if FAIL — at least one critical or major):
 
 ## Escalations
 
-<!-- Written by evaluator on cap hit, or by orchestrator on delegation failure. Format per entry:
+<!-- Written by oracle on cap hit, or by orchestrator on delegation failure. Format per entry:
 [RAISED: X] — what failed, why cap was hit, what user needs to decide.
 User direction: (written by orchestrator after user responds)
 

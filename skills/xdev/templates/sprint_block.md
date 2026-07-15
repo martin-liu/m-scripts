@@ -1,7 +1,7 @@
 ### Sprint N: {Title}
 
 #### Contract
-- **Scope:** (reference design.md sections)
+- **Scope:** (reference `## Design` subsections — or design.md if extracted)
 - **Success criteria:** (hard thresholds — each independently verifiable)
   - [ ] `<test command>` exits 0
   - [ ] `<file or output>` exists / matches expected
@@ -20,8 +20,14 @@ Issues (if FAIL):
 
 #### Completion Report
 
-<!-- Generator fills this section at step 3c after implementation is complete.
-     Replace this comment with the report body. Do not add or remove the heading above.
+<!-- Fixer fills this section at step 3c after implementation is complete.
+     Replace this comment with the report body. Do not add or remove the heading above. Format:
+     - **Files changed:** (list — at least one entry required; use `git diff --name-only` to populate)
+     - **Validation output:** (paste or summary — required)
+     - **Criteria status:** (mirror each contract criterion)
+       - [x] criterion — passed
+       - [ ] criterion — pre-existing failure: [test name] (excluded per contract Out-of-scope)
+     - **Notes:** (deviations from contract, if any)
      Submitted = Files changed non-empty + Validation output non-empty + all criteria [x] passed
      (only exception: pre-existing failures named in contract Out-of-scope may appear as [ ]).
      An empty or placeholder body is NOT submitted and routes back to 3c on cold resume. -->

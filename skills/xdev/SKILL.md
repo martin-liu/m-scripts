@@ -1,10 +1,10 @@
 ---
 name: xdev
-description: Full software-lifecycle skill for multi-sprint feature work. Drives requirements → design → sprint loop → production close, with file-based state that survives context resets. NOT for single-PR work — use the orchestrator's Medium tier (oracle review loop) for that.
+description: Full software-lifecycle skill for multi-sprint feature work. Drives requirements → design → sprint loop → production close, with file-based state that survives context resets. Built for long autonomous runs — at most one planned user ask (the Phase 1 clarification gate). NOT for single-PR work — use the orchestrator's Medium tier (oracle review loop) for that.
 license: MIT
 metadata:
   author: martinliu
-  version: "1.0.0"
+  version: "1.1.0"
 allowed-tools: Read, Write, Edit, Bash(*)
 ---
 
@@ -17,8 +17,9 @@ xdev turns one large feature into a resumable, human-gated lifecycle. The orches
 1. **One state file:** `.tmp/xdev/{feature}/plan_and_track.md`. Its `## Status` block (`Latest marker:` + `Current sprint:`) is the **single source of truth** — do not keep a parallel orchestrator todo list.
 2. **Resume = read the Status block, route via the Marker Reference table.** Always start there, new run or resumed.
 3. **Four phases, each gated by oracle review:** Frame → Design → Sprint loop → Close. Oracle writes plans/contracts and reviews them in fresh review sessions; fixer implements sprint contracts. Fixer never evaluates its own work.
-4. **Caps stop loops:** N failed review rounds → oracle consultation (fresh oracle session, full context) → if oracle unblocks: one bonus round; if oracle can't → `[RAISED]` marker → stop and ask the user.
-5. **Handover to another agent = point it at `plan_and_track.md` and this Golden Rule.** The file *is* the handover; there is nothing to generate.
+4. **At most ONE planned user ask per feature:** the Phase 1 clarification gate (`[GATE: REQUIREMENTS]`). It fires only if a blocking product decision can't be safely defaulted; otherwise every interpretive choice is defaulted and recorded under `### Assumptions` and the run is fully autonomous until RAISED.
+5. **Caps stop loops:** N failed review rounds → oracle consultation (fresh oracle session, full context) → if oracle unblocks: one bonus round; if oracle can't → `[RAISED]` marker → stop and ask the user.
+6. **Handover to another agent = point it at `plan_and_track.md` and this Golden Rule.** The file *is* the handover; there is nothing to generate.
 
 **xdev is additive.** It does not redefine orchestrator, oracle, or fixer behavior. The default prompts remain authoritative for delegation, review format, severity, direct reads, fixer execution, stuck detection, and `Orchestrator:` directives. xdev adds only the durable state file, lifecycle phases, markers, round caps, sprint contracts, completion reports, and RAISED recovery.
 
@@ -50,7 +51,7 @@ If migration requires judgment or a required state-bearing field is missing/malf
 
 **If the file doesn't exist and neither does the directory → follow Bootstrap below.**
 
-**If the file exists and the user is making a new ask for the same feature:** do not re-bootstrap. Read `## Requirements` and `## Status`, add the new ask as `### Amendment N` under `## Requirements`, then delegate to oracle to assess: fits the current sprint (extend contract), needs a new sprint (append to Sprint List), or invalidates current design (`[ABORTED: DESIGN — reason]`).
+**If the file exists and the user is making a new ask for the same feature:** do not re-bootstrap. Read `## Requirements` and `## Status`, add the new ask as `### Amendment N` under `## Requirements`, then delegate to oracle to assess: fits the current sprint (extend contract), needs a new sprint (append to Sprint List), or invalidates current design (`[ABORTED: DESIGN — reason]`). If the amendment is ambiguous, clarify it in the same exchange — user-initiated contact does not count against the clarification-gate budget.
 
 If args were provided at invocation (e.g. `/xdev add OAuth login`), treat them as the initial feature description — skip asking "what are we building?"
 
@@ -67,7 +68,7 @@ If args were provided at invocation (e.g. `/xdev add OAuth login`), treat them a
 6. Write the initial feature description into the `### Initial Brief` subsection of `## Requirements` in `plan_and_track.md`. If invocation args were provided, paste them there. If no args, write a brief summary from the user's response.
 7. Resolve placeholders in `plan_and_track.md` in this order:
    a. Replace `{Feature Name}` and `{feature}` (feature name).
-   b. Replace any remaining `{agent or @handle}` placeholders with `@oracle` or `@fixer` as appropriate.
+   b. Replace any remaining `{agent or @handle}` placeholders with `@orchestrator`, `@oracle`, or `@fixer` as appropriate.
    c. Leave `Sprint N: {Title}` as-is — filled per-sprint at 3a.
    d. Check `.gitignore` — add `.tmp/` if not present. **Note:** `.tmp/` means "local only, not committed" — not "auto-deleted." Do not add to auto-clean scripts.
 8. Set `Latest marker:` to `(none)`, `Current sprint:` to `(none)`.
@@ -104,8 +105,8 @@ xdev uses the standard opencode agents directly.
 
 | Agent | Additional xdev responsibility |
 |-------|--------------------------------|
-| `orchestrator` | Runs the xdev lifecycle, reads markers, routes work, writes `[ABORTED]` markers on explicit user instruction, logs `Delegation failure:` entries under `## Escalations`, and resets `Rounds:` after RAISED recovery. |
-| `oracle` | Writes requirements, design, sprint contracts, design revisions, review verdicts, `[APPROVED]` markers, and `[RAISED]` markers. |
+| `orchestrator` | Runs the xdev lifecycle, reads markers, routes work, presents the clarification-gate batch to the user (the single planned ask), writes `[ABORTED]` markers on explicit user instruction, logs `Delegation failure:` entries under `## Escalations`, and resets `Rounds:` after RAISED recovery. |
+| `oracle` | Writes requirements, design, sprint contracts, design revisions, review verdicts, `[APPROVED]` markers, `[GATE: REQUIREMENTS]`, and `[RAISED]` markers. |
 | `fixer` | Implements sprint contracts, runs validation, fixes blocking issues, and fills Completion Reports. |
 
 **Oracle freshness:** when oracle reviews an artifact that oracle previously wrote or revised, use a fresh oracle session. The same oracle session must not approve its own output.
@@ -120,6 +121,8 @@ xdev uses the standard opencode agents directly.
 If unresolved `Delegation failure:` entries block every safe next route, orchestrator asks oracle for a checkpoint directive. Oracle must either provide an executable route or append `Checkpoint unresolved: [reason]` under `## Escalations`; do not write `[RAISED: ...]` unless the blocked state is already in a cap-hit path.
 
 When a Delegation failure says user direction or confirmation is needed, the orchestrator does not ask directly during xdev execution. It stops or asks oracle for a checkpoint directive; user contact happens only if the checkpoint directive or a `[RAISED: ...]` state instructs escalation.
+
+**User-contact budget:** the happy path contains at most ONE planned user ask — the Phase 1 clarification gate (`[GATE: REQUIREMENTS]`). All other ambiguity is resolved autonomously: default + `### Assumptions` entry, or (on genuine failure) the cap → consultation → RAISED path. Never ask the user ad-hoc questions outside the gate and RAISED recovery.
 
 ---
 
@@ -151,18 +154,19 @@ A report is **submitted** when: `**Files changed:**` is non-empty; `**Validation
 
 `Latest marker:` in `plan_and_track.md` is the **canonical resume anchor**. It persists until the next marker is written — ABORTED and RAISED markers are durable states, not transitions.
 
-Markers compose **3 verbs** — `APPROVED` / `RAISED` / `ABORTED` — with lifecycle stages; the resume logic branches on verb + stage, not on each row independently. `INVALIDATED` is an **annotation**, not a resume marker (it never appears in `Latest marker:`) — it is listed in the table below only for reference.
+Markers compose **4 verbs** — `APPROVED` / `GATE` / `RAISED` / `ABORTED` — with lifecycle stages; the resume logic branches on verb + stage, not on each row independently. `INVALIDATED` is an **annotation**, not a resume marker (it never appears in `Latest marker:`) — it is listed in the table below only for reference.
 
 | Marker | Writer | Meaning | Next action |
 |--------|--------|---------|-------------|
 | `(none)` | — | Not started | Enter Phase 1 |
+| `[GATE: REQUIREMENTS]` | oracle | PRD drafted; blocking user decisions pending | If every `blocking: yes` question has a `User input:` entry → oracle integrates answers, updates `### Assumptions` → Phase 1 step 5. Otherwise → orchestrator presents the requirements summary + ALL user-decision questions (with recommended defaults) in one batch and stops for the user. Fires at most once per feature |
 | `[APPROVED: REQUIREMENTS]` | oracle | Scope locked | Enter Phase 2 |
 | `[APPROVED: DESIGN]` | oracle | Architecture locked | If Sprint List is empty → Phase 4; otherwise → Phase 3 Sprint 1 (3a) |
 | `[APPROVED: DESIGN_REV_N]` | oracle | Design revised mid-sprint | Orchestrator reads `Current sprint:`, then asks oracle to assess whether the sprint's contract criteria are still valid (oracle appends this assessment to `## Design Revisions`). If contract stale → orchestrator routes to 3a (oracle rewrites contract); if contract valid and Completion Report submitted → 3d; if contract valid and no submitted report → 3c |
 | `[APPROVED: SPRINT_N_CONTRACT]` | oracle | Contract verified | Check if Completion Report is **submitted** under Sprint N: submitted → 3d; not submitted → 3c |
 | `[APPROVED: SPRINT_N]` | oracle | Sprint N complete | If Sprint N is last in Sprint List → Phase 4; otherwise → Sprint N+1 at 3a |
 | `[APPROVED: PRODUCTION]` | oracle | Done | If Current sprint: is (complete) → lifecycle complete. If Current sprint: is an integer N → post-production revision active; route to Sprint N at 3a |
-| `[RAISED: REQUIREMENTS]` | oracle | Requirements cap hit | See Raised-State Recovery; re-entry: oracle integrates user direction → Phase 1 step 4 |
+| `[RAISED: REQUIREMENTS]` | oracle | Requirements cap hit | See Raised-State Recovery; re-entry: oracle integrates user direction → Phase 1 step 5 |
 | `[RAISED: DESIGN]` | oracle | Design cap hit | See Raised-State Recovery; re-entry: oracle integrates → Phase 2 step 3 |
 | `[RAISED: DESIGN_REV_N]` | oracle | Design revision cap hit | See Raised-State Recovery; re-entry: oracle revises changed section → oracle re-reviews in a fresh review session → on PASS write `[APPROVED: DESIGN_REV_N]` and resume sprint |
 | `[RAISED: SPRINT_N_CONTRACT]` | oracle | Contract cap hit | See Raised-State Recovery; re-entry: oracle rewrites contract from scratch → 3b |
@@ -248,7 +252,7 @@ xdev is repo-agnostic. For live verification (real running system, real data —
 - **Test data preparation** — how to write real entries to the DB or prepare real files; how to clean up afterward
 - **Pass criteria** — what a passing live verification looks like (exit code, log line, screenshot, observable state change, etc.)
 
-If any of these are absent, xdev will log a `Delegation failure: live verification instructions missing` note under `## Escalations` at 3a
+Oracle checks these during Phase 1 step 2 for user-facing features — missing items become a `blocking: yes` user-decision question at the clarification gate (provide or waive). If a user-facing sprint still reaches 3a unresolved, xdev logs a `Delegation failure: live verification instructions missing` note under `## Escalations` at 3a
 
 ---
 
@@ -270,7 +274,7 @@ If any of these are absent, xdev will log a `Delegation failure: live verificati
 ## Checklist
 
 - [ ] Bootstrap or resume (`plan_and_track.md` exists? Placeholders resolved?)
-- [ ] Phase 1: Frame → `[APPROVED: REQUIREMENTS]`
+- [ ] Phase 1: Frame → (at most once, only if blocking) `[GATE: REQUIREMENTS]` → `[APPROVED: REQUIREMENTS]`
 - [ ] Phase 2: Design → `[APPROVED: DESIGN]`
 - [ ] For each sprint (skip if Sprint List empty):
   - [ ] 3a Draft contract

@@ -4,7 +4,7 @@
 
 ## Lifecycle — 4 Phases
 
-Happy path: `(none)` → `[APPROVED: REQUIREMENTS]` → `[APPROVED: DESIGN]` → (if Sprint List non-empty) `[APPROVED: SPRINT_N_CONTRACT]` + `[APPROVED: SPRINT_N]` × N → `[APPROVED: PRODUCTION]`
+Happy path: `(none)` → (`[GATE: REQUIREMENTS]` — at most once, only if blocking user decisions exist) → `[APPROVED: REQUIREMENTS]` → `[APPROVED: DESIGN]` → (if Sprint List non-empty) `[APPROVED: SPRINT_N_CONTRACT]` + `[APPROVED: SPRINT_N]` × N → `[APPROVED: PRODUCTION]`
 
 **Design revisions** during Phase 3 produce `[APPROVED: DESIGN_REV_N]` — lifecycle position unchanged; resume current sprint per marker table.
 
@@ -24,18 +24,26 @@ Happy path: `(none)` → `[APPROVED: REQUIREMENTS]` → `[APPROVED: DESIGN]` →
 
 ### Phase 1 — Frame
 
-**Goal:** Lock scope before any design work.
+**Goal:** Lock scope before any design work — a PRD grounded in codebase evidence, where every interpretive choice is either user-confirmed or recorded as a defaulted assumption. Requirements failures poison every downstream sprint; this phase is where xdev spends its thinking.
 
 **Round cap: 3. Track in `## Phase Rounds` → `Requirements: Rounds: N/3`.**
 
-1. Read project `CLAUDE.md` / `AGENTS.md` (if present) for red lines and conventions.
-2. Explore codebase for prior art, including broad searches or unfamiliar libraries as needed.
-3. Oracle fills the `## Requirements` section. All open questions must be resolved — leave none blank.
-4. A fresh oracle session reviews: clarity, scope, constraints, unresolved open questions. Appends verdict to `## Requirements Review`. Increments `Requirements: Rounds:`.
-5. Oracle revises; fresh oracle re-reviews. Cap: 3 rounds total. Cap hit → run **Oracle Consultation Protocol** (see `SKILL.md`) → if ESCALATE: write `[RAISED: REQUIREMENTS]` + escalation summary under `## Escalations`.
-6. On PASS: oracle writes `[APPROVED: REQUIREMENTS]` as `Latest marker:`.
+**User-contact budget: at most ONE clarification gate (step 4). Everything else is resolved autonomously and recorded.**
 
-**Scope change after approval:** orchestrator writes `[ABORTED: REQUIREMENTS — {reason}]`; re-enter step 3.
+1. Read project `CLAUDE.md` / `AGENTS.md` (if present) for red lines and conventions.
+2. Explore codebase for prior art, existing patterns, and constraints — broad searches or unfamiliar libraries as needed. Record confirmed findings in `## Research Log` (path-referenced, per its format); reviewers treat these as accepted context and do not re-research them. If the feature has any user-facing surface (UI, API, file ingestion, user-visible state), also check `AGENTS.md` / `CLAUDE.md` against the Repo AGENTS.md Checklist (see `SKILL.md`); if live-verification instructions are missing, oracle adds a `user-decision — blocking: yes` Open Question ("provide live-verification command/setup, or waive") so it rides the clarification gate instead of stalling Sprint 1 at 3a.
+3. Oracle drafts the full `## Requirements` section (the PRD): User Stories, In/Out of Scope, Hard Constraints, and Open Questions. Every open question gets classified before any answer is written:
+   - **self-resolved** — answerable from the codebase, the Initial Brief, or repo conventions. Oracle answers it directly, citing evidence (`source: [path or Research Log entry]`). Guessing without a source is not allowed — an unsourced answer is a user-decision in disguise.
+   - **user-decision** — a product/scope/tradeoff call that no amount of code reading can answer. Oracle MUST attach a recommended default and its consequence (`default: [choice] — consequence: [what the user gives up]`), and mark `blocking: yes` only when a wrong guess would invalidate the feature: contradictory Initial Brief, ambiguous core goal, irreversible or externally visible behavior, security or data-loss tradeoffs. Everything else is `blocking: no`.
+4. **Clarification gate — at most once per feature:**
+   - No `blocking: yes` questions → do NOT contact the user. Apply every default, record each under `### Assumptions` with `status: defaulted`, continue to step 5. This is the zero-ask path and the expected common case.
+   - Any `blocking: yes` question → oracle writes `[GATE: REQUIREMENTS]` as `Latest marker:`. Orchestrator presents ONE batch to the user: a short requirements summary plus ALL user-decision questions (blocking and non-blocking — the single ask is spent, use it fully), each with its recommended default so the user can reply "defaults fine." Stop until the user responds.
+   - On response: orchestrator appends `User input: [answer]` under each answered question in `### Open Questions`; oracle integrates — answered questions become `status: user-confirmed` in `### Assumptions`, unanswered non-blocking ones fall back to `status: defaulted`. Continue to step 5. The gate never fires again (mechanical test: any `User input:` entry under `### Open Questions` means it already fired): ambiguity discovered later is defaulted + recorded, or escalates through the normal cap → RAISED path.
+5. A fresh oracle session reviews: clarity, scope, constraints; every open question answered with cited evidence or `User input:`; every `### Assumptions` entry has default + consequence; no `blocking: yes` question was silently defaulted. Appends verdict to `## Requirements Review`. Increments `Requirements: Rounds:`.
+6. Oracle revises; fresh oracle re-reviews. Cap: 3 rounds total. Cap hit → run **Oracle Consultation Protocol** (see `SKILL.md`) → if ESCALATE: write `[RAISED: REQUIREMENTS]` + escalation summary under `## Escalations`.
+7. On PASS: oracle writes `[APPROVED: REQUIREMENTS]` as `Latest marker:`.
+
+**Scope change after approval:** orchestrator writes `[ABORTED: REQUIREMENTS — {reason}]`; re-enter step 3. The gate does not re-arm on scope restart — new blocking ambiguity in the restart ask is already user contact; fold its answers in directly.
 
 ---
 
@@ -45,11 +53,12 @@ Happy path: `(none)` → `[APPROVED: REQUIREMENTS]` → `[APPROVED: DESIGN]` →
 
 **Round cap: 3. Track in `## Phase Rounds` → `Design: Rounds: N/3`.**
 
-1. Oracle fills the `## Design` section.
+1. Oracle fills the `## Design` section. Record new codebase findings in `## Research Log`. Design-time open questions are resolved by oracle with cited evidence — there is no user gate in Phase 2. A technical tradeoff with no clear winner: pick one, record it under `### Key Alternatives Considered`. A genuine product ambiguity surfacing here means requirements missed it: default it, record it under `### Assumptions` in `## Requirements`, and continue — or if it invalidates approved scope, that is an `[ABORTED: REQUIREMENTS]` decision for the user, surfaced via the normal escalation paths.
 2. Oracle drafts the `## Sprint List` table: titles + one-line scope only. Leave empty if no implementation needed.
 3. A fresh oracle session reviews design. Writes verdict in `## Design Review`. Increments `Design: Rounds:`.
 4. Oracle revises; fresh oracle re-reviews. Cap: 3 rounds. Cap hit → run **Oracle Consultation Protocol** → if ESCALATE: write `[RAISED: DESIGN]` + escalation summary.
 5. On PASS: oracle writes `[APPROVED: DESIGN]`. If Sprint List is empty, oracle also sets `Current sprint:` to `(none — zero sprints)`.
+6. Orchestrator posts a brief informational summary to the user — key design decisions, assumptions in effect, sprint list — then proceeds immediately to Phase 3. This is visibility, not a gate: do not wait for a reply, do not ask a question.
 
 **Design change after approval:** orchestrator writes `[ABORTED: DESIGN — {reason}]`; re-enter step 1.
 
@@ -71,7 +80,7 @@ Oracle writes the contract and verifies any criteria that depend on unfamiliar l
 
 Before writing the criterion, consult `AGENTS.md` / `CLAUDE.md` for the repo's live verification command, local env setup, and test data preparation steps.
 
-**If no live verification instructions are found**, do not silently skip — follow this protocol:
+**If no live verification instructions are found**, do not silently skip. First check `## Requirements`: Phase 1 step 2 normally resolved this at the clarification gate — if a command or waiver is recorded there, apply it and continue (a waiver goes into the contract's Out-of-scope as Exit C below). Reaching this point unresolved means the feature became user-facing only after Phase 1; follow this protocol:
 
 1. Write a `Delegation failure: live verification instructions missing from AGENTS.md` note under `## Escalations`. The orchestrator may not proceed to 3b until this is resolved.
 2. **Resolution paths (orchestrator applies user direction once received):**
@@ -81,16 +90,7 @@ Before writing the criterion, consult `AGENTS.md` / `CLAUDE.md` for the repo's l
 
 Never proceed to 3b without one of these exits resolved.
 
-```markdown
-#### Contract
-- **Scope:** which subsections of ## Design apply
-- **Success criteria:** (hard thresholds — each independently verifiable)
-  - [ ] `<test command>` exits 0
-  - [ ] `<file or output>` exists / matches expected
-  - [ ] Live verification: `<command from AGENTS.md>` passes  ← required if user-facing
-- **Out-of-scope:** what NOT to touch this sprint; pre-existing failures to exclude
-- **Validation command:** `<scoped command that proves all criteria>`
-```
+Oracle fills the pre-seeded `#### Contract` block in the sprint block (skeleton and field guidance live in `sprint_block.md`): Scope, Success criteria, Out-of-scope, Validation command.
 
 *Success criteria* = assertions. *Validation command* = the command that checks them. Both required.
 
@@ -107,17 +107,7 @@ Fixer reads: sprint contract, referenced `## Design` subsections, relevant sourc
 
 **Fixer stuck:** if the validation command cannot be made to pass (e.g. pre-existing infrastructure failure, blocked dependency), fixer stops and surfaces the blockage to the orchestrator. The orchestrator writes a `Delegation failure: validation blocked — [reason]` note under `## Escalations`. The orchestrator may not proceed until the blockage is resolved (via user direction or oracle consultation).
 
-Fixer **fills** the `#### Completion Report` section under the existing heading in the sprint block (see **Completion Report: Submitted Definition** in `SKILL.md` — all three fields must be populated):
-
-```markdown
-#### Completion Report
-- **Files changed:** (list — at least one entry required; use `git diff --name-only` to populate)
-- **Validation output:** (paste or summary — required)
-- **Criteria status:**
-  - [x] criterion 1 — passed
-  - [ ] criterion 2 — pre-existing failure: [test name] (excluded per contract Out-of-scope)
-- **Notes:** (deviations from contract, if any)
-```
+Fixer **fills** the `#### Completion Report` section under the existing heading in the sprint block, using the format pre-seeded in that section's comment (see **Completion Report: Submitted Definition** in `SKILL.md` — all three fields must be populated).
 
 All new-code criteria must be `[x] — passed`. The only allowed `[ ]` entries are pre-existing failures named in the contract's `Out-of-scope`.
 
@@ -155,7 +145,7 @@ Cap: 2 rounds total. Cap hit → run **Oracle Consultation Protocol** → if ESC
 **Pre-flight (orchestrator runs before delegating to fixer):**
 - a. Run `git diff --name-only` (or `git status --short`) and collect all modified files.
 - b. Collect the union of all `**Files changed:**` lists from every sprint's Completion Report.
-- c. Flag any modified file that does **not** appear in any sprint's Files changed — write a `Delegation failure: stray modified files detected` note under `## Escalations`. The orchestrator may not proceed until the user confirms intent or the files are reverted. This prevents workspace contamination from failing the production review.
+- c. Flag any modified file that does **not** appear in any sprint's Files changed — write a `Delegation failure: stray modified files detected` note under `## Escalations`. The orchestrator may not proceed until the files are accounted for — resolve via the standard mediation rule (an oracle checkpoint directive may direct reverting them or attributing them to a sprint's report); user contact only if oracle escalates. This prevents workspace contamination from failing the production review.
 
 1. Fixer runs full test suite across affected packages. **Affected packages** = all packages containing files listed in any sprint's Completion Report `**Files changed:**`. Zero-sprint projects: fixer runs the full suite against all packages whose paths appear in the `## Design` section under Architecture or Data Model. For features with a user-facing path, this sweep also includes live verification per `AGENTS.md` (start local env, prepare real test data, run browser/API/ingestion commands). Document pre-existing failures — don't fix unrelated things.
 2. Oracle does holistic review: security, reliability, observability, data integrity, performance, red-line compliance (re-read `CLAUDE.md` / `AGENTS.md` if present). Appends verdict to `## Production Review` using the format pre-seeded in that section. Increments `Production: Rounds:`.
