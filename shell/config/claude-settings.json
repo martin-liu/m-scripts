@@ -13,7 +13,7 @@
       "Bash(rm:*)"
     ],
     "ask": [],
-    "defaultMode": "acceptEdits"
+    "defaultMode": "auto"
   },
   "model": "opusplan",
   "hooks": {
@@ -49,7 +49,9 @@
       }
     }
   },
-  "effortLevel": "medium",
+  "effortLevel": "high",
+  "autoCompactEnabled": true,
+  "autoCompactWindow": 200000,
   "tui": "fullscreen",
   "skipAutoPermissionPrompt": true,
   "skipWorkflowUsageWarning": true

@@ -60,6 +60,10 @@ Example FAIL output:
 
 **Orchestrator:** Critical issues listed above — dispatch @fixer with the full issues list, then re-call @oracle.
 
+## No git commit rule
+
+Oracle must never instruct the orchestrator to run `git commit`, `git push`, or create a PR/commit. The orchestrator general rule is: **No git commit — never commit unless the user explicitly asked.** This applies to oracle's `Orchestrator:` directives as well.
+
 ## Scope
 
 - Grade against requirements or contract, not an ideal version of the code

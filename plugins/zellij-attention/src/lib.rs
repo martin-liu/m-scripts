@@ -168,20 +168,30 @@ impl State {
         true
     }
 
-    /// Checks if a tab name ends with one of our notification icon suffixes.
+    /// Checks if a tab name ends with an icon suffix (ours or a stale one from a
+    /// previous config). A trailing " <symbol>" counts as an icon if the symbol has
+    /// no alphanumeric characters, so we recognize icons even if the configured
+    /// waiting/completed icon changed (or briefly reverted to default) since the
+    /// name was last written — otherwise a stale icon we no longer recognize would
+    /// stick around forever and new icons would just stack on top of it.
     pub(crate) fn tab_name_has_icon(&self, name: &str) -> bool {
-        let waiting_suffix = format!(" {}", self.config.waiting_icon);
-        let completed_suffix = format!(" {}", self.config.completed_icon);
-        name.ends_with(&waiting_suffix) || name.ends_with(&completed_suffix)
+        name.rfind(' ')
+            .map(|idx| Self::is_icon_like(&name[idx + 1..]))
+            .unwrap_or(false)
     }
 
-    /// Strips notification icon suffixes from a tab name.
+    fn is_icon_like(s: &str) -> bool {
+        !s.is_empty() && s.chars().count() <= 2 && !s.chars().any(|c| c.is_ascii_alphanumeric())
+    }
+
+    /// Strips trailing icon suffixes (see tab_name_has_icon) from a tab name.
     pub(crate) fn strip_icons(&self, name: &str) -> String {
         let mut result = name.to_string();
-        for icon in [&self.config.waiting_icon, &self.config.completed_icon] {
-            let suffix = format!(" {}", icon);
-            while result.ends_with(&suffix) {
-                result.truncate(result.len() - suffix.len());
+        while let Some(idx) = result.rfind(' ') {
+            if Self::is_icon_like(&result[idx + 1..]) {
+                result.truncate(idx);
+            } else {
+                break;
             }
         }
         result
