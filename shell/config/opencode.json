@@ -7,6 +7,7 @@
   "enabled_providers": [
     "openrouter",
     "azure",
+    "azure-kimi-k2",
     "azure-westus3",
     "azure-openai",
     "ollama",
@@ -14,7 +15,8 @@
   ],
   "permission": {
     "external_directory": {
-      "/tmp/**": "allow"
+      "/tmp/**": "allow",
+      "~/martin/code/**": "allow"
     }
   },
   "compaction": {
@@ -22,9 +24,9 @@
     "prune": true,
     "tail_turns": 3,
     "preserve_recent_tokens": 50000,
-    "reserved": 62144
+    "reserved": 850000
   },
-  "small_model": "azure/Kimi-K2.7-Code",
+  "small_model": "azure/Kimi-K3",
   "provider": {
     "ollama": {
       "models": {
@@ -40,6 +42,40 @@
       }
     },
     "azure": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Azure WestUS",
+      "options": {
+        "baseURL": "{env:AZURE_API_BASE_NANDDEVWESTUS}/openai/deployments/Kimi-K3",
+        "headers": {
+          "api-key": "{env:AZURE_API_KEY_NANDDEVWESTUS}"
+        },
+        "queryParams": {
+          "api-version": "{env:AZURE_API_VERSION}"
+        }
+      },
+      "models": {
+        "Kimi-K3": {
+          "name": "Kimi-K3",
+          "attachment": true,
+          "modalities": {
+            "input": ["text", "image"],
+            "output": ["text"]
+          },
+          "cost": {
+            "input": 3.3,
+            "output": 16.5,
+            "cache_read": 0.33
+          },
+          "limit": {
+            "context": 262144,
+            "input": 262144,
+            "output": 49152
+          },
+          "options": {"thinking": {"type": "enabled", "budgetTokens": 16000}}
+        }
+      }
+    },
+    "azure-kimi-k2": {
       "npm": "@ai-sdk/openai-compatible",
       "name": "Azure WestUS",
       "options": {
@@ -61,6 +97,7 @@
           },
           "cost": {
             "input": 0.95,
+            "cache_read": 0.19,
             "output": 4
           },
           "limit": {
@@ -76,7 +113,7 @@
       "npm": "@ai-sdk/openai-compatible",
       "name": "Azure CentralUS",
       "options": {
-        "baseURL": "{env:AZURE_API_BASE_NANDDEVWESTUS3}/openai/deployments/DeepSeek-V4-Flash",
+        "baseURL": "{env:AZURE_API_BASE_NANDDEVWESTUS3}/openai/deployments/DeepSeek-V4-Flash-0731",
         "headers": {
           "api-key": "{env:AZURE_API_KEY_NANDDEVWESTUS3}"
         },
@@ -88,8 +125,9 @@
         "deepseek-v4-flash": {
           "name": "deepseek-v4-flash",
           "cost": {
-            "input": 0.19,
-            "output": 0.51
+            "input": 0.15,
+            "output": 0.31,
+            "cache_read": 0.03
           },
           "options": {"thinking": {"type": "enabled", "budgetTokens": 16000}}
         }
@@ -150,32 +188,6 @@
         "apiKey": "{env:AZURE_API_KEY_NANDDEVEASTUS2}"
       },
       "models": {
-        "gpt-5.4": {
-          "name": "gpt-5.4",
-          "cost": {
-            "input": 2.5,
-            "output": 15,
-            "cache_read": 0.25,
-            "context_over_200k": {
-              "input": 5,
-              "output": 22.5,
-              "cache_read": 0.5
-            }
-          }
-        },
-        "gpt-5.5": {
-          "name": "gpt-5.5",
-          "cost": {
-            "input": 5,
-            "output": 30,
-            "cache_read": 0.5,
-            "context_over_200k": {
-              "input": 10,
-              "output": 45,
-              "cache_read": 1
-            }
-          }
-        },
         "gpt-5.6-sol": {
           "name": "gpt-5.6-sol",
           "cost": {
@@ -191,22 +203,31 @@
             }
           }
         },
-        "gpt-5.4-mini": {
-          "name": "gpt-5.4-mini",
+        "gpt-5.6-terra": {
+          "name": "gpt-5.6-terra",
           "cost": {
-            "input": 0.75,
-            "output": 4.5,
-            "cache_read": 0.075
+            "input": 2,
+            "output": 12,
+            "cache_read": 0.20,
+            "cache_write": 2.50,
+            "context_over_200k": {
+              "input": 4,
+              "output": 18,
+              "cache_read": 0.40,
+              "cache_write": 5
+            }
           }
         },
-        "gpt-5.4-pro": {
-          "name": "gpt-5.4-pro",
+        "gpt-5.6-luna": {
+          "name": "gpt-5.6-luna",
           "cost": {
-            "input": 30,
-            "output": 180,
-            "context_over_200k": {
-              "input": 60,
-              "output": 270
+            "input": 0.20,
+            "output": 1.20,
+            "cache_read": 0.02,
+            "cache_write": 0.25,
+            "context_over_272k": {
+              "input": 0.80,
+              "output": 3.60
             }
           }
         }
@@ -221,7 +242,7 @@
       "disable": true
     }
   },
-  "model": "azure/Kimi-K2.7-Code",
+  "model": "azure-openai/gpt-5.6-terra",
   "default_agent": "orchestrator",
   "share": "manual",
   "logLevel": "DEBUG"

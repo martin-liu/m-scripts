@@ -1,68 +1,42 @@
-## Execution contract
+## Non-trivial convergence
 
-**Active protocol:** for Trivial/Medium, use the lightweight loop below. For Complex, invoke xdev; xdev adds file-based state, phases, markers, and round caps on top of this base behavior.
+For every Medium or xdev task, create distinct Planning and Review sessions. A
+Planning session never becomes Review, and vice versa. Planning routes work;
+Review independently accepts it; fixer executes only Review-approved work, except
+for a Planning-authored final-verification plan containing only local,
+non-privileged, non-external, non-side-effectful read-only commands.
 
-**If lost mid-task:** re-read the task brief or active state file, then follow oracle's last `**Orchestrator:**` directive.
+Track every dispatched task and integrate every result. Completion requires a
+final independent Review PASS, a Planning completion report, no pending tasks,
+all results integrated, and required validation complete. Planning then supplies
+`STOP: COMPLETE`; the orchestrator records it and terminates the loop. No
+approval marker or fixer report completes work by itself.
 
-**Always follow oracle's `Orchestrator:` directive.** Oracle ends every verdict with an explicit next action for you. Execute it — do not infer or interpret.
+### Medium loop
 
-**Session reuse:** For Medium review loops, prefer reusing the same oracle session across rounds unless the topic materially changes or context is stale/bloated.
+1. Planning supplies one bounded work plan: scope, allowed files, acceptance
+   criteria, validation command, and assumptions.
+2. Review reads authoritative files and returns PASS or concrete findings.
+3. On PASS, fixer implements only that plan and returns changed paths plus raw
+   validation output.
+4. Review evaluates changed files and raw evidence.
+5. On FAIL, send Review findings and raw evidence to Planning. Planning selects
+   a revised plan or an explicitly bounded fixer correction.
+6. On final PASS, Planning supplies the completion report and `STOP: COMPLETE`.
 
-**If oracle directive and local state disagree:** do not choose. Re-read authoritative files, then ask oracle for a checkpoint directive. Follow the new Orchestrator: line.
+Do not create additional verifier artifacts, recovery contracts, or approval
+layers unless the feature itself requires them. Repeated findings require a
+changed approach, not more bookkeeping. Transport waits preserve active work and
+never produce a final response.
 
 ## Task classification
 
-Classify internally — do not print the tier.
+- **Trivial:** one obvious bounded change; execute directly and verify locally.
+- **Medium:** requires judgment but fits one session; use the loop above.
+- **Complex:** requires durable multi-sprint state; use xdev.
 
-| Tier | When | Action |
-|------|------|--------|
-| **Trivial** | Obvious single-step change, no judgment call | Execute directly. No @oracle, no xdev. |
-| **Medium** | Clear goal but requires judgment; fits one session | Simple oracle review loop below. **Cap: 4 rounds.** |
-| **Complex** | Needs a plan before executing; scope unclear; multi-session | **Invoke xdev skill.** |
+## Safety
 
-**Trivial disqualifiers (any → not Trivial):**
-- Multiple steps or files with dependencies
-- Root cause or approach not immediately obvious
-- Async coordination, retries, timers, state transitions
-- Tests that verify workflows
-- Shared interface or abstraction changes
-- Debating Trivial vs Medium → Medium
-
-**Complex triggers (any → invoke xdev):**
-- Task needs a plan before you can start executing
-- Scope is ambiguous or requirements need their own document
-- Spans multiple packages, services, or sessions
-- You'd naturally break it into sprints
-
-**Classification scope:** classification applies only to top-level user asks or new tasks. If an active xdev `plan_and_track.md` exists for the feature, do not classify its substeps as Trivial or Medium; continue routing through xdev markers, phase procedures, Completion Reports, and xdev round caps until the feature reaches `[APPROVED: PRODUCTION]` or `[RAISED: ...]`.
-
-## @oracle Review Triggers (Medium tasks)
-
-Review is **required** when any apply:
-- Multi-state flows, async coordination, polling, retries, ordered state transitions
-- Tests encode workflows
-- Edge-case sequencing, timing, or failure paths matter
-- New interfaces, shared abstractions, or maintainability risks
-- Approach or debugging path is non-obvious
-
-**Direct execution** only when: change is bounded to one area, approach obvious after brief inspection, verification is local, no interface changes, no trigger above applies.
-
-## Review Convergence Loop (Medium tasks)
-
-1. If the Medium-task planning pass applies, ask @oracle for a plan first and follow its Orchestrator: directive. Otherwise execute or dispatch @fixer.
-2. Call @oracle to review. Read its verdict.
-3. **Follow the `Orchestrator:` directive** in the verdict exactly.
-4. Blocking issues → @fixer fixes, re-call @oracle. No blocking issues → done.
-5. **Cap hit (4 rounds) with open blocking issues** → call @oracle for a final escalation/stop directive, then follow its Orchestrator: line exactly.
-
-Never finalize while a fix or review task is still running.
-
-## Medium-task planning pass
-
-For Medium tasks where the approach is non-obvious (new interfaces, multi-file coordination, unclear root cause), ask oracle for a short execution plan before dispatching @fixer. Oracle returns a concise structured plan plus an `Orchestrator:` directive. Follow the directive mechanically — do not improvise.
-
-## Briefing @fixer / @oracle
-
-- Product context and observable behavior first, not implementation details.
-- Use repo-relative paths (`src/foo.ts:42`); absolute paths only for files outside the repo.
-- Quality criteria in concrete language ("responsive and snappy", not "add animations").
+Do not perform destructive, irreversible, privileged, externally side-effectful,
+security-sensitive, real-API, real-DB, or full-system actions without explicit
+authorization. Planning supplies `STOP: ASK_USER` only when no safe route exists.

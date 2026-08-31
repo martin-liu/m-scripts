@@ -1,43 +1,36 @@
 ### Sprint N: {Title}
 
 #### Contract
-- **Scope:** (reference `## Design` subsections — or design.md if extracted)
-- **Success criteria:** (hard thresholds — each independently verifiable)
-  - [ ] `<test command>` exits 0
-  - [ ] `<file or output>` exists / matches expected
-  - [ ] Live verification: `<command from AGENTS.md>` passes  ← include if sprint is user-facing; omit or replace with `Live verification: waived — <reason>` in Out-of-scope if not applicable
-- **Out-of-scope:** (what NOT to touch; list pre-existing failing tests to exclude)
-- **Validation command:** `<scoped command that proves all criteria>`
+
+- **Scope:** exact behavior to implement
+- **Allowed files:** explicit paths or bounded directory
+- **Global Flow nodes:** applicable `GF-XX` IDs, or `N/A — reason`
+- **Acceptance criteria:**
+  - [ ] independently observable result
+  - [ ] validation command exits 0
+- **Validation command:** existing project test, lint, typecheck, or build command
+- **Evidence source:** changed files and raw command output Review must read
+- **Out-of-scope:** behavior and files not to change
+- **Assumptions:** defaults used during implementation
+- **Live integration:** required — `<command and expected result>` | waived — `<reason>`
 
 #### Contract Review Verdict
 
-```
-Contract verdict: PASS | FAIL
-Rounds: 0/2
-Issues (if FAIL):
-- [criterion text] — too vague because: [reason] — rewrite as: [concrete alternative]
-```
+The orchestrator records Review's PASS/FAIL and concrete findings.
 
 #### Completion Report
 
-<!-- Fixer fills this section at step 3c after implementation is complete.
-     Replace this comment with the report body. Do not add or remove the heading above. Format:
-     - **Files changed:** (list — at least one entry required; use `git diff --name-only` to populate)
-     - **Validation output:** (paste or summary — required)
-     - **Criteria status:** (mirror each contract criterion)
-       - [x] criterion — passed
-       - [ ] criterion — pre-existing failure: [test name] (excluded per contract Out-of-scope)
-     - **Notes:** (deviations from contract, if any)
-     Submitted = Files changed non-empty + Validation output non-empty + all criteria [x] passed
-     (only exception: pre-existing failures named in contract Out-of-scope may appear as [ ]).
-     An empty or placeholder body is NOT submitted and routes back to 3c on cold resume. -->
+- **Files changed:** exact paths
+- **Validation output:** complete raw output or durable raw-output path
+- **Criteria status:** one passed entry per acceptance criterion
+- **Live integration output:** required only when the contract requires it
+- **Deviations/blockers:** none, or exact details
 
 #### Evaluation Verdict
 
-```
-Sprint verdict: PASS | FAIL
-Rounds: 0/2
-Issues (if FAIL — must contain at least one critical or major):
-- [criterion or file] — severity: critical|major|minor — [specific actionable description]
-Minor-only findings (list here, set verdict to PASS):
-```
+The orchestrator records Review's PASS/FAIL, evidence, and findings.
+
+#### Planning Follow-up
+
+- **Planning report:** pending
+- **Next owner/action:** pending

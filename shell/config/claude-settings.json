@@ -50,9 +50,43 @@
     }
   },
   "effortLevel": "high",
-  "autoCompactEnabled": true,
   "autoCompactWindow": 200000,
   "tui": "fullscreen",
+  "skipWorkflowUsageWarning": true,
+  "autoCompactEnabled": true,
   "skipAutoPermissionPrompt": true,
-  "skipWorkflowUsageWarning": true
+  "autoMode": {
+    "soft_deny": [
+      "$defaults",
+      "Bash(tofu:apply) in tf/environments/production or tf/global — Protected-Scope IaC Apply",
+      "Bash(kubectl:delete) in namespace nand — Shared Cluster Mutation",
+      "Bash(aws:*) targeting production-us-west-2-vpc-flow-logs-905418169691 or other prod-prefixed S3 buckets — Production Reads"
+    ],
+    "environment": [
+      "### Org-wide",
+      "**Organization**: Nand-AI (GitHub org; repo `Nand-AI/nand-infra`)",
+      "**Cloud provider(s)**: AWS (profile `nand-infra`, account 905418169691, region us-west-2)",
+      "**Repository visibility**: private (`Nand-AI/nand-infra`, confirmed via gh)",
+      "**Internal sharing / snippet hosting**: None configured — treat public paste/gist services as outside the trust boundary",
+      "**Secrets management**: AWS Secrets Manager (via external-secrets controller); CI secrets `NAND_CICD_APP_ID`, `NAND_CICD_PRIVATE_KEY`",
+      "**Default / protected branches**: `main` (default; ruleset active; protected)",
+      "**CI/CD deploy targets**: FluxCD v2 watching ECR image `905418169691.dkr.ecr.us-west-2.amazonaws.com/nand:main.<SHA>.<TS>`; EKS cluster `production-us-west-2`; kustomizations in `clusters/production`",
+      "**Network posture**: None configured",
+      "**Source control**: Nand-AI/nand-infra repo and its `origin` remote (github.com:Nand-AI/nand-infra.git) only",
+      "**Trusted internal domains**: magus.app.nand.ai, api.nand.ai, llmgateway.app.nand.ai",
+      "**Trusted cloud buckets**: None configured",
+      "**Key internal services**: nand (Nand Web/API), litellm (LLM gateway), vllm (self-hosted inference: MinerU, Granite, Qwen embeddings)",
+      "**Internal package registry**: None configured",
+      "**Sensitive data locations & audiences**: apps/nand/base/secrets.yaml, apps/nand/base/rbac.yaml, bin/secretctl, infrastructure/controllers/external-secrets.yaml, tf/environments/production/terraform.tfstate* (and .backup/.bak variants), tf/global/terraform.tfstate* (and .backup/.bak/.pre_migration variants) — credentials/state, share only with cleared infra operators",
+      "**Data retention / declassification**: None configured",
+      "**Sensitive remote targets**: EKS cluster `production-us-west-2`; k8s namespace `nand`; any namespace/host/container with `prod`/`production` as a whole name segment (e.g. tf/environments/production/*, S3 bucket production-us-west-2-vpc-flow-logs-905418169691)",
+      "**Protected deployment namespaces / environments**: k8s namespace `nand` (production workloads via FluxCD `clusters/production`); AWS account 905418169691 production resources",
+      "**Protected IaC scopes**: tf/environments/production/*, tf/global/* (IAM, networking, EKS, quota, node-pool resources); anything tagged `prod`/`production`",
+      "### User-specific",
+      "**Primary use of Claude Code**: software development (GitOps/infra: Terraform/OpenTofu + FluxCD for Nand-AI's nand-infra repo)",
+      "**Trusted repo**: /Users/martinliu/martin/code/nand/nand-infra (Nand-AI/nand-infra, private) and its `origin` remote",
+      "**Org-specific CLIs**: aws (profile nand-infra), kubectl, tofu (OpenTofu)",
+      "routine under this repo's tf/staging and tf/environments/staging prefixes may proceed with less friction than tf/environments/production"
+    ]
+  }
 }

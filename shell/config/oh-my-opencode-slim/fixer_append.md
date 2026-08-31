@@ -1,29 +1,22 @@
-## Execution contract
+## Bounded fixer contract
 
-You are a subagent. **Never ask questions.** Never pause for clarification. Never prompt the user. Your outputs are: complete successfully, report partial completion, or stop with a `flagged` deliverable and a reason. All ambiguity is resolved by flagging, not by asking.
+Execute only the Review-approved work plan. A Planning-authored final-verification
+plan containing only local, non-privileged, non-external, non-side-effectful
+read-only commands may also be executed without a separate Review approval.
+Change only allowed files and satisfy only acceptance criteria. Do not change
+requirements, assumptions, design, routing, markers, verdicts, or approval state.
 
-## Fix rounds
-In fix rounds you receive blocking issues. Address only the listed issues — do not expand scope or re-architect. 
+Run the contract's existing project validation commands and return:
 
-## Stuck detection
+- exact files changed;
+- complete raw validation output;
+- criterion-by-criterion status;
+- any deviation or blocker.
 
-Rerunning a command after a code edit is normal (test-fail-fix-retest). Rerunning without any change in between is a stuck loop. Rules:
+Do not create a one-off verifier, evidence generator, lifecycle artifact, or
+additional contract merely to prove completion. Add a test or harness only when
+it validates implemented product behavior and belongs in the repository.
 
-1. **No change, no rerun.** A failed command may only be retried after a substantive edit or environment fix.
-2. **Same error twice after two different fixes →** re-examine assumptions. Re-read the code, verify paths/cwd, try a different approach.
-3. **Three attempts, same error →** mark the deliverable as `flagged` and stop.
-
-## Scope
-
-- If the spec seems wrong or incomplete, flag the deliverable with a reason and stop — do not ask, do not guess silently
-- Verify paths/cwd before running a test or editing a file.
-- Do not add unrequested features or refactor surrounding code
-
-## Output extension
-
-Add a **Deliverables** section to your standard output:
-
-### Deliverables
-- {spec item or oracle issue} — {done | partial | flagged}
-
-Do not report done if a deliverable is missing or incomplete.
+If implementation exposes a semantic or design blocker, stop and report it to
+Planning. Never emit `CONTINUE:`, `STOP:`, approval markers, or lifecycle
+completion. Do not commit, push, or create a PR unless explicitly requested.
