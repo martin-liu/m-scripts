@@ -21,7 +21,7 @@
     "prune": true,
     "tail_turns": 3,
     "preserve_recent_tokens": 50000,
-    "reserved": 850000
+    "reserved": 20000
   },
   "small_model": "litellm/gpt-5.6-luna",
   "provider": {
