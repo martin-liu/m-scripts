@@ -40,7 +40,7 @@ Need one time `M-x all-the-icons-install-fonts` to ensure icons show correctly.
 
 ## Standalone: opencode quick setup
 
-A self-contained script for setting up opencode with shell essentials on a fresh Mac. No dependency on this repo — can be run independently.
+A self-contained script for setting up and configuring OpenCode V1 with shell essentials on a fresh Mac. It leaves any existing OpenCode2 beta untouched and unconfigured: no V2 service, aliases, or isolated state. No dependency on this repo — can be run independently.
 
 ```sh
 bash <(curl -fsSL https://raw.githubusercontent.com/martin-liu/m-scripts/master/bin/setup-opencode.sh)

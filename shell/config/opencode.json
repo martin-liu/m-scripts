@@ -6,12 +6,8 @@
   ],
   "enabled_providers": [
     "openrouter",
-    "azure",
-    "azure-kimi-k2",
-    "azure-westus3",
-    "azure-openai",
     "ollama",
-    "amazon-bedrock"
+    "litellm"
   ],
   "permission": {
     "external_directory": {
@@ -27,7 +23,7 @@
     "preserve_recent_tokens": 50000,
     "reserved": 850000
   },
-  "small_model": "azure/Kimi-K3",
+  "small_model": "litellm/gpt-5.6-luna",
   "provider": {
     "ollama": {
       "models": {
@@ -42,194 +38,46 @@
         "baseURL": "http://127.0.0.1:11434/v1"
       }
     },
-    "azure": {
+    "litellm": {
       "npm": "@ai-sdk/openai-compatible",
-      "name": "Azure WestUS",
       "options": {
-        "baseURL": "{env:AZURE_API_BASE_NANDDEVWESTUS}/openai/deployments/Kimi-K3",
-        "headers": {
-          "api-key": "{env:AZURE_API_KEY_NANDDEVWESTUS}"
-        },
-        "queryParams": {
-          "api-version": "{env:AZURE_API_VERSION}"
-        }
+        "baseURL": "{env:LITELLM_PROXY_API_BASE}",
+        "apiKey": "{env:LITELLM_PROXY_API_KEY}"
       },
       "models": {
-        "Kimi-K3": {
-          "name": "Kimi-K3",
-          "attachment": true,
-          "modalities": {
-            "input": ["text", "image"],
-            "output": ["text"]
-          },
-          "cost": {
-            "input": 3.3,
-            "output": 16.5,
-            "cache_read": 0.33
-          },
-          "limit": {
-            "context": 262144,
-            "input": 262144,
-            "output": 49152
-          },
-          "options": {"thinking": {"type": "enabled", "budgetTokens": 16000}}
-        }
-      }
-    },
-    "azure-kimi-k2": {
-      "npm": "@ai-sdk/openai-compatible",
-      "name": "Azure WestUS",
-      "options": {
-        "baseURL": "{env:AZURE_API_BASE_NANDDEVWESTUS3}/openai/deployments/Kimi-K2.7-Code",
-        "headers": {
-          "api-key": "{env:AZURE_API_KEY_NANDDEVWESTUS3}"
-        },
-        "queryParams": {
-          "api-version": "{env:AZURE_API_VERSION}"
-        }
-      },
-      "models": {
-        "Kimi-K2.7-Code": {
-          "name": "Kimi-K2.7-Code",
-          "attachment": true,
-          "modalities": {
-            "input": ["text", "image"],
-            "output": ["text"]
-          },
-          "cost": {
-            "input": 0.95,
-            "cache_read": 0.19,
-            "output": 4
-          },
-          "limit": {
-            "context": 262144,
-            "input": 262144,
-            "output": 49152
-          },
-          "options": {"thinking": {"type": "enabled", "budgetTokens": 16000}}
-        }
-      }
-    },
-    "azure-westus3": {
-      "npm": "@ai-sdk/openai-compatible",
-      "name": "Azure CentralUS",
-      "options": {
-        "baseURL": "{env:AZURE_API_BASE_NANDDEVWESTUS3}/openai/deployments/DeepSeek-V4-Flash-0731",
-        "headers": {
-          "api-key": "{env:AZURE_API_KEY_NANDDEVWESTUS3}"
-        },
-        "queryParams": {
-          "api-version": "{env:AZURE_API_VERSION}"
-        }
-      },
-      "models": {
-        "deepseek-v4-flash": {
-          "name": "deepseek-v4-flash",
-          "cost": {
-            "input": 0.15,
-            "output": 0.31,
-            "cache_read": 0.03
-          },
-          "options": {"thinking": {"type": "enabled", "budgetTokens": 16000}}
-        }
-      }
-    },
-
-    "amazon-bedrock": {
-      "options": {
-        "region": "{env:AWS_REGION_BEDROCK}"
-      },
-      "models": {
-        "us.anthropic.claude-opus-4-8-20251101-v1:0": {
-          "name": "claude-opus-4.8 (cross-region)",
-          "cost": {
-            "input": 5,
-            "output": 25,
-            "cache_read": 0.5,
-            "cache_write": 6.25
-          },
-          "limit": {
-            "context": 200000,
-            "output": 32000
+        "DeepSeek-V4-Flash": {},
+        "DeepSeek-V4-Pro": {},
+        "gpt-5.6-luna": {
+          "reasoning": true,
+          "variants": {
+            "none": {"reasoningEffort": "none"},
+            "low": {"reasoningEffort": "low"},
+            "medium": {"reasoningEffort": "medium"},
+            "high": {"reasoningEffort": "high"},
+            "xhigh": {"reasoningEffort": "xhigh"},
+            "max": {"reasoningEffort": "max"}
           }
         },
-        "anthropic.claude-opus-4-8": {
-          "name": "claude-opus-4.8",
-          "cost": {
-            "input": 5,
-            "output": 25,
-            "cache_read": 0.5,
-            "cache_write": 6.25
-          },
-          "limit": {
-            "context": 200000,
-            "output": 32000
-          }
-        },
-        "anthropic.claude-fable-5": {
-          "name": "claude-fable-5",
-          "cost": {
-            "input": 10,
-            "output": 50,
-            "cache_read": 1,
-            "cache_write": 12.5
-          },
-          "limit": {
-            "context": 200000,
-            "output": 32000
-          }
-        }
-      }
-    },
-    "azure-openai": {
-      "npm": "@ai-sdk/openai",
-      "name": "Azure OpenAI",
-      "options": {
-        "baseURL": "{env:AZURE_API_BASE_NANDDEVEASTUS2}/openai/v1",
-        "apiKey": "{env:AZURE_API_KEY_NANDDEVEASTUS2}"
-      },
-      "models": {
         "gpt-5.6-sol": {
-          "name": "gpt-5.6-sol",
-          "cost": {
-            "input": 5,
-            "output": 30,
-            "cache_read": 0.5,
-            "cache_write": 6.25,
-            "context_over_200k": {
-              "input": 10,
-              "output": 45,
-              "cache_read": 1,
-              "cache_write": 12.5
-            }
+          "reasoning": true,
+          "variants": {
+            "none": {"reasoningEffort": "none"},
+            "low": {"reasoningEffort": "low"},
+            "medium": {"reasoningEffort": "medium"},
+            "high": {"reasoningEffort": "high"},
+            "xhigh": {"reasoningEffort": "xhigh"},
+            "max": {"reasoningEffort": "max"}
           }
         },
         "gpt-5.6-terra": {
-          "name": "gpt-5.6-terra",
-          "cost": {
-            "input": 2,
-            "output": 12,
-            "cache_read": 0.20,
-            "cache_write": 2.50,
-            "context_over_200k": {
-              "input": 4,
-              "output": 18,
-              "cache_read": 0.40,
-              "cache_write": 5
-            }
-          }
-        },
-        "gpt-5.6-luna": {
-          "name": "gpt-5.6-luna",
-          "cost": {
-            "input": 0.20,
-            "output": 1.20,
-            "cache_read": 0.02,
-            "cache_write": 0.25,
-            "context_over_272k": {
-              "input": 0.80,
-              "output": 3.60
-            }
+          "reasoning": true,
+          "variants": {
+            "none": {"reasoningEffort": "none"},
+            "low": {"reasoningEffort": "low"},
+            "medium": {"reasoningEffort": "medium"},
+            "high": {"reasoningEffort": "high"},
+            "xhigh": {"reasoningEffort": "xhigh"},
+            "max": {"reasoningEffort": "max"}
           }
         }
       }
@@ -243,7 +91,7 @@
       "disable": true
     }
   },
-  "model": "azure-openai/gpt-5.6-terra",
+  "model": "litellm/gpt-5.6-terra",
   "default_agent": "orchestrator",
   "share": "manual",
   "logLevel": "DEBUG"

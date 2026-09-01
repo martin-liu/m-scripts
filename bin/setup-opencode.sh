@@ -35,7 +35,6 @@ git clone --quiet --depth=1 https://github.com/zsh-users/zsh-completions ~/.zsh-
 echo "Installing/updating opencode..."
 pnpm install -g opencode-ai@latest
 pnpm approve-builds -g opencode-ai 2>/dev/null || true
-npm install -g @opencode-ai/cli@beta
 
 ## opencode skills (agent-browser)
 echo "Installing agent-browser skill..."
