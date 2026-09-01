@@ -83,6 +83,9 @@ fi
 # AI
 alias claude='claude --model opusplan'
 alias opencode='OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true opencode'
+function opencode2() {
+    XDG_CONFIG_HOME="$HOME/.config/opencode2" XDG_STATE_HOME="$HOME/.local/state/opencode2" command opencode2 "$@"
+}
 
 # Upgrade all tools
-alias upgrade='~/.emacs.d/bin/doom upgrade --force && ~/.emacs.d/bin/doom sync; brew upgrade --no-ask; rustup update --force; pnpm install -g @agentclientprotocol/claude-agent-acp; claude upgrade; opencode upgrade'
+alias upgrade='~/.emacs.d/bin/doom upgrade --force && ~/.emacs.d/bin/doom sync; brew upgrade --no-ask; rustup update --force; pnpm install -g @agentclientprotocol/claude-agent-acp; claude upgrade; opencode upgrade; npm install -g @opencode-ai/cli@beta && opencode2 service restart'

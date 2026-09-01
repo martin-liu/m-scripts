@@ -2,7 +2,7 @@
   "$schema": "https://opencode.ai/config.json",
   "lsp": false,
   "plugin": [
-    "oh-my-opencode-slim@latest"
+    "oh-my-opencode-slim@2.2.17"
   ],
   "enabled_providers": [
     "openrouter",
@@ -23,11 +23,12 @@
   "compaction": {
     "auto": true,
     "prune": true,
-    "tail_turns": 3,
-    "preserve_recent_tokens": 50000,
-    "reserved": 850000
+    "keep": {
+      "tokens": 50000
+    },
+    "buffer": 850000
   },
-  "small_model": "azure/Kimi-K3",
+  "small_model": "azure-openai/gpt-5.6-luna",
   "provider": {
     "ollama": {
       "models": {
@@ -59,8 +60,13 @@
           "name": "Kimi-K3",
           "attachment": true,
           "modalities": {
-            "input": ["text", "image"],
-            "output": ["text"]
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
           },
           "cost": {
             "input": 3.3,
@@ -72,7 +78,12 @@
             "input": 262144,
             "output": 49152
           },
-          "options": {"thinking": {"type": "enabled", "budgetTokens": 16000}}
+          "options": {
+            "thinking": {
+              "type": "enabled",
+              "budgetTokens": 16000
+            }
+          }
         }
       }
     },
@@ -93,8 +104,13 @@
           "name": "Kimi-K2.7-Code",
           "attachment": true,
           "modalities": {
-            "input": ["text", "image"],
-            "output": ["text"]
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
           },
           "cost": {
             "input": 0.95,
@@ -106,7 +122,12 @@
             "input": 262144,
             "output": 49152
           },
-          "options": {"thinking": {"type": "enabled", "budgetTokens": 16000}}
+          "options": {
+            "thinking": {
+              "type": "enabled",
+              "budgetTokens": 16000
+            }
+          }
         }
       }
     },
@@ -130,11 +151,15 @@
             "output": 0.31,
             "cache_read": 0.03
           },
-          "options": {"thinking": {"type": "enabled", "budgetTokens": 16000}}
+          "options": {
+            "thinking": {
+              "type": "enabled",
+              "budgetTokens": 16000
+            }
+          }
         }
       }
     },
-
     "amazon-bedrock": {
       "options": {
         "region": "{env:AWS_REGION_BEDROCK}"
@@ -202,6 +227,32 @@
               "cache_read": 1,
               "cache_write": 12.5
             }
+          },
+          "limit": {
+            "context": 1050000,
+            "input": 922000,
+            "output": 128000
+          },
+          "reasoning": true,
+          "variants": {
+            "none": {
+              "reasoningEffort": "none"
+            },
+            "low": {
+              "reasoningEffort": "low"
+            },
+            "medium": {
+              "reasoningEffort": "medium"
+            },
+            "high": {
+              "reasoningEffort": "high"
+            },
+            "xhigh": {
+              "reasoningEffort": "xhigh"
+            },
+            "max": {
+              "reasoningEffort": "max"
+            }
           }
         },
         "gpt-5.6-terra": {
@@ -209,26 +260,78 @@
           "cost": {
             "input": 2,
             "output": 12,
-            "cache_read": 0.20,
-            "cache_write": 2.50,
+            "cache_read": 0.2,
+            "cache_write": 2.5,
             "context_over_200k": {
               "input": 4,
               "output": 18,
-              "cache_read": 0.40,
+              "cache_read": 0.4,
               "cache_write": 5
+            }
+          },
+          "limit": {
+            "context": 1050000,
+            "input": 922000,
+            "output": 128000
+          },
+          "reasoning": true,
+          "variants": {
+            "none": {
+              "reasoningEffort": "none"
+            },
+            "low": {
+              "reasoningEffort": "low"
+            },
+            "medium": {
+              "reasoningEffort": "medium"
+            },
+            "high": {
+              "reasoningEffort": "high"
+            },
+            "xhigh": {
+              "reasoningEffort": "xhigh"
+            },
+            "max": {
+              "reasoningEffort": "max"
             }
           }
         },
         "gpt-5.6-luna": {
           "name": "gpt-5.6-luna",
           "cost": {
-            "input": 0.20,
-            "output": 1.20,
+            "input": 0.2,
+            "output": 1.2,
             "cache_read": 0.02,
             "cache_write": 0.25,
             "context_over_272k": {
-              "input": 0.80,
-              "output": 3.60
+              "input": 0.8,
+              "output": 3.6
+            }
+          },
+          "limit": {
+            "context": 1050000,
+            "input": 922000,
+            "output": 128000
+          },
+          "reasoning": true,
+          "variants": {
+            "none": {
+              "reasoningEffort": "none"
+            },
+            "low": {
+              "reasoningEffort": "low"
+            },
+            "medium": {
+              "reasoningEffort": "medium"
+            },
+            "high": {
+              "reasoningEffort": "high"
+            },
+            "xhigh": {
+              "reasoningEffort": "xhigh"
+            },
+            "max": {
+              "reasoningEffort": "max"
             }
           }
         }

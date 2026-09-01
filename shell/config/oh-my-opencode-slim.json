@@ -58,7 +58,7 @@
     "presets": {
       "default": {
         "strategic": {
-          "model": "azure-openai/gpt-5.5",
+          "model": "azure-openai/gpt-5.6-sol",
           "variant": "low"
         },
         "balanced": {

@@ -19,6 +19,16 @@ Both modes will:
 * install and configure [zellij-attention](https://github.com/KiryuuLight/zellij-attention) — marks the correct zellij tab ⚡ and sends a macOS notification (with sound) when an AI agent needs input
 * install and configure [Talon Voice](https://talonvoice.com) for hands-free Zellij navigation, AI pane switching, and local Whisper dictation — see `talon/README.md` for commands
 
+### OpenCode V1 and V2
+
+The stable V1 CLI is installed with `pnpm` and remains available as `opencode` (including the existing background-subagent alias). The beta V2 CLI is installed with:
+
+```sh
+npm install -g @opencode-ai/cli@beta
+```
+
+Use `opencode` for V1 and `opencode2` for V2. V2 runs with isolated configuration and state under `~/.config/opencode2` and `~/.local/state/opencode2`; manage its service with `opencode2 service start|restart|status`. The V2 attention plugin is deferred. Child processes inherit the isolated `XDG_CONFIG_HOME` and `XDG_STATE_HOME`, so XDG-aware tools may not find their normal configuration. The `upgrade` command updates the V2 beta CLI and restarts its service.
+
 Full mode additionally:
 * install Rust toolchain and build the `m` CLI
 * install and configure DoomEmacs

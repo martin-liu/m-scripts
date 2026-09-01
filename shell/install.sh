@@ -85,6 +85,7 @@ git clone --quiet --depth=1 https://github.com/zsh-users/zsh-completions ~/.zsh-
 ## AI coding tools
 echo "Installing/updating opencode..."
 pnpm install -g opencode-ai@latest
+npm install -g @opencode-ai/cli@beta
 
 echo "Installing/updating Claude Code..."
 npm install -g @anthropic-ai/claude-code@latest
