@@ -24,8 +24,7 @@ export default Plugin.define({
         const debug = process.env.OPENCODE_ATTENTION_DEBUG === "1";
         const paneId = process.env.ZELLIJ_PANE_ID;
         const listeners = [];
-        let timer = null;
-        let notified = false;
+        const states = new Map();
         let closed = false;
         record(debug, "setup", { pane: Boolean(paneId) });
         const data = ctx?.data;
@@ -37,7 +36,50 @@ export default Plugin.define({
             record(debug, "capability", { on: canListen, session: canFindSession, attention: canNotify });
             return () => {};
         }
-        const clearTimer = () => { if (timer) clearTimeout(timer); timer = null; };
+        const displayedSession = () => {
+            let route;
+            let source = "none";
+            const current = ctx?.ui?.router?.current;
+            if (typeof current === "function") {
+                try {
+                    // Keep the router as the receiver: documented APIs may rely on it.
+                    route = ctx.ui.router.current();
+                    source = "primary";
+                } catch (_) {
+                    route = undefined;
+                }
+            }
+            if (source === "none" && ctx?.route && Object.hasOwn(ctx.route, "current")) {
+                try {
+                    const legacy = ctx?.route?.current;
+                    if (typeof ctx?.route?.current === "function") route = ctx.route.current();
+                    else route = legacy;
+                    source = "fallback";
+                } catch (_) { route = undefined; }
+            }
+            const sessionID = route?.type === "session"
+                ? route.sessionID
+                : source === "fallback" && route?.name === "session"
+                    ? route.params?.sessionID
+                    : null;
+            return {
+                source,
+                sessionID: typeof sessionID === "string" && sessionID ? sessionID : null,
+            };
+        };
+        const stateFor = (sessionID) => {
+            let state = states.get(sessionID);
+            if (!state) {
+                state = { timer: null, notified: false };
+                states.set(sessionID, state);
+            }
+            return state;
+        };
+        const clearTimer = (sessionID) => {
+            const state = states.get(sessionID);
+            if (state?.timer) clearTimeout(state.timer);
+            if (state) state.timer = null;
+        };
         const isRoot = (sessionID) => {
             if (!sessionID) return false;
             try {
@@ -56,39 +98,72 @@ export default Plugin.define({
                 child.unref();
             } catch (_) {}
         };
-        const notify = (message) => {
-            if (closed || notified) return;
-            notified = true;
+        const notify = (sessionID, message) => {
+            const state = stateFor(sessionID);
+            if (closed || state.notified) return;
+            state.notified = true;
             flagTab();
             try {
-                void Promise.resolve(ctx.attention.notify({ message })).catch(() => {});
+                void Promise.resolve(ctx.attention.notify({
+                    message,
+                    sound: {
+                        name: "default",
+                        when: "always",
+                    },
+                })).catch(() => {});
             } catch (_) {}
         };
         const subscribe = (name, action, identify = sessionIdentifier) => {
             try {
                 const unsubscribe = data.on(name, (event) => {
                     const sessionID = identify(event?.data);
-                    record(debug, "event", { type: name, session: Boolean(sessionID) });
-                    if (!isRoot(sessionID)) return;
-                    action();
+                    const displayed = displayedSession();
+                    const eventSessionPresent = Boolean(sessionID);
+                    const routeSessionPresent = Boolean(displayed.sessionID);
+                    const match = eventSessionPresent && routeSessionPresent && sessionID === displayed.sessionID;
+                    const rejection = !eventSessionPresent ? "no route"
+                        : !routeSessionPresent ? "no route"
+                            : !match ? "mismatch"
+                                : !isRoot(sessionID) ? "not root" : null;
+                    record(debug, "event", {
+                        routeSource: displayed.source,
+                        routeSessionPresent,
+                        eventSessionPresent,
+                        match,
+                        rejection,
+                    });
+                    if (rejection) return;
+                    action(sessionID);
                 });
                 if (typeof unsubscribe === "function") listeners.push(unsubscribe);
             } catch (_) { record(debug, "listener-error", { type: name }); }
         };
-        const reset = () => { clearTimer(); notified = false; };
+        const reset = (sessionID) => {
+            const state = stateFor(sessionID);
+            clearTimer(sessionID);
+            state.notified = false;
+        };
         subscribe("session.execution.started", reset);
-        subscribe("session.execution.succeeded", () => {
-            clearTimer();
-            if (!notified) timer = setTimeout(() => { timer = null; notify("Waiting for your input"); }, 3000);
+        subscribe("session.execution.succeeded", (sessionID) => {
+            const state = stateFor(sessionID);
+            clearTimer(sessionID);
+            if (!state.notified) state.timer = setTimeout(() => {
+                state.timer = null;
+                const displayed = displayedSession();
+                if (displayed.sessionID === sessionID && isRoot(sessionID)) {
+                    notify(sessionID, "Waiting for your input");
+                }
+            }, 3000);
         });
-        subscribe("session.execution.interrupted", () => { clearTimer(); notify("Agent stopped"); });
-        subscribe("session.execution.failed", () => { clearTimer(); notify("Agent failed"); });
-        subscribe("permission.asked", () => { clearTimer(); notify("Waiting for your input"); });
-        const formCreatedAction = () => { clearTimer(); notify("Waiting for your input"); };
+        subscribe("session.execution.interrupted", (sessionID) => { clearTimer(sessionID); notify(sessionID, "Agent stopped"); });
+        subscribe("session.execution.failed", (sessionID) => { clearTimer(sessionID); notify(sessionID, "Agent failed"); });
+        subscribe("permission.asked", (sessionID) => { clearTimer(sessionID); notify(sessionID, "Waiting for your input"); });
+        const formCreatedAction = (sessionID) => { clearTimer(sessionID); notify(sessionID, "Waiting for your input"); };
         subscribe("form.created", formCreatedAction, formSessionIdentifier);
         return () => {
             closed = true;
-            clearTimer();
+            for (const sessionID of states.keys()) clearTimer(sessionID);
+            states.clear();
             for (const unsubscribe of listeners.splice(0)) { try { unsubscribe(); } catch (_) {} }
         };
     },

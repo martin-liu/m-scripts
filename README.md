@@ -16,7 +16,7 @@ Installs only shell essentials, theme/look-and-feel, and AI coding tools (openco
 Both modes will:
 * add `register.sh` to `~/.zshrc`
 * sync config files (Ghostty, Zellij, Git, opencode, Claude Code settings)
-* install and configure [zellij-attention](https://github.com/KiryuuLight/zellij-attention) for both OpenCode versions — marks the correct zellij tab ⚡ and notifies when an AI agent needs input (V1 sends a macOS notification with Ping sound; V2 uses OpenCode's host attention settings)
+* install and configure [zellij-attention](https://github.com/KiryuuLight/zellij-attention) for both OpenCode versions — marks the correct zellij tab ⚡ and notifies when an AI agent needs input (V1 sends a macOS notification with Ping sound; V2 disables OpenCode's built-in `opencode.notifications` event-trigger plugin so the local plugin is the sole alert owner)
 * install and configure [Talon Voice](https://talonvoice.com) for hands-free Zellij navigation, AI pane switching, and local Whisper dictation — see `talon/README.md` for commands
 
 ### OpenCode V1 and V2
@@ -103,7 +103,7 @@ npx -y skills update linkedin-sourcing
 
 ## zellij-attention
 
-A Zellij plugin that flags the active tab with ⚡ when an AI agent (Claude Code or opencode) is waiting for your input. OpenCode V1 directly sends a macOS notification with the Ping sound; V2 uses OpenCode's host attention settings, which do not guarantee sound.
+A Zellij plugin that flags the active tab with ⚡ when an AI agent (Claude Code or opencode) is waiting for your input. OpenCode V1 directly sends a macOS notification with the Ping sound; V2's local plugin is the sole alert owner, pairing its explicit OpenCode built-in sound request with the ⚡ flag. Its isolated host-attention policy is managed in `~/.config/opencode2/opencode/cli.json`.
 
 ### How it works
 
@@ -112,7 +112,7 @@ A Zellij plugin that flags the active tab with ⚡ when an AI agent (Claude Code
 | `plugins/zellij-attention/` (Rust/WASM) | Zellij plugin loaded via `load_plugins`. Handles tab renaming (add/remove ⚡) and auto-clears when you focus the tab. |
 | `shell/config/claude-attention.sh` | Claude Code hook script. Fires on `Stop` and `Notification` events with a 3-second debounce. |
 | `shell/config/opencode-zellij-attention.js` | V1 server plugin. Tracks the main session ID, fires on `idle` / `question.asked` with a 3-second completion debounce, and directly sends the macOS notification and Ping sound. |
-| `shell/config/opencode2-zellij-attention/tui.js` | V2 local TUI plugin. Tracks root execution and attention events; successful completion has a 3-second delay, while permissions, forms, interruptions, and failures may notify immediately through OpenCode's host attention settings. |
+| `shell/config/opencode2-zellij-attention/tui.js` | V2 local TUI plugin. Tracks root execution and attention events; successful completion has a 3-second delay, while permissions, forms, interruptions, and failures may notify immediately with an explicit OpenCode built-in sound request. |
 
 ### Features
 

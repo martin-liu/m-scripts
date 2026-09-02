@@ -1,5 +1,15 @@
 {
   "tabs": { "enabled": false },
   "session": { "sidebar": "hide" },
-  "plugins": ["./plugins/zellij-attention"]
+  "plugins": [
+    "-opencode.notifications",
+    "./plugins/zellij-attention"
+  ],
+  "attention": {
+    "enabled": true,
+    "notifications": true,
+    "sound": true,
+    "volume": 0.4,
+    "sound_pack": "opencode.default"
+  }
 }
