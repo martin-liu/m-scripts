@@ -1,0 +1,5 @@
+{
+  "tabs": { "enabled": false },
+  "session": { "sidebar": "hide" },
+  "plugins": ["./plugins/zellij-attention"]
+}

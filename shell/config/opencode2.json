@@ -12,6 +12,7 @@
   "permission": {
     "external_directory": {
       "/tmp/**": "allow",
+      "/private/**": "allow",
       "~/martin/code/**": "allow",
       "~/.config/**": "allow"
     }

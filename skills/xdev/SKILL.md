@@ -13,15 +13,24 @@ state file.
 | Fixer | approved bounded changes, raw evidence, and Completion Reports |
 | Orchestrator | lane/runtime tracking, exact recording, task coordination, and final STOP transition |
 
-Planning and Review have immutable distinct lanes. On runtime failure, retire only
+Planning and Review have immutable distinct lanes. Record each task's role, lane,
+generation, scope, status, and progress. Only on a transport resume inspect with
+`task_status` or `task_result`; never poll. After two unchanged resumes send
+exactly one `task_message`, then inspect at the next resume. An active stale task
+gets `task_cancel` before a fresh same-role, same-lane generation. Terminal
+failed, cancelled, unreachable, or unusable tasks are replaced without cancel.
+Never use `task_revive` for stale or failure recovery. Preserve integrated
+evidence, mark prior generations superseded, and assign replacements only
+unfinished scope. Never integrate late superseded output, cross-lane
+reuse/duplication/drop, or wait indefinitely. On runtime failure, retire only
 that lane's runtime and append a fresh same-lane generation; never cross-reuse a
 runtime.
 
 ## Completion
 
 Completion requires five durable facts: final independent Review `PASS`, a
-Planning completion report, zero pending tasks, all dispatched results
-integrated, and all required validation complete. Planning then supplies
+Planning completion report, zero pending tasks, all non-superseded results integrated,
+and all required validation complete. Planning then supplies
 `STOP: COMPLETE`; the orchestrator records it as the final transition. Review,
 fixer, approval markers, and transport notifications never complete the lifecycle.
 
@@ -45,12 +54,23 @@ replaces a stale next action.
    first only for file-changing, privileged, external, or side-effectful checks.
    Planning then supplies the final report and `STOP: COMPLETE`.
 
-After requirements approval, ordinary missing fixtures, baselines, labels, or
-preferences use assumptions or alternate validation. Only unavoidable user-owned
-intent or authorization permits `STOP: ASK_USER`.
+After requirements approval, safe investigation, reversible assumptions,
+recovery, alternate validation, failures, missing fixtures, baselines, labels,
+and ordinary preferences use `CONTINUE`. Only unavoidable user-owned intent or
+authorization, or consequential material product intent repository evidence
+cannot decide, permits `STOP: ASK_USER`.
 
 Repeated findings return to Planning. Planning materially changes or narrows the
 approach before retrying; repeated findings never stop work automatically.
+
+Planning owns semantic recovery and rerouting, including evidence validity,
+supersession, unfinished scope, and fresh same-role, same-lane replacement.
+Review remains read-only: it returns only PASS/FAIL, findings, evidence, and
+`APPROVED`; it cannot coordinate or decide recovery, cancel or replace, select
+runtimes, reroute, mutate, route, stop, or ask the user. Lifecycle continuation
+uses `CONTINUE` for safe recovery and alternate validation; escalation uses
+`STOP: ASK_USER` only for user-only authorization or consequential material
+product intent repository evidence cannot decide.
 
 ## Verification
 

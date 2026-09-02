@@ -14,6 +14,8 @@ _M_CONFIG_LINKS=(
     "$DIR/shell/config/oh-my-opencode-slim.json|$HOME/.config/opencode/oh-my-opencode-slim.json"
     "$DIR/shell/config/oh-my-opencode-slim|$HOME/.config/opencode/oh-my-opencode-slim"
     "$DIR/shell/config/opencode2.json|$HOME/.config/opencode2/opencode/opencode.json"
+    "$DIR/shell/config/opencode2-cli.json|$HOME/.config/opencode2/opencode/cli.json"
+    "$DIR/shell/config/opencode2-zellij-attention|$HOME/.config/opencode2/opencode/plugins/zellij-attention"
     "$DIR/shell/config/claude-settings.json|$HOME/.claude/settings.json"
     "$DIR/shell/config/claude-attention.sh|$HOME/.claude/claude-attention.sh"
     "$DIR/shell/config/agent-guidelines.md|$HOME/.config/agents/AGENTS.md"
