@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# One-time setup: shell essentials + look and feel + opencode with browser skills
+# One-time setup: shell essentials + look and feel + OpenCode with browser skills
 # Usage: bash setup-opencode.sh
 
 set -e
@@ -31,10 +31,9 @@ echo "Updating common Zsh completions..."
 rm -rf ~/.zsh-completions ~/.zcompdump
 git clone --quiet --depth=1 https://github.com/zsh-users/zsh-completions ~/.zsh-completions
 
-## opencode
+## OpenCode
 echo "Installing/updating opencode..."
-pnpm install -g opencode-ai@latest
-pnpm approve-builds -g opencode-ai 2>/dev/null || true
+pnpm add -g --allow-build=@opencode/cli @opencode/cli
 
 ## opencode skills (agent-browser)
 echo "Installing agent-browser skill..."

@@ -11,23 +11,23 @@ Installs everything: shell tools, AI coding tools, Rust toolchain, Emacs, LaTeX,
 ```sh
 bin/setup.sh --lite
 ```
-Installs only shell essentials, theme/look-and-feel, and AI coding tools (opencode, Claude Code, oh-my-opencode-slim). Skips Emacs, LaTeX, Rust build, and heavy dependencies.
+Installs only shell essentials, theme/look-and-feel, and AI coding tools (OpenCode and Claude Code). OpenCode uses its native V2 agents and plugins. Skips Emacs, LaTeX, Rust build, and heavy dependencies.
 
 Both modes will:
 * add `register.sh` to `~/.zshrc`
-* sync config files (Ghostty, Zellij, Git, opencode, Claude Code settings)
-* install and configure [zellij-attention](https://github.com/KiryuuLight/zellij-attention) for both OpenCode versions — marks the correct zellij tab ⚡ and notifies when an AI agent needs input (V1 sends a macOS notification with Ping sound; V2 disables OpenCode's built-in `opencode.notifications` event-trigger plugin so the local plugin is the sole alert owner)
+* sync config files (Ghostty, Zellij, Git, OpenCode, Claude Code settings)
+* install and configure [zellij-attention](https://github.com/KiryuuLight/zellij-attention) for OpenCode — marks the correct zellij tab ⚡ and notifies when an agent needs input
 * install and configure [Talon Voice](https://talonvoice.com) for hands-free Zellij navigation, AI pane switching, and local Whisper dictation — see `talon/README.md` for commands
 
-### OpenCode V1 and V2
+### OpenCode
 
-The stable V1 CLI is installed with `pnpm` and remains available as `opencode` (including the existing background-subagent alias). The beta V2 CLI is installed with:
+The V2 CLI is installed with:
 
 ```sh
-npm install -g @opencode-ai/cli@beta
+pnpm add -g --allow-build=@opencode/cli @opencode/cli
 ```
 
-Use `opencode` for V1 and `opencode2` for V2. V2 runs with isolated configuration and state under `~/.config/opencode2` and `~/.local/state/opencode2`; manage its service with `opencode2 service start|restart|status`. `config.sh` installs both the V1 server attention plugin and the V2 local TUI attention plugin. Child processes inherit the isolated `XDG_CONFIG_HOME` and `XDG_STATE_HOME`, so XDG-aware tools may not find their normal configuration. The `upgrade` command updates the V2 beta CLI and restarts its service.
+Use `opencode` to start OpenCode. Configuration is managed at the standard `~/.config/opencode` paths, with native agents and the local zellij-attention plugin. The `upgrade` command updates the stable CLI and restarts its service.
 
 Full mode additionally:
 * install Rust toolchain and build the `m` CLI
@@ -40,13 +40,13 @@ Need one time `M-x all-the-icons-install-fonts` to ensure icons show correctly.
 
 ## Standalone: opencode quick setup
 
-A self-contained script for setting up and configuring OpenCode V1 with shell essentials on a fresh Mac. It leaves any existing OpenCode2 beta untouched and unconfigured: no V2 service, aliases, or isolated state. No dependency on this repo — can be run independently.
+A self-contained script for setting up and configuring OpenCode with shell essentials on a fresh Mac. No dependency on this repo — it can be run independently.
 
 ```sh
 bash <(curl -fsSL https://raw.githubusercontent.com/martin-liu/m-scripts/master/bin/setup-opencode.sh)
 ```
 
-Includes: Homebrew, shell tools (starship, bat, eza, zellij, atuin, etc.), Ghostty + Dracula theme, Fira Code font, opencode, and agent-browser skill. Writes all configs and shell setup directly to `~/.zshrc`.
+Includes: Homebrew, shell tools (starship, bat, eza, zellij, atuin, etc.), Ghostty + Dracula theme, Fira Code font, the OpenCode V2 CLI, and the agent-browser skill. Writes standalone shell and tool configuration directly to the user's home directory; it does not install repository-managed OpenCode agents or plugins.
 
 ---
 
@@ -82,7 +82,7 @@ npx -y skills update linkedin-sourcing
 
 | Skill | Description |
 |-------|-------------|
-| **xdev** | Full software-lifecycle skill for multi-sprint feature work. Drives requirements → design → sprint loop → production close, with file-based state that survives context resets. Not for single-PR work. |
+| **xdev** | Full software-lifecycle route for complex multi-sprint work requiring durable coordination across phases, risk boundaries, or context limits. Use Direct or Reviewed for bounded work. |
 | **linkedin-sourcing** | LinkedIn Recruiter (paid product) sourcing assistant. Automates candidate outreach with Excel-driven state, phased execution, and browser automation. Requires macOS + Google Chrome. |
 
 ---
@@ -103,7 +103,7 @@ npx -y skills update linkedin-sourcing
 
 ## zellij-attention
 
-A Zellij plugin that flags the active tab with ⚡ when an AI agent (Claude Code or opencode) is waiting for your input. OpenCode V1 directly sends a macOS notification with the Ping sound; V2's local plugin is the sole alert owner, pairing its explicit OpenCode built-in sound request with the ⚡ flag. Its isolated host-attention policy is managed in `~/.config/opencode2/opencode/cli.json`.
+A Zellij plugin that flags the active tab with ⚡ when an AI agent (Claude Code or OpenCode) is waiting for your input. OpenCode's local plugin owns its notification and sound behavior, pairing it with the ⚡ flag. Its host-attention policy is managed in `~/.config/opencode/cli.json`.
 
 ### How it works
 
@@ -111,16 +111,15 @@ A Zellij plugin that flags the active tab with ⚡ when an AI agent (Claude Code
 |-----------|---------|
 | `plugins/zellij-attention/` (Rust/WASM) | Zellij plugin loaded via `load_plugins`. Handles tab renaming (add/remove ⚡) and auto-clears when you focus the tab. |
 | `shell/config/claude-attention.sh` | Claude Code hook script. Fires on `Stop` and `Notification` events with a 3-second debounce. |
-| `shell/config/opencode-zellij-attention.js` | V1 server plugin. Tracks the main session ID, fires on `idle` / `question.asked` with a 3-second completion debounce, and directly sends the macOS notification and Ping sound. |
-| `shell/config/opencode2-zellij-attention/tui.js` | V2 local TUI plugin. Tracks root execution and attention events; successful completion has a 3-second delay, while permissions, forms, interruptions, and failures may notify immediately with an explicit OpenCode built-in sound request. |
+| `shell/config/opencode-zellij-attention/tui.js` | OpenCode local TUI plugin. Tracks root execution and attention events; successful completion has a 3-second delay, while permissions, forms, interruptions, and failures may notify immediately with an explicit OpenCode built-in sound request. |
 
 ### Features
 
 - **Auto-clear on focus**: Switch to a triggered tab and the ⚡ disappears automatically
 - **Switch-away clear**: Switch away from a triggered tab and the ⚡ also disappears
-- **Subagent filtering**: opencode tracks the main session ID; subagent sessions are ignored
-- **Debounce**: Claude and V1 opencode completion notifications wait 3 seconds before notifying, absorbing rapid subagent churn; V2 delays only successful completion, while permission, form, interruption, and failure notifications may be immediate
-- **Per-pane isolation**: Multiple opencode/Claude panes in different tabs don't interfere with each other
+- **Subagent filtering**: OpenCode tracks the root session ID; subagent sessions are ignored
+- **Debounce**: Claude and OpenCode successful completion notifications wait 3 seconds before notifying, absorbing rapid subagent churn; permission, form, interruption, and failure notifications may be immediate
+- **Per-pane isolation**: Multiple OpenCode/Claude panes in different tabs don't interfere with each other
 
 ### Debug logging
 
@@ -131,16 +130,11 @@ Set the environment variable to see which events fire:
 CLAUDE_ATTENTION_DEBUG=1 claude
 # Then check: cat /tmp/claude-attention-hooks.log
 
-# opencode
+# OpenCode
 OPENCODE_ATTENTION_DEBUG=1 opencode
-# Then check: cat /tmp/opencode-events.log
-
-# opencode2
-OPENCODE_ATTENTION_DEBUG=1 opencode2
-# Then check: cat /tmp/opencode2-attention-events.log
+# Then check: cat /tmp/opencode-attention-events.log
 ```
 * [Fira Code Font](https://github.com/tonsky/FiraCode)
-* [opencode](https://opencode.ai), AI coding assistant (TUI)
+* [OpenCode](https://opencode.ai), AI coding assistant (TUI)
 * [Claude Code](https://claude.ai/code), AI coding assistant (CLI)
-* [oh-my-opencode-slim](https://github.com/alvinunreal/oh-my-opencode-slim), opencode plugin for multi-agent orchestration
 * [Rust Alternatives](https://github.com/TaKO8Ki/awesome-alternatives-in-rust)

@@ -84,16 +84,12 @@ git clone --quiet --depth=1 https://github.com/zsh-users/zsh-completions ~/.zsh-
 
 ## AI coding tools
 echo "Installing/updating opencode..."
-pnpm install -g opencode-ai@latest
-npm install -g @opencode-ai/cli@beta
+pnpm add -g --allow-build=@opencode/cli @opencode/cli
 
 echo "Installing/updating Claude Code..."
 npm install -g @anthropic-ai/claude-code@latest
 
-# oh-my-opencode-slim plugin (generates default configs; custom configs
-# in shell/config/ are synced over by config.sh on shell load)
-echo "Installing/updating oh-my-opencode-slim plugin..."
-bunx oh-my-opencode-slim@latest install --no-tui --tmux=no --skills=yes
+# OpenCode uses the native agents and plugins synced by config.sh on shell load.
 
 if [[ "$LITE_MODE" == true ]]; then
     echo "Lite install complete"
