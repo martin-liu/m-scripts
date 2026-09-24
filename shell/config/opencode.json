@@ -48,9 +48,10 @@
       "models": {
         "DeepSeek-V4.1-Flash": {
           "cost": {
-            "input": 0.15,
-            "output": 0.31,
-            "cache_read": 0.03
+            "input": 0.3,
+            "output": 1.2,
+            "cache_read": 0.006,
+            "cache_write": 0.006
           },
           "variants": {
             "max": {
