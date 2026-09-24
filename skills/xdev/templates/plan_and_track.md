@@ -34,7 +34,7 @@ and replacement reason when applicable.
 |---|---|---|---:|---|---|---|---|---|---|---|
 
 ## Authoritative Todo List
-OpenCode has no todo tools, so this is the one authoritative checkbox list.
+This is the one authoritative checkbox list.
 The Orchestrator is the sole writer. IDs are stable and never reused. Unchecked
 means outstanding; check only after reconciliation, integration, and durable
 evidence are recorded with a state revision and authoritative reference. Never

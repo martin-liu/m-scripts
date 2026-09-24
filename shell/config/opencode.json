@@ -46,7 +46,7 @@
         "apiKey": "{env:LITELLM_PROXY_API_KEY}"
       },
       "models": {
-        "DeepSeek-V4-Flash": {
+        "DeepSeek-V4.1-Flash": {
           "cost": {
             "input": 0.15,
             "output": 0.31,

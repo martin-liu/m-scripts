@@ -1,7 +1,7 @@
 ---
 description: Bounded implementation specialist for clear, assigned work.
 mode: subagent
-model: litellm/gpt-5.6-luna#high
+model: litellm/DeepSeek-V4.1-Flash#max
 permissions:
   - action: "*"
     resource: "*"

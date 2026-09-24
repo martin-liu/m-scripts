@@ -488,13 +488,13 @@ test("OpenCode config omits unsupported legacy settings and preserves supported 
         buffer: 20000,
     });
     assert.deepEqual(Object.keys(models), [
-        "DeepSeek-V4-Flash",
+        "DeepSeek-V4.1-Flash",
         "DeepSeek-V4-Pro",
         "gpt-5.6-luna",
         "gpt-5.6-sol",
         "gpt-5.6-terra",
     ]);
-    assert.deepEqual(Object.keys(models["DeepSeek-V4-Flash"].variants), ["max"]);
+    assert.deepEqual(Object.keys(models["DeepSeek-V4.1-Flash"].variants), ["max"]);
     for (const model of ["gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra"]) {
         assert.deepEqual(Object.keys(models[model].variants), ["none", "low", "medium", "high", "xhigh", "max"]);
     }
