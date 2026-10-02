@@ -1,0 +1,23 @@
+{
+  "defaultProvider": "litellm",
+  "defaultModel": "DeepSeek-V4.1-Flash",
+  "defaultThinkingLevel": "max",
+  "defaultProjectTrust": "ask",
+  "enableAnalytics": false,
+  "enableInstallTelemetry": false,
+  "packages": [
+    "npm:pi-subagents",
+    "npm:@upstash/context7-pi",
+    "npm:pi-web-access",
+    "npm:@ff-labs/pi-fff",
+    "npm:billion-context-pi"
+  ],
+  "subagents": {
+    "disableBuiltins": true
+  },
+  "theme": "dracula",
+  "compaction": {
+    "reserveTokens": 10000
+  },
+  "lastChangelogVersion": "1.0.0"
+}

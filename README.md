@@ -11,11 +11,11 @@ Installs everything: shell tools, AI coding tools, Rust toolchain, Emacs, LaTeX,
 ```sh
 bin/setup.sh --lite
 ```
-Installs only shell essentials, theme/look-and-feel, and AI coding tools (OpenCode and Claude Code). OpenCode uses its native V2 agents and plugins. Skips Emacs, LaTeX, Rust build, and heavy dependencies.
+Installs only shell essentials, theme/look-and-feel, and AI coding tools (OpenCode, Pi, and Claude Code). OpenCode uses its native V2 agents and plugins; Pi uses the upstream `@earendil-works/pi-coding-agent` CLI and the agents/plugins synced by this repo. Skips Emacs, LaTeX, Rust build, and heavy dependencies.
 
 Both modes will:
 * add `register.sh` to `~/.zshrc`
-* sync config files (Ghostty, Zellij, Git, OpenCode, Claude Code settings)
+* sync config files (Ghostty, Zellij, Git, OpenCode, Pi, Claude Code settings)
 * install and configure [zellij-attention](https://github.com/KiryuuLight/zellij-attention) for OpenCode — marks the correct zellij tab ⚡ and notifies when an agent needs input
 * install and configure [Talon Voice](https://talonvoice.com) for hands-free Zellij navigation, AI pane switching, and local Whisper dictation — see `talon/README.md` for commands
 
@@ -28,6 +28,55 @@ pnpm add -g --allow-build=@opencode/cli @opencode/cli
 ```
 
 Use `opencode` to start OpenCode. Configuration is managed at the standard `~/.config/opencode` paths, with native agents and the local zellij-attention plugin. The `upgrade` command updates the stable CLI and restarts its service.
+
+### Pi (upstream)
+
+The upstream Pi coding agent is installed with:
+
+```sh
+pnpm add -g --ignore-scripts @earendil-works/pi-coding-agent
+```
+
+Use `pi` to start it. This repo manages the upstream package
+`@earendil-works/pi-coding-agent`; it does not use OMP or any `@mariozechner`
+package. Configuration is symlinked into `~/.pi/agent`: `settings.json`,
+`models.json`, `APPEND_SYSTEM.md`, and the `agents/` directory (`oracle`, `fixer`,
+and the orchestration contract appended to Pi's system prompt). Auth, project
+trust, sessions, and other runtime files stay local and are not managed here.
+The model endpoint is defined in `models.json` with the conventional gateway
+URL; the API key is read from the `LITELLM_PROXY_API_KEY` environment variable,
+so no secrets are stored.
+
+Pi packages are declared in `settings.json` and reconciled by Pi:
+
+* `pi-subagents` — delegates to the `oracle` and `fixer` subagents.
+* `@upstash/context7-pi` — Context7 documentation tools as a direct extension, so
+  no MCP adapter is needed.
+* `pi-web-access` — web search and page fetching.
+* `@ff-labs/pi-fff` — replaces the built-in `find` and `grep` with the indexed,
+  frecency-ranked FFF search tools (`pi-fff.json` selects `override` mode).
+* `billion-context-pi` — context compression for long sessions. It runs in-process
+  and cancels Pi's native auto-compaction, so it is the sole context manager. It
+  also provides `acp_delegate`; Pi's built-in auto-compaction stays disabled.
+
+The `extensions/` directory holds `session-supervisor.ts`, a local extension that
+reads the status line each turn ends with (see `APPEND_SYSTEM.md`). It notifies the
+terminal when the session is genuinely idle — done, blocked, failed, or stopped
+without declaring — stays silent while a declared `WAIT` is outstanding, and asks
+Pi for one bounded continuation when the agent declares `CONTINUE` with work left.
+
+Project trust defaults to `ask`, and analytics/install telemetry are disabled.
+Pi tool allowlists and agent prompts are a policy layer, not an OS sandbox; they
+do not prevent a shell command from acting outside its declared boundary. The
+`upgrade` command updates Pi and reconciles these declared packages without loading
+project-local package declarations. Both `opencode` and `pi` remain usable.
+
+`pi-acp` is installed as an ACP adapter, bridging Pi to ACP clients such as Zed
+via `pi --mode rpc`. It is installed alongside `claude-agent-acp`:
+
+```sh
+pnpm add -g @agentclientprotocol/claude-agent-acp pi-acp
+```
 
 Full mode additionally:
 * install Rust toolchain and build the `m` CLI
@@ -98,6 +147,11 @@ npx -y skills update linkedin-sourcing
 * [Zellij](https://github.com/zellij-org/zellij), replacement of tmux/screen
 * [zellij-attention](https://github.com/KiryuuLight/zellij-attention), marks the zellij tab needing input with ⚡ (for multi-agent workflows)
 * [Talon Voice](https://talonvoice.com), hands-free voice control for Zellij navigation and AI pane switching — see `talon/README.md` for commands
+* [Fira Code Font](https://github.com/tonsky/FiraCode)
+* [OpenCode](https://opencode.ai), AI coding assistant (TUI)
+* [Pi](https://pi.dev), upstream AI coding agent (CLI)
+* [Claude Code](https://claude.ai/code), AI coding assistant (CLI)
+* [Rust Alternatives](https://github.com/TaKO8Ki/awesome-alternatives-in-rust)
 
 ---
 
@@ -134,7 +188,3 @@ CLAUDE_ATTENTION_DEBUG=1 claude
 OPENCODE_ATTENTION_DEBUG=1 opencode
 # Then check: cat /tmp/opencode-attention-events.log
 ```
-* [Fira Code Font](https://github.com/tonsky/FiraCode)
-* [OpenCode](https://opencode.ai), AI coding assistant (TUI)
-* [Claude Code](https://claude.ai/code), AI coding assistant (CLI)
-* [Rust Alternatives](https://github.com/TaKO8Ki/awesome-alternatives-in-rust)
