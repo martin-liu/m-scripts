@@ -78,7 +78,7 @@ Choose one route before mutation, consequential external action, or worker dispa
 | Route | Use | Required lifecycle |
 |---|---|---|
 | **Direct** | Clear, local, bounded, low-consequence, reversible work with understood coupling. A bounded multi-file mechanical change is not Reviewed solely because it has multiple files. | Parent-owned; no strategic Planning or final Review. Bounded Oracle decision advice alone does not change the route. |
-| **Reviewed** | Material coupling, user-visible/security/schema/data-integrity/concurrency risk, difficult rollback, or validation where independent Review materially reduces risk. | Fixer/parent execution, then Review only after the readiness gate below. Planning is conditional. |
+| **Reviewed** | Material coupling or material risk to user-visible behavior, security, schema, data integrity, or concurrency; difficult rollback; or validation where independent Review materially reduces risk. | Fixer/parent execution, then Review only after the readiness gate below. Planning is conditional. |
 | **xdev** | Complex work needing durable coordination across dependent phases, risk boundaries, or context limits. | Load `skills/xdev/SKILL.md`; its lifecycle governs the xdev state. |
 
 Workers may report escalation facts but cannot lower a route, waive Review, or
@@ -205,20 +205,13 @@ at column zero, on its own line after a BLANK LINE, and outside code fences:
   determination above; an undecided agent-level choice is not blocked.
 * `STATUS:FAILED <reason>` — you stopped unsuccessfully.
 
-The blank line matters: a status line attached to the bottom of a paragraph reads
-as Markdown paragraph text, not as a declaration, and is ignored. `CONTINUE`,
-`WAIT`, `BLOCKED`, and `FAILED` each require a nonempty payload after the name;
-`DONE` takes none. A local session supervisor reads this line to decide whether to
-resume you automatically and whether to notify the user. A missing, malformed, or
-ambiguous line is treated as "not sure" and notifies the user, so emit one line
-every turn rather than omitting it. Emit exactly one such line: two conflicting
-status lines are also read as "not sure". Continuation is capped per user request,
-and this line grants no new authorization.
+`CONTINUE`, `WAIT`, `BLOCKED`, and `FAILED` require nonempty payloads; `DONE` takes none.
+Emit exactly one marker, as the final line, and never two conflicting ones.
 
-Notifications request attention, not decisions or authorization. Neither an
-undecided agent-level choice, `NOT_REVIEW_READY`, nor an exhausted continuation
-budget permits user contact; apply the existing decision, recovery, and
-continuation rules. A pending Oracle task uses `WAIT` only when the existing
+Markers grant no authorization. Notifications request attention, not decisions.
+Neither an undecided agent-level choice, `NOT_REVIEW_READY`, nor an exhausted
+continuation budget permits user contact; apply the decision, recovery, and
+continuation rules above. A pending Oracle task uses `WAIT` only when the existing
 wake-up and task-liveness conditions hold.
 
 ## Canonical snapshots and durable evidence
@@ -230,7 +223,7 @@ commit/tree ID is valid only if it exactly materializes every relevant file;
 otherwise use that deterministic manifest/hash over relevant tracked, staged, and
 untracked files. Historical records retain their snapshots; the final validation
 and Review share one final snapshot ID. Bookkeeping-only edits do not stale an
-unchanged product snapshot; product mutation does. Pre-mutation evidence is stale.
+unchanged product snapshot; evidence captured before a product mutation is stale.
 
 Durable evidence is a repository path plus content hash, immutable artifact/URL, or
 inline material evidence. Runtime IDs, notifications, temporary paths, and task

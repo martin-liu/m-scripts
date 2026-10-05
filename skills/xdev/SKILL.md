@@ -85,16 +85,10 @@ alter authoritative content. Record the revision with every validation and
 Review evidence.
 
 Each validation and Review record names the snapshot ID for its corresponding
-unit/state. Its canonical manifest records repository root and base, sorted
-relevant paths with status and file mode, byte hashes, the hash of those
-manifest lines, and explicit exclusions. A commit/tree ID is usable only when
-it exactly materializes all relevant changed files for that unit; otherwise use
-that deterministic manifest/hash over relevant tracked, staged, and untracked
-changed files. Historical sprint records retain their original snapshot IDs.
-The final whole-state validation and Review use one final snapshot ID, recorded
-in the current state and each corresponding final record. Bookkeeping-only
-state changes do not stale an unchanged product snapshot; evidence captured
-before a product mutation is stale.
+unit/state. Apply the Orchestrator's **Canonical snapshots and durable evidence**
+policy. Historical sprint records retain their original snapshot IDs. The final
+whole-state validation and Review use one final snapshot ID, recorded in the
+current state and each corresponding final record.
 
 Durable evidence is a repository path plus content hash, immutable artifact or
 URL, or inline material evidence. Transport-only references cannot discharge
@@ -144,10 +138,11 @@ failures update Status or the relevant sprint/task entry.
 Before ending an xdev root turn, reread the exact resolved plan from disk and
 reconcile every result received during the turn. End only when (a) the lifecycle
 is terminal and all closure, validation, Review, todo, and integration invariants
-are recorded; (b) Oracle Planning explicitly authorized the specific user
-question, that question is now asked, and no other authorized action remains
-ready; or (c) no action is ready and a named, non-superseded task is confirmed
-live, with its task ID and generation recorded. A user-owned dependency blocks
+are recorded; (b) Oracle Planning explicitly determined that the specific user
+question is necessary, that question is now asked, and no other authorized action
+remains ready; or (c) no action is ready and a named, non-superseded task is
+confirmed live, with its task ID and generation recorded. A user-owned dependency
+blocks
 only the work that depends on it: finish every other feasible authorized action,
 and prepare the blocked effect as far as is allowed, before ending on (b).
 Otherwise execute or dispatch the next authorized action. A status-only update,
@@ -173,21 +168,14 @@ The Orchestrator records successful completion only when the plan's final-
 validation evidence table has a result for every approved check, the final
 whole-state Review record has `Verdict: PASS` and its required evidence fields,
 zero pending tasks, all non-superseded results integrated, all required
-validation complete, and the lifecycle Outcome is `delivered`. When the final
-sprint Review has exactly the whole-state scope and evidence, that Review plus
-Orchestrator reconciliation is sufficient for delivered closure; no second
-closure assessment is required. Any other delivered closure has an uncovered
-closure premise and uses the revision-bound closure-assessment route. A
-lifecycle `conclusively blocked` outcome is terminal non-delivery, not
-successful delivery. A sprint presented for Review is otherwise complete only when the
-Orchestrator's global Review-readiness gate is `REVIEW_READY` for its exact
-unit, contract, and snapshot: behavior is implemented, every acceptance
-criterion passes, all non-superseded results are integrated, no unit work is
-pending, every required validation passes against that snapshot, prior
-actionable findings are resolved and revalidated, and no known actionable
-in-scope defect remains. A remediable failure is not complete. The separate
-`BLOCKED_REVIEW` exception is non-delivery only and does not alter parent
-closure rules.
+validation complete, and the lifecycle Outcome is `delivered`. Terminal transitions follow the decision in **Parent-objective
+closure** below. A lifecycle `conclusively blocked` outcome is terminal
+non-delivery, not successful delivery.
+
+A sprint may enter delivery Review only under the Orchestrator's global
+`REVIEW_READY` gate for its exact unit, contract, and snapshot, plus this skill's
+todo reconciliation. `BLOCKED_REVIEW` is non-delivery only and does not alter
+parent closure rules.
 
 Each completed risk-boundary sprint receives independent Review. A last or only
 sprint Review may also be final whole-state Review when scope and evidence
@@ -198,12 +186,10 @@ route, or recover.
 ## Parent-objective closure
 
 Routine recovery while Outcome is `active` remains Orchestrator-owned and does
-not require Oracle. A separate revision-bound closure candidate and independent
-full-context Oracle assessment is required for blocked/negative closure or when
-the closure premise is otherwise uncovered; for a delivered outcome whose final
-sprint Review scope and evidence coincide with whole-state scope, that Review
-and Orchestrator reconciliation cover the closure premise without a duplicate
-Oracle call. The Orchestrator first rereads the exact resolved plan path from disk
+not require Oracle. Use the terminal-transition decision below to determine
+whether a separate closure assessment is required; blocked/negative closure and
+any delivered closure with an uncovered closure premise require one. The
+Orchestrator first rereads the exact resolved plan path from disk
 and reconciles the complete record: baseline and criteria, all sprints, task
 generations and supersession, integration, validation, Review findings,
 blockers and recovery attempts, and remaining authorized actions.
@@ -264,17 +250,10 @@ closed and prevents Review readiness or terminal closure.
    invariants, risk boundaries, validation, and sprint contracts. For
    deterministic functional work, record expected tests or scenarios. When
    acceptance depends on extracting, transforming, classifying, matching, or
-   counting a defined source corpus, distinguish the claim type. For semantic
-   item-level ground-truth claims, the Orchestrator first reads every claimed
-   item and records an item-by-item contextual expected result; identical-scope
-   automation runs only after that baseline. Mechanically specified
-   transformations use the contract's exact rules, invariants, and reference
-   fixtures for expected results. Population/statistical claims use a defined
-   population plus independent sampling/estimation or exhaustive support. None
-   of these rules permits self-generated expected truth. Oracle Planning may
-   incorporate the recorded basis but never creates corpus truth; the
-   Orchestrator remains the owner of the baseline and its acceptance. Ordinary
-   source-code work does not trigger this corpus ordering.
+   counting a defined source corpus, apply the Orchestrator's global **Defined
+   source-corpus claims** and record the applicable basis before identical-scope
+   automation. Oracle never creates corpus truth; the Orchestrator owns baseline
+   acceptance. Ordinary source-code work does not trigger this corpus ordering.
 2. Keep Oracle Planning and delivery-unit Review lanes distinct. The Orchestrator
    authors and accepts the baseline; there is no optional or conditional
    preimplementation Baseline Review. Invoke Oracle Planning only for strategic
@@ -287,20 +266,15 @@ closed and prevents Review readiness or terminal closure.
    global Review-readiness gate, and dispatches sprint Review for each genuine
    risk boundary only when that gate is `REVIEW_READY` (or as an explicitly
    labeled non-delivery `BLOCKED_REVIEW`).
-4. On Review FAIL, the Orchestrator reconciles all findings, batches compatible
-   unchanged-semantics corrections, integrates them, reruns affected and
-   contract-required validation, rebuilds readiness, and sends one whole-unit
-   Review. Do not review individual findings, files, diagnostics, or results.
-   Return to Planning for a semantic, design, risk-boundary, or validation-
-   strategy change.
+4. On Review FAIL, apply the Orchestrator's whole-unit correction and semantic-
+   replanning procedure in **Reviewed lifecycle, readiness, correction, and
+   completion**; update the sprint record.
 5. The Orchestrator assigns and records the final-validation execution owner in
    the baseline. That owner runs the approved final checks and returns the
    evidence record; the Orchestrator records it, and final Review independently
-   checks the whole resulting state. The Orchestrator reconciles the explicit
-   completion invariants—final evidence for every approved check, final Review
-   `PASS`, zero pending tasks, all non-superseded results integrated, and all
-   required validation complete—then records completion through the conditional
-   delivered or revision-bound closure-assessment protocol above.
+   checks the whole resulting state. The Orchestrator reconciles and records
+   completion under **Completion and Review** and **Parent-objective closure**
+   above.
 
 Sprints are review-worthy risk boundaries, not arbitrary files or checklist
 items. Combine adjacent mechanical changes sharing a contract and validation;

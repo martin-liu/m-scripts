@@ -650,8 +650,8 @@ export function buildBridgeEntry(marker: DeclaredMarker): {
     "Act on that step now.",
     "This message grants NO new authorization: the permissions, scope, and",
     "approvals that applied to your previous turn still apply unchanged.",
-    "If the step is no longer actionable, or you need user input or",
-    "authorization, say so and stop.",
+    "If the step is no longer actionable, reconcile it under the existing decision,",
+    "user-contact, and continuation rules rather than stopping unconditionally.",
   ].join("\n");
   return {
     type: "custom_message",
@@ -830,13 +830,10 @@ export function registerSessionSupervisor(
   /**
    * Read the declared marker for this boundary.
    *
-   * The projected final message is the authority. When that entry carries no
-   * text at all - a custom or tool entry another handler appended - the search
-   * walks back to the last TEXT-BEARING message, because the draft did not
-   * replace the model's declaration and treating the draft as "unknown" would
-   * notify for a normal `WAIT` settle. The walk stops at the first text-bearing
-   * message, so a final message that has text and simply declines to declare
-   * still means `unknown`.
+   * The projected final message is the authority; a final message with no text
+   * declares nothing. Walking backward would let an appended textless draft
+   * resurrect an OLDER declaration - a stale CONTINUE would restart work, and a
+   * stale WAIT would wrongly stay silent.
    */
   const markerForBoundary = (boundary: AgentBeforeSettleLike): DeclaredMarker | null => {
     // Contract: only the FINAL projected message may declare. Walking backward

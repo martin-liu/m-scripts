@@ -2,11 +2,7 @@
 
 **schema_version:** 1.2
 
-Use the exact fields in this template; the Orchestrator reads this file on
-bootstrap/migration/malformed-state recovery. Ordinary resume uses the recorded
-schema version and durable state fields; fail closed when required fields cannot
-be migrated safely. The Orchestrator reads `sprint_block.md` before creating each
-sprint.
+Use the exact fields in this template.
 
 ## State Locator
 - **Objective identity:** {objective identity}
@@ -130,7 +126,7 @@ After the Orchestrator accepts the coherent baseline (and records the applicable
 
 ## Final Review Readiness
 - **Exact delivery unit / contract / snapshot:**
-- **Snapshot identity:** {snapshot ID for this exact delivery unit; commit/tree ID only when it exactly materializes all relevant changed files, otherwise deterministic manifest/hash covering all relevant tracked, staged, and untracked changed files}
+- **Snapshot identity:** {snapshot ID for this exact delivery unit; commit/tree ID only when it exactly materializes every relevant file, otherwise deterministic manifest/hash covering all relevant tracked, staged, and untracked files}
 - **Snapshot manifest contents:** {repository root/base; sorted relevant paths/status/modes/byte hashes; manifest hash; explicit exclusions}
 - **Acceptance criteria:** all satisfied / not satisfied (authoritative criteria and evidence)
 - **Todo reconciliation:** consistent at revision {revision}; scoped implementation/correction/integration/required-validation todos discharged; Review-action todo {ID/status}
@@ -152,8 +148,8 @@ After the Orchestrator accepts the coherent baseline (and records the applicable
 - **Recovery attempts:** {none or materially distinct attempts and results}
 - **Remaining authorized actions:** {none or actions}
 - **Oracle assessment:** {status, conclusion, candidate ID, candidate revision, proposed Outcome, logical Oracle task ID, generation, and authoritative reference; required only for blocked/negative or otherwise uncovered closure premises; not required for coincident final Review delivered closure}
-- **Orchestrator decision:** {active / awaiting_user / delivered / conclusively blocked; rationale and revision}
-- **Recording rule:** logical task/candidate/todo creation is the semantic binding in one transition from prior revision R to creation revision N=R+1; dispatch, runtime transport ID assignment, and running/pending transport status are revision-neutral bookkeeping unless they change scope, acceptance, integration, or the closure premise. When the assessment route applies, the bound Oracle closure-assessment task's terminal result, assessment, and Orchestrator decision are recorded atomically in one transition from N to N+1; any substantive premise change invalidates the assessment and requires a new candidate and assessment. Purely typographic edits do not change revision unless authoritative content changes.
+- **Orchestrator decision:** {Outcome: active / delivered / conclusively blocked; execution disposition: continue / awaiting_user; rationale and revision}
+- **Recording rule:** follow `SKILL.md` sections **Durable revisions, snapshots, and recovery** and **Parent-objective closure**, including the atomic N→N+1 closure integration.
 
 ## History
 Append only accepted baseline/Review, completed sprint, semantic revision,
