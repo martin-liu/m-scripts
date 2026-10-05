@@ -145,8 +145,11 @@ Before ending an xdev root turn, reread the exact resolved plan from disk and
 reconcile every result received during the turn. End only when (a) the lifecycle
 is terminal and all closure, validation, Review, todo, and integration invariants
 are recorded; (b) Oracle Planning explicitly authorized the specific user
-question and that question is now asked; or (c) no action is ready and a named,
-non-superseded task is confirmed live, with its task ID and generation recorded.
+question, that question is now asked, and no other authorized action remains
+ready; or (c) no action is ready and a named, non-superseded task is confirmed
+live, with its task ID and generation recorded. A user-owned dependency blocks
+only the work that depends on it: finish every other feasible authorized action,
+and prepare the blocked effect as far as is allowed, before ending on (b).
 Otherwise execute or dispatch the next authorized action. A status-only update,
 child completion, remediable failure, context pressure, compaction, or a future
 Next action is not an exit condition. At each xdev reconciliation point, use the

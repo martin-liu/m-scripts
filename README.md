@@ -65,6 +65,34 @@ terminal when the session is genuinely idle — done, blocked, failed, or stoppe
 without declaring — stays silent while a declared `WAIT` is outstanding, and asks
 Pi for one bounded continuation when the agent declares `CONTINUE` with work left.
 
+Set `PI_MAX_CONTINUATIONS` for unattended runs. It defaults to `2` (interactive)
+and accepts `0`–`64`; `0` disables automatic continuation. A reservation is
+charged per settled turn, not per tool call, so a larger budget buys real runway
+overnight:
+
+```sh
+PI_MAX_CONTINUATIONS=64 pi
+```
+
+Exhausting the budget is a resource-limited stop, not a pending question: the
+session reports `Automatic continuation budget exhausted - work remains`.
+Restoring the allowance always requires a fresh genuine request; nothing
+augments it in place, and nothing the model prints can refill it. The three
+transitions differ in whether the limit itself is recomputed:
+
+- `/reload` replaces the extension runtime and re-invokes the extension factory,
+  so it re-reads `PI_MAX_CONTINUATIONS`. It still leaves the allowance at zero:
+  the next successfully delivered genuine request receives the newly resolved
+  limit.
+- A session change (new, resume, fork, session switch) or tree navigation revokes
+  the allowance to zero. It does not re-run the factory, so it does not re-read
+  the environment.
+- New input revokes the allowance and starts a fresh handshake; it never
+  replenishes directly.
+
+The budget is a fuse against an unbounded self-continuation loop and never
+grants authorization.
+
 Project trust defaults to `ask`, and analytics/install telemetry are disabled.
 Pi tool allowlists and agent prompts are a policy layer, not an OS sandbox; they
 do not prevent a shell command from acting outside its declared boundary. The

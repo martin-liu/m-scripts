@@ -36,7 +36,8 @@ async function loadSupervisor() {
 }
 
 const mod = await loadSupervisor();
-const { MAX_CONTINUATIONS } = mod;
+const { DEFAULT_MAX_CONTINUATIONS, HARD_MAX_CONTINUATIONS, resolveMaxContinuations } = mod;
+const MAX_CONTINUATIONS = DEFAULT_MAX_CONTINUATIONS;
 
 // ---------------------------------------------------------------------------
 // Harness
@@ -70,7 +71,9 @@ function makePi(exec) {
 const UI = { hasUI: true, mode: "tui" };
 const HEADLESS = { hasUI: false, mode: "print" };
 const RPC = { hasUI: true, mode: "rpc" };
-const OSC_NOTIFY = "\x1b]777;notify;Pi;Waiting for your input\x07";
+const OSC_NOTIFY = "\x1b]777;notify;Pi;Session needs attention\x07";
+const OSC_BUDGET_EXHAUSTED =
+  "\x1b]777;notify;Pi;Automatic continuation budget exhausted - work remains\x07";
 
 // Capture stdout writes made by the extension.
 //
@@ -643,11 +646,16 @@ function handshake(
 }
 
 /** A registered pi whose budget was earned by a delivered genuine request. */
-function armed(modOverride = mod) {
+function armed(modOverride = mod, env = {}) {
   const pi = makePi();
-  modOverride.registerSessionSupervisor(pi, {});
+  modOverride.registerSessionSupervisor(pi, env);
   handshake(pi);
   return pi;
+}
+
+/** Arm with an explicit PI_MAX_CONTINUATIONS value. */
+function armedWithBudget(budget) {
+  return armed(mod, { PI_MAX_CONTINUATIONS: String(budget) });
 }
 
 test("CONTINUE with budget proposes a bridge continuation and does NOT notify", async () => {
@@ -681,6 +689,46 @@ test("a prior continue request from another handler is respected, not duplicated
   const pi = armed();
   const result = await proposes(pi, [assistant(CONTINUE)], { continue: true });
   assert.equal(result, undefined, "must not add a second continuation request");
+});
+
+test("a spent allowance does not report exhaustion when another handler owns continuation", async () => {
+  // Regression: the exhaustion branch previously ran before the ownership check,
+  // so a boundary another handler had already marked `continue: true` was
+  // misreported as a budget-limited stop even though continuation was owned
+  // elsewhere. The stop cause must stay distinct.
+  const pi = armedWithBudget(1);
+  const capture = captureStdout();
+  try {
+    assert.equal((await proposes(pi, [assistant(CONTINUE)]))?.continue, true, "the one slot is spent");
+    const result = await proposes(pi, [assistant(CONTINUE)], { continue: true });
+    assert.equal(result, undefined, "must not add a second continuation request");
+    assert.deepEqual(
+      capture.chunks,
+      [OSC_NOTIFY],
+      "another handler's continuation is reported as attention, not budget exhaustion",
+    );
+  } finally {
+    capture.restore();
+  }
+});
+
+test("a spent allowance still reports exhaustion when no other handler owns continuation", async () => {
+  // Counterpart to the test above: with ownership NOT taken elsewhere, a spent
+  // allowance on an otherwise proposable boundary is a genuine resource stop.
+  const pi = armedWithBudget(1);
+  const capture = captureStdout();
+  try {
+    assert.equal((await proposes(pi, [assistant(CONTINUE)]))?.continue, true, "the one slot is spent");
+    const result = await proposes(pi, [assistant(CONTINUE)]);
+    assert.equal(result, undefined, "a spent allowance cannot propose");
+    assert.match(
+      capture.chunks.join(""),
+      /budget exhausted/i,
+      "an unowned spent allowance is still a resource-limited stop",
+    );
+  } finally {
+    capture.restore();
+  }
 });
 
 test("WAIT neither continues nor notifies", async () => {
@@ -853,8 +901,13 @@ async function settleRounds(pi, tail, { rounds = 6, declared = CONTINUE } = {}) 
   const handler = handlerFor(pi, "agent_before_settle");
   let accepted = 0;
   let current = [user("do it"), ...tail];
+  // Each round drives the boundary with the EVOLVING projection: an accepted
+  // proposal commits its bridge, and the next round's final message is a FRESH
+  // assistant declaration on top of it. Passing the static `tail` every round
+  // would leave the saved branch ending in a custom bridge and test an unknown
+  // marker instead of genuine budget exhaustion.
   for (let round = 0; round < rounds; round += 1) {
-    const result = await handler(boundaryEvent([...tail, assistant(declared)]), UI);
+    const result = await handler(boundaryEvent([...current, assistant(declared)]), UI);
     if (result?.continue !== true) break;
     accepted += 1;
     current = commit(current.concat(assistant(declared)), result);
@@ -950,7 +1003,11 @@ test("compaction does not replenish the continuation budget", async () => {
       assistant(CONTINUE),
     ]);
     assert.equal(third, undefined, "compaction must not replenish the budget");
-    assert.deepEqual(capture.chunks, [OSC_NOTIFY], "spent budget after compaction notifies");
+    assert.deepEqual(
+      capture.chunks,
+      [OSC_BUDGET_EXHAUSTED],
+      "spent budget after compaction reports exhaustion, not a pending question",
+    );
   } finally {
     capture.restore();
   }
@@ -969,11 +1026,227 @@ test("a named CONTINUE step proposes exactly MAX_CONTINUATIONS times, then notif
     );
     assert.deepEqual(capture.chunks, [], "both proposals were accepted, so no notification");
 
-    // The third round has no budget: it must STOP and TELL the user.
-    const third = await handlerFor(pi, "agent_before_settle")(boundaryEvent(branch), UI);
+    // One more FRESH declaration on top of the committed bridges has no budget:
+    // it must stop and report a resource-limited stop, not a pending question.
+    const third = await handlerFor(pi, "agent_before_settle")(
+      boundaryEvent([...branch, assistant(CONTINUE)]),
+      UI,
+    );
     assert.equal(third, undefined);
-    assert.deepEqual(capture.chunks, [OSC_NOTIFY], "spent budget with unresolved work must notify");
-    assert.equal(await proposes(pi, branch), undefined, "and stay silent afterwards");
+    assert.deepEqual(
+      capture.chunks,
+      [OSC_BUDGET_EXHAUSTED],
+      "spent budget with unresolved work must report exhaustion",
+    );
+    assert.equal(
+      await proposes(pi, [...branch, assistant(CONTINUE)]),
+      undefined,
+      "and stay silent afterwards",
+    );
+  } finally {
+    capture.restore();
+  }
+});
+
+test("a reload before any exhaustion reports attention, not budget exhaustion", async () => {
+  // An unarmed session has no established budget, so a spent allowance is not
+  // the reason it is stopping. It must not claim a resource limit it never had.
+  const pi = makePi();
+  mod.registerSessionSupervisor(pi, {});
+  const capture = captureStdout();
+  try {
+    assert.equal(await proposes(pi, [assistant(CONTINUE)]), undefined);
+    assert.deepEqual(capture.chunks, [OSC_NOTIFY], "unarmed settles as ordinary attention");
+  } finally {
+    capture.restore();
+  }
+});
+
+test("PI_MAX_CONTINUATIONS raises the allowance to the configured budget", async () => {
+  const pi = armedWithBudget(4);
+  const capture = captureStdout();
+  try {
+    const { accepted, branch } = await settleRounds(pi, [], { rounds: 4 });
+    assert.equal(accepted, 4, "the configured budget, not the default, was granted");
+    assert.deepEqual(capture.chunks, [], "an unspent configured budget does not notify");
+    const fifth = await handlerFor(pi, "agent_before_settle")(
+      boundaryEvent([...branch, assistant(CONTINUE)]),
+      UI,
+    );
+    assert.equal(fifth, undefined);
+    assert.deepEqual(capture.chunks, [OSC_BUDGET_EXHAUSTED], "exhaustion reports the resource stop");
+  } finally {
+    capture.restore();
+  }
+});
+
+test("PI_MAX_CONTINUATIONS=0 disables automatic continuation", async () => {
+  const pi = armedWithBudget(0);
+  const capture = captureStdout();
+  try {
+    assert.equal(await proposes(pi, [assistant(CONTINUE)]), undefined);
+    assert.deepEqual(
+      capture.chunks,
+      [OSC_NOTIFY],
+      "a disabled budget is a configuration, not an exhausted one",
+    );
+  } finally {
+    capture.restore();
+  }
+});
+
+test("resolveMaxContinuations parses, bounds, and rejects invalid values", () => {
+  assert.equal(resolveMaxContinuations(undefined), DEFAULT_MAX_CONTINUATIONS, "unset uses the default");
+  assert.equal(resolveMaxContinuations("  "), DEFAULT_MAX_CONTINUATIONS, "blank uses the default");
+  assert.equal(resolveMaxContinuations("0"), 0, "zero is a valid explicit value");
+  assert.equal(resolveMaxContinuations("4"), 4);
+  assert.equal(resolveMaxContinuations("64"), HARD_MAX_CONTINUATIONS, "the ceiling is accepted");
+
+  const warned = [];
+  const warn = (message) => warned.push(message);
+  assert.equal(resolveMaxContinuations("2abc", warn), DEFAULT_MAX_CONTINUATIONS, "no parseInt");
+  assert.equal(resolveMaxContinuations("-1", warn), DEFAULT_MAX_CONTINUATIONS);
+  assert.equal(resolveMaxContinuations("1.5", warn), DEFAULT_MAX_CONTINUATIONS);
+  assert.equal(resolveMaxContinuations("65", warn), DEFAULT_MAX_CONTINUATIONS, "above the ceiling");
+  assert.equal(warned.length, 4, "every invalid value warned exactly once");
+});
+
+test("the budget is resolved once per registration and cannot be raised later", async () => {
+  const env = { PI_MAX_CONTINUATIONS: "2" };
+  const pi = makePi();
+  mod.registerSessionSupervisor(pi, env);
+  handshake(pi);
+  const capture = captureStdout();
+  try {
+    // Mutating the environment after registration must not re-arm the ledger.
+    env.PI_MAX_CONTINUATIONS = "64";
+    const { accepted, branch } = await settleRounds(pi, [], { rounds: 3 });
+    assert.equal(accepted, 2, "the registered budget still governs");
+    const third = await handlerFor(pi, "agent_before_settle")(
+      boundaryEvent([...branch, assistant(CONTINUE)]),
+      UI,
+    );
+    assert.equal(third, undefined);
+    assert.deepEqual(capture.chunks, [OSC_BUDGET_EXHAUSTED]);
+  } finally {
+    capture.restore();
+  }
+});
+
+test("revoking an UNSPENT allowance reports attention, not budget exhaustion", async () => {
+  // Regression: `resetForInput` and `handleBeforeAgentStart` zero the slots
+  // without consuming them. Revoking a never-spent allowance must not later be
+  // reported as an exhausted one, or steering/new input would make an unattended
+  // session claim a resource limit it never reached.
+  const pi = armedWithBudget(4);
+  const capture = captureStdout();
+  try {
+    // Revoke via steering input WITHOUT spending any reservation.
+    pi.emit(
+      "input",
+      { type: "input", text: "steer", source: "interactive", streamingBehavior: "steer" },
+      tuiCtx(),
+    );
+    const result = await handlerFor(pi, "agent_before_settle")(
+      boundaryEvent([assistant(CONTINUE)]),
+      UI,
+    );
+    assert.equal(result, undefined, "a revoked allowance cannot propose");
+    assert.deepEqual(
+      capture.chunks,
+      [OSC_NOTIFY],
+      "an unspent revoked allowance is ordinary attention, never exhaustion",
+    );
+  } finally {
+    capture.restore();
+  }
+});
+
+test("a replacement handshake does not inherit the previous request's exhaustion", async () => {
+  // Spend a real budget, then begin a NEW request whose handshake never
+  // completes. The unfinished replacement must not inherit the old flag.
+  const pi = armedWithBudget(1);
+  const capture = captureStdout();
+  try {
+    assert.equal((await proposes(pi, [assistant(CONTINUE)]))?.continue, true, "the one slot is spent");
+    // An incomplete replacement handshake: input arrives, the agent starts, but
+    // no user message is delivered.
+    pi.emit("input", { type: "input", text: "again", source: "interactive" }, tuiCtx());
+    pi.emit("before_agent_start", { type: "before_agent_start", prompt: "again" }, tuiCtx());
+    const result = await handlerFor(pi, "agent_before_settle")(
+      boundaryEvent([assistant(CONTINUE)]),
+      UI,
+    );
+    assert.equal(result, undefined);
+    assert.deepEqual(
+      capture.chunks,
+      [OSC_NOTIFY],
+      "the unfinished replacement reports attention, not the previous exhaustion",
+    );
+  } finally {
+    capture.restore();
+  }
+});
+
+test("a spent budget on an aborted boundary reports attention, not exhaustion", async () => {
+  // `outcome !== \"completed\"` independently prohibits continuation. Reporting a
+  // spent budget there would name the wrong cause.
+  const pi = armedWithBudget(1);
+  const capture = captureStdout();
+  try {
+    assert.equal((await proposes(pi, [assistant(CONTINUE)]))?.continue, true, "the slot is spent");
+    const aborted = await handlerFor(pi, "agent_before_settle")(
+      boundaryEvent([assistant(CONTINUE)], { outcome: "aborted" }),
+      UI,
+    );
+    assert.equal(aborted, undefined, "an aborted boundary never proposes");
+    assert.deepEqual(
+      capture.chunks,
+      [OSC_NOTIFY],
+      "an aborted boundary is attention, not budget exhaustion",
+    );
+  } finally {
+    capture.restore();
+  }
+});
+
+test("a spent budget on an error boundary reports attention, not exhaustion", async () => {
+  const pi = armedWithBudget(1);
+  const capture = captureStdout();
+  try {
+    assert.equal((await proposes(pi, [assistant(CONTINUE)]))?.continue, true, "the slot is spent");
+    const errored = await handlerFor(pi, "agent_before_settle")(
+      boundaryEvent([assistant(CONTINUE)], { outcome: "error" }),
+      UI,
+    );
+    assert.equal(errored, undefined, "an error boundary never proposes");
+    assert.deepEqual(
+      capture.chunks,
+      [OSC_NOTIFY],
+      "an error boundary is attention, not budget exhaustion",
+    );
+  } finally {
+    capture.restore();
+  }
+});
+
+test("a spent budget on a boundary with no entries reports attention, not exhaustion", async () => {
+  // No draft array means the declaration could not have been acted on, so a
+  // resource limit is not the operative cause.
+  const pi = armedWithBudget(1);
+  const capture = captureStdout();
+  try {
+    assert.equal((await proposes(pi, [assistant(CONTINUE)]))?.continue, true, "the slot is spent");
+    const result = await handlerFor(pi, "agent_before_settle")(
+      boundaryEvent([assistant(CONTINUE)], { entries: undefined }),
+      UI,
+    );
+    assert.equal(result, undefined, "a boundary without entries cannot carry a bridge");
+    assert.deepEqual(
+      capture.chunks,
+      [OSC_NOTIFY],
+      "a missing entries array is attention, not budget exhaustion",
+    );
   } finally {
     capture.restore();
   }

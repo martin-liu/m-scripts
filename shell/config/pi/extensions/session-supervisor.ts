@@ -79,7 +79,15 @@ const FENCE_LINE = /^(`{3,}|~{3,})(.*)$/;
 const QUOTED_STATUS_MENTION = /(`|"|\u201c)STATUS:[A-Za-z]+(?:[ \t][^]*?)?(?:\1|\u201d)/gi;
 
 /** OSC 777 notification; the transport the surrounding terminal understands. */
-export const OSC_NOTIFY = "\x1b]777;notify;Pi;Waiting for your input\x07";
+export const OSC_NOTIFY = "\x1b]777;notify;Pi;Session needs attention\x07";
+
+/**
+ * OSC 777 notification for a spent automatic-continuation budget. Distinct from
+ * the generic notice so an unattended run reports a resource-limited stop rather
+ * than implying it is waiting on a human answer.
+ */
+export const OSC_NOTIFY_BUDGET_EXHAUSTED =
+  "\x1b]777;notify;Pi;Automatic continuation budget exhausted - work remains\x07";
 
 /** customType identifying the hidden bridge entry this extension appends. */
 export const BRIDGE_CUSTOM_TYPE = "session-supervisor:auto-continuation";
@@ -88,7 +96,46 @@ export const BRIDGE_CUSTOM_TYPE = "session-supervisor:auto-continuation";
 export const BRIDGE_HEADER = "[session-supervisor:continue]";
 
 /** Consecutive automatic continuations allowed before settling visibly. */
-export const MAX_CONTINUATIONS = 2;
+export const DEFAULT_MAX_CONTINUATIONS = 2;
+
+/**
+ * Upper bound accepted from `PI_MAX_CONTINUATIONS`. The budget is a resource
+ * fuse, not an authorization boundary: it exists to stop an unbounded
+ * self-continuation loop, so it stays finite. This ceiling is deliberately
+ * generous because reservations are charged per settled turn, not per tool call.
+ */
+export const HARD_MAX_CONTINUATIONS = 64;
+
+/**
+ * Resolve the per-launch continuation budget from the environment.
+ *
+ * Unset means `DEFAULT_MAX_CONTINUATIONS`; `0` disables automatic continuation.
+ * Only exact decimal integers inside `0..HARD_MAX_CONTINUATIONS` are accepted -
+ * permissive parsing (`parseInt`) would silently accept `"2abc"`, so it is not
+ * used. An invalid value falls back to the default and warns once, because
+ * silently granting either 0 or 64 would be a worse failure than the default.
+ */
+export function resolveMaxContinuations(
+  raw: string | undefined,
+  warn: (message: string) => void = () => {},
+): number {
+  if (raw === undefined || raw.trim() === "") return DEFAULT_MAX_CONTINUATIONS;
+  const trimmed = raw.trim();
+  if (!/^\d+$/.test(trimmed)) {
+    warn(
+      `PI_MAX_CONTINUATIONS=${JSON.stringify(raw)} is not a plain integer; using ${DEFAULT_MAX_CONTINUATIONS}`,
+    );
+    return DEFAULT_MAX_CONTINUATIONS;
+  }
+  const value = Number(trimmed);
+  if (value > HARD_MAX_CONTINUATIONS) {
+    warn(
+      `PI_MAX_CONTINUATIONS=${trimmed} exceeds the maximum ${HARD_MAX_CONTINUATIONS}; using ${DEFAULT_MAX_CONTINUATIONS}`,
+    );
+    return DEFAULT_MAX_CONTINUATIONS;
+  }
+  return value;
+}
 
 /** Minimal shape of the handler context Pi passes as the second argument. */
 export interface SupervisorContext {
@@ -620,9 +667,19 @@ export function buildBridgeEntry(marker: DeclaredMarker): {
  */
 export function registerSessionSupervisor(
   api: SupervisorApi,
-  env: { ZELLIJ_PANE_ID?: string } = process.env,
+  env: { ZELLIJ_PANE_ID?: string; PI_MAX_CONTINUATIONS?: string } = process.env,
 ): void {
   let notified = false;
+
+  // Resolved ONCE per registration. Re-reading the environment later could let a
+  // value change mid-session raise the allowance, which would defeat the ledger.
+  const maxContinuations = resolveMaxContinuations(env.PI_MAX_CONTINUATIONS, (message) => {
+    try {
+      console.warn(`[session-supervisor] ${message}`);
+    } catch {
+      // best-effort only
+    }
+  });
 
   // --- Continuation budget -------------------------------------------------
   // A LOCAL reservation ledger:
@@ -638,6 +695,10 @@ export function registerSessionSupervisor(
   // emits - least of all a marker - can refill the ledger.
   let slots = 0;
   let phase: RequestPhase = "none";
+  // Tracks whether allowance was ever genuinely granted for the current request,
+  // so "spent budget" can be told apart from an unarmed reload/resume/fork. Only
+  // a genuinely established budget earns the resource-exhaustion notice.
+  let budgetEstablished = false;
 
   /** True only when the host reports an idle agent; unknown means not idle. */
   const isIdle = (ctx: SupervisorContext): boolean => {
@@ -658,15 +719,16 @@ export function registerSessionSupervisor(
   const disarm = () => {
     slots = 0;
     phase = "none";
+    budgetEstablished = false;
   };
 
   /** Emit the OSC notification, then flag the pane when a pane id is known. */
-  const notify = (event: unknown) => {
+  const notify = (event: unknown, why: "attention" | "budget-exhausted" = "attention") => {
     if (notified) return;
     notified = true;
 
     try {
-      process.stdout.write(OSC_NOTIFY);
+      process.stdout.write(why === "budget-exhausted" ? OSC_NOTIFY_BUDGET_EXHAUSTED : OSC_NOTIFY);
     } catch {
       // best-effort only
     }
@@ -712,10 +774,27 @@ export function registerSessionSupervisor(
     // already owns the resume, so there is nothing to continue and nobody to
     // notify.
     if (status === "wait") return;
+    // A declaration this extension cannot act on is a resource-limited stop only
+    // when the allowance is the reason it cannot act. Four conditions qualify:
+    // the marker asked to continue, a budget was actually established for this
+    // request, no slot remains, the boundary is otherwise proposable - an
+    // aborted or error boundary already prohibits continuation for its own
+    // reason, and a missing entries array cannot carry the bridge, so naming the
+    // budget in those cases would report the wrong cause - and no other handler
+    // already owns the continuation. Ownership is part of the predicate here
+    // because `canPropose` is false once the allowance is spent, so an owned
+    // continuation arrives through this branch, not the ownership branch below.
+    const exhaustionCandidate =
+      status === "continue" &&
+      budgetEstablished &&
+      slots <= 0 &&
+      boundary.outcome === "completed" &&
+      Array.isArray(boundary.entries) &&
+      boundary.continue !== true;
     if (marker === null || status !== "continue" || !canPropose(boundary)) {
       // Everything else - including an absent or malformed marker - tells the
       // user. "Notify when not sure."
-      notify(event);
+      notify(event, exhaustionCandidate ? "budget-exhausted" : "attention");
       return;
     }
     // Respect a continuation another handler already requested rather than
@@ -796,6 +875,9 @@ export function registerSessionSupervisor(
     // consume the input and before queued input is delivered, so it does not
     // establish that a request was delivered. Revoke and start the handshake.
     slots = 0;
+    // Revoking allowance also revokes the *establishment* fact: this request no
+    // longer has a budget, so it must not later be reported as exhausted.
+    budgetEstablished = false;
     const source = (event as { source?: unknown } | null)?.source;
     const genuine = source === "interactive" || source === "rpc";
     const steering = (event as { streamingBehavior?: unknown } | null)?.streamingBehavior !== undefined;
@@ -804,6 +886,9 @@ export function registerSessionSupervisor(
 
   const handleBeforeAgentStart = (event: unknown, ctx: SupervisorContext) => {
     slots = 0;
+    // A replacement start inherits no prior establishment; the flag is set only
+    // again by a fresh handshake that actually grants an allowance.
+    budgetEstablished = false;
     phase = phase === "submitted" && isIdle(ctx) ? "starting" : "blocked";
     return undefined;
   };
@@ -815,7 +900,8 @@ export function registerSessionSupervisor(
     // Our own bridge is a `custom_message` (role `custom`), so it can never
     // re-arm the cap through this path.
     const fresh = phase === "starting";
-    slots = fresh ? MAX_CONTINUATIONS : 0;
+    slots = fresh ? maxContinuations : 0;
+    budgetEstablished = fresh && maxContinuations > 0;
     phase = fresh ? "none" : "blocked";
   };
 
