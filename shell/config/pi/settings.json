@@ -17,7 +17,10 @@
   },
   "theme": "dracula",
   "compaction": {
-    "reserveTokens": 10000
+    "enabled": true,
+    "reserveTokens": 64000,
+    "keepRecentTokens": 40000
   },
-  "lastChangelogVersion": "1.0.0"
+  "lastChangelogVersion": "1.0.2",
+  "hideThinkingBlock": true
 }
