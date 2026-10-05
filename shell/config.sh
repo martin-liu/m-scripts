@@ -13,6 +13,13 @@ _M_CONFIG_LINKS=(
     "$DIR/shell/config/opencode-agents|$HOME/.config/opencode/agents"
     "$DIR/shell/config/opencode-cli.json|$HOME/.config/opencode/cli.json"
     "$DIR/shell/config/opencode-zellij-attention|$HOME/.config/opencode/plugins/zellij-attention"
+    "$DIR/shell/config/pi/settings.json|$HOME/.pi/agent/settings.json"
+    "$DIR/shell/config/pi/models.json|$HOME/.pi/agent/models.json"
+    "$DIR/shell/config/pi/themes/dracula.json|$HOME/.pi/agent/themes/dracula.json"
+    "$DIR/shell/config/pi/extensions|$HOME/.pi/agent/extensions"
+    "$DIR/shell/config/pi/APPEND_SYSTEM.md|$HOME/.pi/agent/APPEND_SYSTEM.md"
+    "$DIR/shell/config/pi/agents|$HOME/.pi/agent/agents"
+    "$DIR/shell/config/pi/pi-fff.json|$HOME/.pi/agent/pi-fff.json"
     "$DIR/shell/config/claude-settings.json|$HOME/.claude/settings.json"
     "$DIR/shell/config/claude-attention.sh|$HOME/.claude/claude-attention.sh"
     "$DIR/shell/config/agent-guidelines.md|$HOME/.config/agents/AGENTS.md"
@@ -51,7 +58,6 @@ _m_config_cleanup_legacy_links() {
     local old_omo="oh-my-""opencode-slim"
     local old_attention="opencode-""zellij-attention.js"
     local legacy_links=(
-        "$legacy_config/opencode.json|$repo_config/opencode.json"
         "$legacy_config/plugins/zellij-attention.js|$repo_config/$old_attention"
         "$legacy_config/$old_omo.json|$repo_config/$old_omo.json"
         "$legacy_config/$old_omo|$repo_config/$old_omo"
@@ -59,6 +65,7 @@ _m_config_cleanup_legacy_links() {
         "$legacy_v2/agents|$repo_config/opencode2-agents"
         "$legacy_v2/cli.json|$repo_config/opencode2-cli.json"
         "$legacy_v2/plugins/zellij-attention|$repo_config/opencode2-zellij-attention"
+        "$HOME/.pi/themes/dracula.json|$repo_config/pi/themes/dracula.json"
     )
     for pair in "${legacy_links[@]}"; do
         target="${pair%%|*}"

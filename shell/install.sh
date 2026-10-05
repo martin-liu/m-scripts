@@ -86,10 +86,19 @@ git clone --quiet --depth=1 https://github.com/zsh-users/zsh-completions ~/.zsh-
 echo "Installing/updating opencode..."
 pnpm add -g --allow-build=@opencode/cli @opencode/cli
 
+echo "Installing/updating Pi coding agent (upstream, not OMP)..."
+pnpm add -g --ignore-scripts @earendil-works/pi-coding-agent
+
 echo "Installing/updating Claude Code..."
 npm install -g @anthropic-ai/claude-code@latest
 
+echo "Installing/updating ACP adapters (claude-agent-acp, pi-acp)..."
+pnpm add -g @agentclientprotocol/claude-agent-acp pi-acp
+
 # OpenCode uses the native agents and plugins synced by config.sh on shell load.
+# Pi uses the settings, models, agents, and APPEND_SYSTEM.md synced by config.sh.
+# Pi packages are declared in the managed ~/.pi/agent/settings.json and
+# reconciled by Pi itself, not by this script.
 
 if [[ "$LITE_MODE" == true ]]; then
     echo "Lite install complete"

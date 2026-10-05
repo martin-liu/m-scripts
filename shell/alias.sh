@@ -83,4 +83,4 @@ fi
 # AI
 alias claude='claude --model opusplan'
 # Upgrade all tools
-alias upgrade='~/.emacs.d/bin/doom upgrade --force && ~/.emacs.d/bin/doom sync; brew upgrade --no-ask; rustup update --force; pnpm install -g @agentclientprotocol/claude-agent-acp; claude upgrade; pnpm add -g --allow-build=@opencode/cli @opencode/cli && opencode service restart'
+alias upgrade='~/.emacs.d/bin/doom upgrade --force && ~/.emacs.d/bin/doom sync; brew upgrade --no-ask; rustup update --force; pnpm install -g @agentclientprotocol/claude-agent-acp pi-acp; claude upgrade; pnpm add -g --allow-build=@opencode/cli @opencode/cli && opencode service restart && pi update --all --no-approve'

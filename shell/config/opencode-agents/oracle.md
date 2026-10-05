@@ -1,7 +1,7 @@
 ---
 description: Strategic technical advisor and read-only code reviewer.
 mode: subagent
-model: litellm/gpt-5.6-sol#max
+model: litellm/gpt-6.1-sol#max
 permissions:
   - action: "*"
     resource: "*"
