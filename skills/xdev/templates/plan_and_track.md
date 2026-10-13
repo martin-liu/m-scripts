@@ -16,28 +16,17 @@ Use the exact fields in this template.
   `skills/xdev/templates/sprint_block.md` before creating each sprint block
 
 ## Task Ledger
-One row per authorized task dispatch; keep one active generation per immutable
-lane. Logical task/candidate/todo creation is the semantic binding at revision
-N, as part of the authorized pre-dispatch transition; do not create speculative
-rows. Dispatching the task, setting its runtime transport ID, and updating
-running/pending transport status are revision-neutral bookkeeping unless they
-change scope, acceptance, integration, or the closure premise.
-
-Each task row also records its authoritative terminal result/evidence reference
-and replacement reason when applicable.
+Apply `skills/xdev/SKILL.md` sections **Durable task ledger and outcomes**
+and **Durable revisions, snapshots, and recovery**. The table below records
+the authoritative task identities, transport state, integration, and evidence.
 
 | Logical Task ID | Role / lane | Runtime ID (transport) | Generation | Scope | Status | Supersedes | Integration | Durable terminal result/evidence (class + reference) | Replacement reason |
 |---|---|---|---:|---|---|---|---|---|---|---|
 
 ## Authoritative Todo List
-This is the one authoritative checkbox list.
-The Orchestrator is the sole writer. IDs are stable and never reused. Unchecked
-means outstanding; check only after reconciliation, integration, and durable
-evidence are recorded with a state revision and authoritative reference. Never
-silently delete or reopen an item; replacement/follow-up work gets a new ID and
-lineage. Todo entries point to the task ledger, sprint contracts, and
-evidence/Review records without duplicating them. Bootstrap has no todo rows
-until authorized work exists; do not add a placeholder row.
+Apply `skills/xdev/SKILL.md` sections **Bootstrap, resume, and state authority**
+and **Parent-objective closure**. Use the row schema below.
+Bootstrap contains no todo rows until authorized work exists; add no placeholder.
 
 Todo row schema (append only when real work exists): `- [ ] TODO-{stable ID} — ...`;
 the checked form is `- [x]`. Each row records **type:** implementation /
@@ -45,12 +34,6 @@ correction / integration / required-validation / Review-action /
 closure-assessment; **owner:** {role}; **scope/reference:** {bounded action and
 authoritative record}; **evidence:** pending (durable class + reference);
 **discharge revision/reference:** pending; **lineage:** —
-
-Reconcile this list on resume, before dispatch, after integrated results, before
-Review-readiness, and before a closure candidate. Fixer and Oracle may propose
-todo changes in reports but never edit checkboxes. The closure-assessment item
-may remain unchecked at candidate revision N and is atomically checked with the
-bound result, assessment, and decision at revision N+1.
 
 ## State
 - **State revision:** {monotonic revision; every durable semantic write increments once}

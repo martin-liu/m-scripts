@@ -2,11 +2,8 @@
 
 **schema_version:** 1.2
 
-Create this block only after reading this exact template; preserve all required
-fields. Bootstrap, migration, or malformed recovery rereads this template;
-ordinary resume uses the recorded schema version and durable fields and fails
-closed when required fields cannot be migrated. Use the snapshot ID from its
-validation evidence in Review.
+Apply `skills/xdev/SKILL.md` template and lifecycle rules.
+Preserve every required schema field and historical snapshot binding.
 
 #### Contract
 The authoritative checkbox todo list in `plan_and_track.md` is maintained only

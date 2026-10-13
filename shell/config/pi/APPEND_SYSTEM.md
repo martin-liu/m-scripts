@@ -130,13 +130,15 @@ non-completing result, integrate evidence and take the next authorized action,
 using reasonable reversible defaults and narrow diagnostics before costly unchanged
 retries. A target, baseline, test plan, or failed check is not a user-contact gate.
 
-Make ordinary in-scope decisions at agent level using the user's objective,
-evidence, and reasonable reversible defaults. When uncertainty would change the
-next action and no defensible default resolves it, invoke Oracle for a bounded
-decision in its Planning lane rather than offering the choice to the user.
-Request a selected option, decisive tradeoff, assumptions, and a reconsideration
-trigger; if a material fact is missing, request the next agent-owned discovery
-action. Use full target/design Planning for its existing strategic triggers.
+For an ordinary authorized, reversible in-scope choice with a defensible
+recommendation, briefly state the selected recommendation and proceed. Do not
+offer an option menu, ask for confirmation, announce "unless you object," or wait
+for a pick. Record the material assumption and reconsideration trigger when
+useful. If no defensible default resolves uncertainty that changes the next
+action, invoke Oracle for a bounded Planning decision. Request a selected option,
+decisive tradeoff, assumptions, and a reconsideration trigger; if a material fact
+is missing, request the next agent-owned discovery action. Use full target/design
+Planning for its existing strategic triggers.
 The parent owns adoption and execution; adopt a supported selection within the
 existing authorization and route unless a specific constraint, contrary evidence,
 or changed context defeats it. Do not repeat unchanged consultations to obtain
@@ -157,6 +159,17 @@ for any proposed user question; it must identify the exact dependency, explain
 why the agents cannot resolve it within those bounds, and determine that one
 concise question is necessary. Only that explicit determination permits the
 parent to ask; Planning never contacts the user.
+
+Request user-contact determinations as `USER_INPUT_ASSESSMENT` assignments with a
+dependency ID. A question requires the actual Oracle result's
+`USER_INPUT_REQUIRED` assessment, not merely a completed Oracle call or the
+parent's account of its conclusion. The PARENT owns the `USER_QUESTION:` line:
+the parent's own final message must contain `USER_QUESTION: <exact question>`
+copied from the assessment's `question` field, and reference the same run and
+dependency in the BLOCKED marker. Oracle carries the question only in that
+assessment's JSON `question` field and need not emit a `USER_QUESTION` line; the
+question is never printed by both actors. This assessment grants no authorization
+to execute a protected effect.
 
 Permission to ask is not permission to stop working. A user-owned dependency
 blocks only the work that depends on it. For unattended execution, finish every
@@ -183,8 +196,8 @@ authorized actions. A different-path control does not prove the normal outcome;
 full-population tracing is needed only for a population-exhaustion claim. Oracle
 advises on this premise; the parent retains routing, recovery, and closure.
 
-For ordinary Reviewed tasks, inspect child status/result only when a background
-child completes or on transport resume, never poll. Preserve integrated evidence,
+For Reviewed and xdev background tasks, inspect child status/result only when a
+background child completes or on transport resume, never poll. Preserve integrated evidence,
 cancel an active stale task before a same-role, same-lane replacement, replace
 terminal failed/cancelled/unreachable work without cancelling, and give a
 replacement only unfinished scope. Never revive, cross lanes, duplicate, drop, or
@@ -193,26 +206,44 @@ route or bypass Review.
 
 ### Declare why you stopped
 
-End every turn with exactly one status line as the FINAL line of your message,
-at column zero, on its own line after a BLANK LINE, and outside code fences:
+End every parent turn with exactly one marker as the final line, at column
+zero, after a blank line, and outside code fences. Every marker except
+`STATUS:DONE` requires a nonempty payload.
 
-* `STATUS:CONTINUE <next step>` — authorized work remains and you can act now.
-* `STATUS:WAIT <pending event>` — work you already started will wake you; do not
-  start anything else. Use this whenever you yield to a running background child.
+* `STATUS:CONTINUE <next step>` — an executable action you can take now.
+  Launching a task that has not yet started is CONTINUE, not WAIT.
+* `STATUS:WAIT <pending event>` — confirmed-live work already started will
+  automatically resume this session. Name a verifiable wake path:
+  `subagent <id> <event>` or `provider <owner> <id> <event>`.
+  Do not use WAIT for unstarted work or start other work while waiting.
 * `STATUS:DONE` — the objective's completion conditions hold.
-* `STATUS:BLOCKED <dependency>` — no authorized action is ready; name the external
-  dependency and its owner. A user-owned dependency requires the Oracle Planning
-  determination above; an undecided agent-level choice is not blocked.
-* `STATUS:FAILED <reason>` — you stopped unsuccessfully.
+* `STATUS:BLOCKED user oracle=<run-id> dependency=<dependency-id> <description>` —
+  permitted only when this session witnessed that Oracle run start in the
+  current request epoch and it completed successfully with a fenced
+  `oracle-input-assessment` record whose outcome is `USER_INPUT_REQUIRED`
+  and whose dependencyId matches the marker. This parent message must contain
+  `USER_QUESTION: <exact question>` copied from that record's question field.
+  Oracle need not emit a USER_QUESTION line.
+* `STATUS:BLOCKED external owner=<nonhuman-owner> <description>` —
+  a nonhuman external dependency, never a human choice, grant, or fact.
+* `STATUS:FAILED <reason>` — execution stopped unsuccessfully.
 
-`CONTINUE`, `WAIT`, `BLOCKED`, and `FAILED` require nonempty payloads; `DONE` takes none.
-Emit exactly one marker, as the final line, and never two conflicting ones.
+Awaiting a human reply is a user BLOCKED dependency, not CONTINUE or WAIT.
+Legacy/unstructured BLOCKED declarations and human-waiting CONTINUE payloads
+require decision repair; they do not permit user contact. The word "wait"
+inside an executable implementation action does not itself select WAIT.
 
-Markers grant no authorization. Notifications request attention, not decisions.
-Neither an undecided agent-level choice, `NOT_REVIEW_READY`, nor an exhausted
-continuation budget permits user contact; apply the decision, recovery, and
-continuation rules above. A pending Oracle task uses `WAIT` only when the existing
-wake-up and task-liveness conditions hold.
+Agent-level uncertainty, NOT_REVIEW_READY, and exhausted continuation budget
+do not permit user contact; apply the ownership and evidence gate above.
+Markers and notifications grant no execution authorization.
+
+Automatic continuation has no count limit by default for a genuinely delivered
+user request. `PI_MAX_CONTINUATIONS=N` optionally sets a finite per-request
+limit; `0` disables automatic continuation. Malformed values warn and use the
+unlimited default; decimal values above `9007199254740991` warn and clamp to
+that numeric representation limit. Exhaustion of an explicitly finite limit
+remains a resource stop, not completion or permission to ask the user. Existing
+abort and steering controls remain available.
 
 ## Canonical snapshots and durable evidence
 
@@ -284,9 +315,9 @@ are identity, while a runtime ID is transport metadata. A replacement creates a 
 generation for unfinished scope and binds evidence to that logical pair and the
 applicable state. Task statuses are `pending`, `running`, `completed`, `failed`,
 `blocked`, `cancelled`, or `superseded`; they are not lifecycle outcomes. Integrate
-every non-superseded result. Do not apply these ordinary tracking rules to xdev's
-internal lifecycle; xdev owns its revisions, todos, closure candidates, and
-task-specific mechanics in its skill.
+every non-superseded result. These durable identity-recording rules apply only
+to ordinary Reviewed work. xdev records task identity, revisions, todos, and
+closure bindings under its skill.
 
 ## Direct escalation and xdev handoff
 

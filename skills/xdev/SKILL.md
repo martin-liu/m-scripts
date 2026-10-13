@@ -51,8 +51,8 @@ reconstruction of the durable record. Repair missing or malformed state only
 from the record and authoritative task reports/evidence, under the global
 reconciliation rules.
 
-`plan_and_track.md` contains one authoritative checkbox todo list because
-OpenCode has no todo tools. The Orchestrator is its sole writer. Todo IDs are
+`plan_and_track.md` contains one authoritative checkbox todo list. The
+Orchestrator is its sole writer. Todo IDs are
 stable and never reused: unchecked means outstanding, and an item may be
 checked only after reconciliation, integration, and required evidence are
 recorded with a state revision and authoritative reference. Never silently
@@ -76,10 +76,8 @@ binding at revision N, one transition from prior revision R to N=R+1, before
 dispatch. Dispatching that task, setting its runtime transport ID, and updating
 running/pending transport status are revision-neutral bookkeeping unless they
 change scope, acceptance, integration, or the closure premise. Closure binding
-uses the logical task/generation pair and revision, not runtime identity. The
-bound closure task result, assessment, and decision remain one atomic
-transition from N to N+1; any substantive premise change invalidates them and
-requires a new binding.
+uses the logical task/generation pair and revision, not runtime identity.
+Atomic closure integration follows **Parent-objective closure**.
 Purely typographic or formatting-only edits do not change revision unless they
 alter authoritative content. Record the revision with every validation and
 Review evidence.
@@ -108,11 +106,9 @@ Each entry records logical task ID, role/lane, runtime transport ID, generation,
 exact scope, status,
 supersedes/replacement lineage, integration state, authoritative terminal
 result/evidence reference, and replacement reason where applicable. Planning and Review are
-immutable, distinct lanes with one active generation per lane. Invoke rather
-than redefine the Orchestrator's global transport and replacement protocol:
-retire a prior generation while preserving valid evidence, create a fresh
-generation for unfinished scope only, and never integrate superseded results,
-cross lanes, duplicate work, or drop work.
+immutable, distinct lanes with one active generation per lane. Apply the
+Orchestrator's shared background-task transport/replacement rules; xdev identity
+and semantic state writes remain governed by this skill.
 
 The lifecycle state records one singular **Outcome**: `active`, `delivered`, or
 `conclusively blocked`. Each sprint and task has a separate **Status** using only
@@ -203,13 +199,14 @@ authoritative assessment reference. It has one of these advisory conclusions:
 `CONTINUE_REQUIRED`, `USER_INPUT_REQUIRED`, or `TERMINAL_PREMISE_SUPPORTED`.
 Missing, malformed, stale, or unavailable assessment evidence leaves Outcome
 `active`; only a substantive event that changes the closure premise invalidates
-the candidate and assessment. The bound task's terminal result is explicitly
-exempt because it is integrated atomically with the assessment and decision.
+the candidate and assessment.
 `awaiting_user` is an execution disposition, not an Outcome. `USER_INPUT_REQUIRED`
-must state the exact user-owned decision or action, why available evidence
-cannot decide it, and the exact concise question authorized for the Orchestrator;
-Oracle defines this as Planning-lane semantic advice and never contacts the
-user.
+keeps Outcome `active` and identifies a proposed user
+question; it does not itself permit user contact. Before asking, satisfy the
+Orchestrator's `USER_INPUT_ASSESSMENT` evidence gate. The same Oracle Planning
+task may supply both distinct records only when explicitly assigned
+`USER_INPUT_ASSESSMENT` with a dependency ID; otherwise obtain that bounded
+assessment separately.
 
 When the closure-assessment route applies, the candidate and Oracle logical task ID+generation are created at state revision
 N before dispatch. Oracle assesses that exact candidate at N. The Orchestrator

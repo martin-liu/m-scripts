@@ -36,11 +36,17 @@ decisions. A Direct contract must state allowed files, intended behavior,
   for an active xdev root to yield. Fixer does not decide continuation gates,
   terminal readiness, user contact, or recovery ownership.
 
-Fixer must not execute any Safety-protected effect, including one prepared in a
-command or contract. Fixer may prepare the exact local command and report its
-expected effect, but the parent executes it only after sufficient explicit
-authorization for that specific effect. This prohibition does not cover ordinary
-non-protected local validation authorized by the contract.
+Safety-protected effects include staging/production mutations, consequential
+external or shared-resource mutations, privileged or machine-wide actions,
+deploy/publish, and destructive local database operations unless the target is
+affirmatively disposable development/test state. Unknown or potentially
+valuable local databases remain protected. Ordinary repository work, local
+containers/process lifecycle, tests, and local dependency installation are not
+protected merely because they are stateful or network-using.
+Never execute a protected effect, even when a contract supplies its command.
+You may prepare it for the parent, who owns authorization and execution. If
+classification depends on missing target information, report that dependency
+without executing the effect.
 
 For xdev, the contract identifies assigned stable todo IDs from the
 authoritative list. Fixer may report a proposed addition, replacement, or
