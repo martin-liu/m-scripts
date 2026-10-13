@@ -1,0 +1,323 @@
+{
+  "real-0": {
+    "channel": "subagents:rpc:v1:reply:real-0",
+    "event": {
+      "version": 1,
+      "requestId": "real-0",
+      "method": "status",
+      "success": true,
+      "data": {
+        "text": "Run: run-active\nState: running\nMode: undefined\nProgress: steps 1\nStarted: 2023-11-14T22:13:20.000Z\nUpdated: n/a\nDir: /tmp/r7-4-real-async/run-active\nSteer running child: subagent({ action: \"steer\", id: \"run-active\", message: \"...\" })",
+        "details": {
+          "mode": "single",
+          "results": []
+        },
+        "fleet": {
+          "version": 1,
+          "entries": [],
+          "totalActive": 0,
+          "topLevelAsyncCapacity": {
+            "used": 0,
+            "limit": 0
+          },
+          "omitted": 0
+        },
+        "asyncSnapshot": {
+          "kind": "pi-subagents.async-status-snapshot",
+          "version": 1,
+          "generatedAt": 1791691374357,
+          "caps": {
+            "maxRuns": 20,
+            "maxChildrenPerNode": 8,
+            "maxDepth": 3,
+            "maxStringLength": 160,
+            "maxSerializedBytes": 32768
+          },
+          "omitted": {
+            "runs": 0,
+            "children": 0,
+            "byteLimitExceeded": false
+          },
+          "runs": []
+        }
+      }
+    }
+  },
+  "real-1": {
+    "channel": "subagents:rpc:v1:reply:real-1",
+    "event": {
+      "version": 1,
+      "requestId": "real-1",
+      "method": "status",
+      "success": true,
+      "data": {
+        "text": "Run: run-queued\nState: queued\nMode: undefined\nProgress: steps 1\nStarted: 2023-11-14T22:13:20.000Z\nUpdated: n/a\nDir: /tmp/r7-4-real-async/run-queued\nResume: unavailable; no child session file was persisted.",
+        "details": {
+          "mode": "single",
+          "results": []
+        },
+        "fleet": {
+          "version": 1,
+          "entries": [],
+          "totalActive": 0,
+          "topLevelAsyncCapacity": {
+            "used": 0,
+            "limit": 0
+          },
+          "omitted": 0
+        },
+        "asyncSnapshot": {
+          "kind": "pi-subagents.async-status-snapshot",
+          "version": 1,
+          "generatedAt": 1791691374357,
+          "caps": {
+            "maxRuns": 20,
+            "maxChildrenPerNode": 8,
+            "maxDepth": 3,
+            "maxStringLength": 160,
+            "maxSerializedBytes": 32768
+          },
+          "omitted": {
+            "runs": 0,
+            "children": 0,
+            "byteLimitExceeded": false
+          },
+          "runs": []
+        }
+      }
+    }
+  },
+  "real-2": {
+    "channel": "subagents:rpc:v1:reply:real-2",
+    "event": {
+      "version": 1,
+      "requestId": "real-2",
+      "method": "status",
+      "success": true,
+      "data": {
+        "text": "Run: run-paused\nState: paused\nMode: undefined\nProgress: steps 1\nStarted: 2023-11-14T22:13:20.000Z\nUpdated: n/a\nDir: /tmp/r7-4-real-async/run-paused\nResume: unavailable; no child session file was persisted.",
+        "details": {
+          "mode": "single",
+          "results": []
+        },
+        "fleet": {
+          "version": 1,
+          "entries": [],
+          "totalActive": 0,
+          "topLevelAsyncCapacity": {
+            "used": 0,
+            "limit": 0
+          },
+          "omitted": 0
+        },
+        "asyncSnapshot": {
+          "kind": "pi-subagents.async-status-snapshot",
+          "version": 1,
+          "generatedAt": 1791691374357,
+          "caps": {
+            "maxRuns": 20,
+            "maxChildrenPerNode": 8,
+            "maxDepth": 3,
+            "maxStringLength": 160,
+            "maxSerializedBytes": 32768
+          },
+          "omitted": {
+            "runs": 0,
+            "children": 0,
+            "byteLimitExceeded": false
+          },
+          "runs": []
+        }
+      }
+    }
+  },
+  "real-3": {
+    "channel": "subagents:rpc:v1:reply:real-3",
+    "event": {
+      "version": 1,
+      "requestId": "real-3",
+      "method": "status",
+      "success": true,
+      "data": {
+        "text": "Run: run-complete\nState: complete\nMode: undefined\nProgress: steps 1\nStarted: 2023-11-14T22:13:20.000Z\nUpdated: n/a\nDir: /tmp/r7-4-real-async/run-complete\nResume: unavailable; no child session file was persisted.",
+        "details": {
+          "mode": "single",
+          "results": []
+        },
+        "fleet": {
+          "version": 1,
+          "entries": [],
+          "totalActive": 0,
+          "topLevelAsyncCapacity": {
+            "used": 0,
+            "limit": 0
+          },
+          "omitted": 0
+        },
+        "asyncSnapshot": {
+          "kind": "pi-subagents.async-status-snapshot",
+          "version": 1,
+          "generatedAt": 1791691374357,
+          "caps": {
+            "maxRuns": 20,
+            "maxChildrenPerNode": 8,
+            "maxDepth": 3,
+            "maxStringLength": 160,
+            "maxSerializedBytes": 32768
+          },
+          "omitted": {
+            "runs": 0,
+            "children": 0,
+            "byteLimitExceeded": false
+          },
+          "runs": []
+        }
+      }
+    }
+  },
+  "real-4": {
+    "channel": "subagents:rpc:v1:reply:real-4",
+    "event": {
+      "version": 1,
+      "requestId": "real-4",
+      "method": "status",
+      "success": true,
+      "data": {
+        "text": "Run: run-failed\nState: failed\nMode: undefined\nProgress: steps 1\nStarted: 2023-11-14T22:13:20.000Z\nUpdated: n/a\nDir: /tmp/r7-4-real-async/run-failed\nResume: unavailable; no child session file was persisted.",
+        "details": {
+          "mode": "single",
+          "results": []
+        },
+        "fleet": {
+          "version": 1,
+          "entries": [],
+          "totalActive": 0,
+          "topLevelAsyncCapacity": {
+            "used": 0,
+            "limit": 0
+          },
+          "omitted": 0
+        },
+        "asyncSnapshot": {
+          "kind": "pi-subagents.async-status-snapshot",
+          "version": 1,
+          "generatedAt": 1791691374357,
+          "caps": {
+            "maxRuns": 20,
+            "maxChildrenPerNode": 8,
+            "maxDepth": 3,
+            "maxStringLength": 160,
+            "maxSerializedBytes": 32768
+          },
+          "omitted": {
+            "runs": 0,
+            "children": 0,
+            "byteLimitExceeded": false
+          },
+          "runs": []
+        }
+      }
+    }
+  },
+  "real-5": {
+    "channel": "subagents:rpc:v1:reply:real-5",
+    "event": {
+      "version": 1,
+      "requestId": "real-5",
+      "method": "status",
+      "success": true,
+      "data": {
+        "text": "Run: run-stopped\nState: stopped\nMode: undefined\nProgress: steps 1\nStarted: 2023-11-14T22:13:20.000Z\nUpdated: n/a\nDir: /tmp/r7-4-real-async/run-stopped\nResume: unavailable; stopped runs are not resumable. Start a new run instead.",
+        "details": {
+          "mode": "single",
+          "results": []
+        },
+        "fleet": {
+          "version": 1,
+          "entries": [],
+          "totalActive": 0,
+          "topLevelAsyncCapacity": {
+            "used": 0,
+            "limit": 0
+          },
+          "omitted": 0
+        },
+        "asyncSnapshot": {
+          "kind": "pi-subagents.async-status-snapshot",
+          "version": 1,
+          "generatedAt": 1791691374357,
+          "caps": {
+            "maxRuns": 20,
+            "maxChildrenPerNode": 8,
+            "maxDepth": 3,
+            "maxStringLength": 160,
+            "maxSerializedBytes": 32768
+          },
+          "omitted": {
+            "runs": 0,
+            "children": 0,
+            "byteLimitExceeded": false
+          },
+          "runs": []
+        }
+      }
+    }
+  },
+  "real-6": {
+    "channel": "subagents:rpc:v1:reply:real-6",
+    "event": {
+      "version": 1,
+      "requestId": "real-6",
+      "method": "status",
+      "success": false,
+      "error": {
+        "code": "execution_failed",
+        "message": "Async run not found. Provide id or dir."
+      }
+    }
+  },
+  "real-bad": {
+    "channel": "subagents:rpc:v1:reply:real-bad",
+    "event": {
+      "version": 1,
+      "requestId": "real-bad",
+      "method": "status",
+      "success": true,
+      "data": {
+        "text": "No active async runs.",
+        "details": {
+          "mode": "single",
+          "results": []
+        },
+        "fleet": {
+          "version": 1,
+          "entries": [],
+          "totalActive": 0,
+          "topLevelAsyncCapacity": {
+            "used": 0,
+            "limit": 0
+          },
+          "omitted": 0
+        },
+        "asyncSnapshot": {
+          "kind": "pi-subagents.async-status-snapshot",
+          "version": 1,
+          "generatedAt": 1791691374357,
+          "caps": {
+            "maxRuns": 20,
+            "maxChildrenPerNode": 8,
+            "maxDepth": 3,
+            "maxStringLength": 160,
+            "maxSerializedBytes": 32768
+          },
+          "omitted": {
+            "runs": 0,
+            "children": 0,
+            "byteLimitExceeded": false
+          },
+          "runs": []
+        }
+      }
+    }
+  }
+}

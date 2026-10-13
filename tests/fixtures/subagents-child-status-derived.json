@@ -1,0 +1,62 @@
+{
+  "started": {
+    "type": "subagent.child-status",
+    "version": 1,
+    "runId": "root-run-1",
+    "childId": "child-1",
+    "status": "started",
+    "ts": 1000,
+    "source": "async",
+    "asyncDir": "/tmp/pi-subagents/runs/root-run-1",
+    "childRunId": "child-run-1",
+    "agent": "oracle",
+    "stepIndex": 0
+  },
+  "stopping": {
+    "type": "subagent.child-status",
+    "version": 1,
+    "runId": "root-run-1",
+    "childId": "child-1",
+    "status": "stopping",
+    "ts": 1000,
+    "source": "async",
+    "asyncDir": "/tmp/pi-subagents/runs/root-run-1",
+    "childRunId": "child-run-1",
+    "reason": "user",
+    "agent": "oracle"
+  },
+  "stopped": {
+    "type": "subagent.child-status",
+    "version": 1,
+    "runId": "root-run-1",
+    "childId": "child-1",
+    "status": "stopped",
+    "ts": 1000,
+    "source": "async",
+    "asyncDir": "/tmp/pi-subagents/runs/root-run-1",
+    "childRunId": "child-run-1",
+    "agent": "oracle"
+  },
+  "stopped_child": {
+    "type": "subagent.child-status",
+    "version": 1,
+    "runId": "root-run-1",
+    "childId": "child-1",
+    "status": "stopped",
+    "ts": 1000,
+    "source": "async",
+    "asyncDir": "/tmp/pi-subagents/runs/root-run-1",
+    "_note": "A CHILD's stop. childId != runId, so this does NOT terminate the aggregate root (R6-4)."
+  },
+  "stopped_root": {
+    "type": "subagent.child-status",
+    "version": 1,
+    "runId": "root-run-1",
+    "childId": "root-run-1",
+    "status": "stopped",
+    "ts": 1001,
+    "source": "async",
+    "asyncDir": "/tmp/pi-subagents/runs/root-run-1",
+    "_note": "The ROOT's own stop (childId == runId). This DOES retire the root (R6-4)."
+  }
+}

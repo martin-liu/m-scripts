@@ -7,7 +7,7 @@
 // the proposal or the OSC notification it produces.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, chmodSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, chmodSync, appendFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { test } from "node:test";
@@ -103,6 +103,7 @@ const { DEFAULT_MAX_CONTINUATIONS, HARD_MAX_CONTINUATIONS, resolveMaxContinuatio
 const WAIT_VERIFICATION_MS = mod.WAIT_VERIFICATION_MS;
 const WAIT_RECHECK_MS = mod.WAIT_RECHECK_MS;
 const WAIT_BRIDGE_NOT_READY_RETRY_MS = mod.WAIT_BRIDGE_NOT_READY_RETRY_MS;
+const TASK_CONFIRM_RETRY_MS = mod.TASK_CONFIRM_RETRY_MS;
 const MAX_CONTINUATIONS = 2; // Finite fixture for exhaustion tests; not the runtime default.
 
 // ---------------------------------------------------------------------------
@@ -10142,13 +10143,47 @@ function feature3Harness({ sessionId = PARENT_UUID, tasksPath = null, streaming 
   const injected = [];
   const sentOptions = [];
   let compactingNow = compacting;
+  const dir = mkdtempSync(join(tmpdir(), "supervisor-f3-"));
+  const path = tasksPath ?? join(dir, "session-supervisor", "tasks.json");
+  // Oracle OPTION D: the commit point is the PERSISTED TRANSCRIPT, so the harness
+  // models an ACCEPTING host by appending the delivered message to a per-session
+  // session JSONL. `getSessionFile` is deliberately NOT set on the manager
+  // (identity must stay the sid); the direct `sessionFile` is the real host's
+  // fixture fallback and leaves `sessionIdentity` unchanged because
+  // `manager.getSessionId()` still wins.
+  const sessionFiles = new Map();
+  // The session whose transcript a delivered message is persisted to. Updated
+  // every time a context is built for an emitted event, which is exactly when the
+  // live session is (re)established.
+  let lastSid = sessionId ?? PARENT_UUID;
+  const sessionFileFor = (sid) => {
+    const existing = sessionFiles.get(sid);
+    if (existing !== undefined) return existing;
+    const file = join(dir, "sessions", `${sid}.jsonl`);
+    mkdirSync(dirname(file), { recursive: true });
+    sessionFiles.set(sid, file);
+    return file;
+  };
+  /** Append one delivered user message to a session's persisted transcript. */
+  const persistUserMessage = (sid, text) => {
+    const file = sessionFileFor(sid);
+    mkdirSync(dirname(file), { recursive: true });
+    const row = {
+      type: "message",
+      id: `m${++seq}`,
+      message: { role: "user", content: [{ type: "text", text }], timestamp: now },
+    };
+    appendFileSync(file, `${JSON.stringify(row)}\n`);
+  };
   const pi = makePi();
   pi.sendUserMessage = (text, options) => {
     injected.push(text);
     sentOptions.push(options);
+    // An ACCEPTING host persists the message into the LIVE session's transcript;
+    // a refusing host does not persist at all.
+    persistUserMessage(lastSid, text);
     return undefined;
   };
-  const path = tasksPath ?? join(mkdtempSync(join(tmpdir(), "supervisor-f3-")), "session-supervisor", "tasks.json");
   mod.registerSessionSupervisor(pi, {
     tasksPath: path,
     now: () => now,
@@ -10168,12 +10203,16 @@ function feature3Harness({ sessionId = PARENT_UUID, tasksPath = null, streaming 
       if (index >= 0) timers.splice(index, 1);
     },
   });
-  const ctxFor = (sid) => ({
-    ...UI,
-    isIdle: () => !streaming && !compactingNow,
-    sessionId: sid,
-    sessionManager: { getSessionId: () => sid, buildSessionProjection: () => ({ messages: [] }) },
-  });
+  const ctxFor = (sid) => {
+    lastSid = sid;
+    return {
+      ...UI,
+      isIdle: () => !streaming && !compactingNow,
+      sessionId: sid,
+      sessionFile: sessionFileFor(sid),
+      sessionManager: { getSessionId: () => sid, buildSessionProjection: () => ({ messages: [] }) },
+    };
+  };
   // The host exposes ONLY `isIdle()` on the extension surface
   // (`extensions/types.d.ts:236`) and `isCompacting` is an `AgentSession` getter
   // (`agent-session.js:1204`) that is NOT reachable from a plugin, so the product
@@ -10260,8 +10299,12 @@ function feature3Harness({ sessionId = PARENT_UUID, tasksPath = null, streaming 
     store,
     ctxFor,
     path,
+    // The harness clock, so a test can compare a task's schedule against "now".
+    nowValue: () => now,
     tasksNow: () => now,
     timers,
+    persistUserMessage,
+    sessionFileFor,
     isCompactingNow: () => compactingNow,
     emitCompactionStart,
     emitCompactionEnd,
@@ -10271,6 +10314,16 @@ function feature3Harness({ sessionId = PARENT_UUID, tasksPath = null, streaming 
 
 /** The parsed task array currently persisted. */
 const persistedTasks = (h) => h.store().tasks ?? [];
+
+/**
+ * The exact injected text for a task, with its OPAQUE occurrence id matched.
+ *
+ * Oracle OPTION D folds the correlation envelope into the first line, so the
+ * occurrence id is not knowable to the test in advance; this asserts the fixed
+ * shape while still requiring the exact prompt body.
+ */
+const envelopePrompt = (taskId, prompt) =>
+  new RegExp(`^\\[task ${taskId} occurrence oc-[0-9a-z-]+\\]\\n${prompt.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`);
 
 test("FEATURE3: a one-shot task fires sendUserMessage once with the task id, then is removed from the store", () => {
   const h = feature3Harness();
@@ -10282,7 +10335,7 @@ test("FEATURE3: a one-shot task fires sendUserMessage once with the task id, the
   assert.equal(h.injected.length, 0, "not due yet");
   h.advance(1);
   assert.equal(h.injected.length, 1, "fires exactly once when due");
-  assert.equal(h.injected[0], "[task t1]\ncheck the build", "the firing prompt names the task id and carries the prompt");
+  assert.match(h.injected[0], envelopePrompt("t1", "check the build"), "the firing prompt names the task id, carries the occurrence envelope, and carries the prompt");
   assert.deepEqual(persistedTasks(h), [], "a one-shot is REMOVED from the store before/at dispatch");
 });
 
@@ -10316,7 +10369,7 @@ test("FEATURE3: an overdue interval (144 missed intervals) fires EXACTLY ONCE", 
 
   h.advance(0);
   assert.equal(h.injected.length, 1, "all missed occurrences coalesce into ONE immediate check (not 144, not 0)");
-  assert.equal(h.injected[0], "[task od]\nreconcile", "the single firing carries the task id");
+  assert.match(h.injected[0], envelopePrompt("od", "reconcile"), "the single firing carries the task id and occurrence envelope");
   // COALESCING: the due cursor is advanced to the FIRST FUTURE slot, not left in
   // the past - that is what prevents a backlog.
   const advanced = persistedTasks(h).find((t) => t.id === "od");
@@ -10341,7 +10394,7 @@ test("FEATURE3: a task whose session is NOT active does not fire, and fires once
   h.sessionStart(PARENT_SESSION, "resume");
   h.advance(10_000);
   assert.equal(h.injected.length, 1, "it fires once when its exact session becomes active again");
-  assert.equal(h.injected[0], "[task own]\nowned", "delivered into the owning session with the task id");
+  assert.match(h.injected[0], envelopePrompt("own", "owned"), "delivered into the owning session with the task id");
 });
 
 test("FEATURE3: a task armed under a superseded registration token does NOT inject", () => {
@@ -10409,7 +10462,7 @@ test("FEATURE3: TASK:CANCEL from a session that does NOT own the task is a no-op
   h.sessionStart(PARENT_SESSION, "resume");
   h.advance(10_000);
   assert.equal(h.injected.length, 1, "the foreign cancel did not suppress the owner's task");
-  assert.equal(h.injected[0], "[task mine]\nowned by parent", "it fires into its owning session");
+  assert.match(h.injected[0], envelopePrompt("mine", "owned by parent"), "it fires into its owning session");
 });
 
 // COVERAGE NOTE (parent, rev 110) - THIS TEST IS NOT LOAD-BEARING. It is retained as a
@@ -10492,6 +10545,10 @@ test("FEATURE3: a due firing during an in-flight turn is queued as a follow-up, 
     }
     h.injected.push(text);
     h.sentOptions.push(options);
+    // Oracle OPTION D: an accepting host PERSISTS the queued message, so the
+    // confirmation read can positively correlate it. Without this the harness
+    // would model a host that accepts but never records, which no real host does.
+    h.persistUserMessage(PARENT_UUID, text);
     return Promise.resolve();
   };
   h.sessionStart(PARENT_UUID);
@@ -10529,10 +10586,17 @@ test("FEATURE3: a task is NOT consumed when the store write fails (interval)", (
   assert.equal(dueBefore, undefined, "nothing was ever persisted while the path was blocked");
 
   // RESTORE WRITABILITY and prove the retained occurrence is eventually delivered
-  // exactly once - the retry path must complete, not spin forever.
+  // - the retry path must complete, not spin forever or drop the occurrence.
+  //
+  // Oracle OPTION D: the commit point is now the confirmed persisted transcript,
+  // and confirmation RELEASES the handoff (STEP 7), so an interval task resumes
+  // its own cadence instead of being pinned until a settle. This window therefore
+  // legitimately contains several interval firings; what must hold is that the
+  // RETAINED occurrence is delivered and the task keeps its schedule.
   rmSync(parentBlocker, { force: true });
   h.advance(120_000);
-  assert.equal(h.injected.length, 1, "the retained occurrence is delivered once the store is writable");
+  assert.ok(h.injected.length >= 1, "the retained occurrence is delivered once the store is writable");
+  assert.match(h.injected[0], envelopePrompt("ro", "must not fire"), "the FIRST delivery is the retained occurrence");
   assert.equal(persistedTasks(h).find((t) => t.id === "ro")?.intervalMs, 1000, "the interval task survives with its schedule");
   assert.ok(dueArmed !== undefined, "a timer had been armed for the task");
 });
@@ -10586,6 +10650,58 @@ test("FEATURE3: TASK:CANCEL is retried until it lands, and the task never fires"
     "the retried cancellation lands on disk once the store is writable",
   );
   assert.equal(h.injected.length, 0, "a cancelled task NEVER fires");
+});
+
+// BOUNDED RE-REVIEW F2 (the NEW defect this round was about): a stale cancellation
+// retry must never delete a REPLACEMENT task that reuses the same id.
+//
+// Sequence: (1) a task exists and its cancellation fails to persist, so retry R is
+// armed; (2) the store becomes writable and the task is cancelled SUCCESSFULLY - R
+// is dropped from `cancelRetries`; (3) a NEW task is added under the SAME id;
+// (4) R fires. If R's handle was merely forgotten rather than CANCELLED, R still
+// runs, finds a task with that id and deletes the NEW task the user just created.
+// The registration token does not help: it is still current. This is why every
+// removal from `cancelRetries` goes through `dropCancelRetry`.
+test("FEATURE3 F2: a superseded cancellation retry never deletes a task that reuses its id", () => {
+  const parentBlocker = join(mkdtempSync(join(tmpdir(), "supervisor-f2-stale-")), "blocker");
+  writeFileSync(parentBlocker, "not a directory");
+  const tasksPath = join(parentBlocker, "tasks.json");
+  const h = feature3Harness({ tasksPath });
+  h.sessionStart(PARENT_UUID);
+
+  // (1) Create `reuse`, then fail its cancellation so retry R is armed.
+  h.declare(PARENT_UUID, `TASK:ADD {"id":"reuse","prompt":"first","delayMs":600000}`);
+  h.declare(PARENT_UUID, "TASK:CANCEL reuse\nSTATUS:DONE");
+  assert.deepEqual(
+    persistedTasks(h).map((t) => t.id),
+    [],
+    "precondition: the failed cancellation is rolled back out of the store",
+  );
+
+  // (2) The store becomes writable; cancel again so the retry R is dropped.
+  rmSync(parentBlocker, { force: true });
+  h.declare(PARENT_UUID, "TASK:CANCEL reuse\nSTATUS:DONE");
+
+  // (3) A NEW task reuses the id, with its own far-future due time.
+  h.declare(PARENT_UUID, `TASK:ADD {"id":"reuse","prompt":"SECOND","delayMs":600000}`);
+  assert.deepEqual(
+    persistedTasks(h).map((t) => t.id),
+    ["reuse"],
+    "precondition: the replacement task is durably stored",
+  );
+
+  // (4) Fire any stale retry, then confirm the replacement survived.
+  h.advance(120_000);
+  assert.deepEqual(
+    persistedTasks(h).map((t) => t.id),
+    ["reuse"],
+    "a stale cancellation retry must NOT delete the replacement task",
+  );
+  assert.deepEqual(
+    persistedTasks(h).map((t) => t.prompt),
+    ["SECOND"],
+    "and the surviving task is the REPLACEMENT definition, not the cancelled one",
+  );
 });
 
 // REVIEW 78-R3 (parent, rev 113): CANCELLATION must SURVIVE a store reload. A
@@ -10703,11 +10819,24 @@ test("FEATURE3: a cancellation that has not reached disk survives a store reload
   );
   assert.equal(h.injected.length, 0, "nothing is delivered at the terminal-event instant");
 
-  // FINAL REVIEW F1: the release is DEFERRED past the handler return, which is
-  // where `_clearManualCompactionState()` runs - and the manual `/compact` path
-  // emits NO settle afterwards. So the retained occurrence must land on the next
-  // microtask WITHOUT any manufactured settlement; requiring one was the defect.
+  // FINAL REVIEW F1 (corrected by the bounded re-review): the release is DEFERRED
+  // past the handler return, which is where `_clearManualCompactionState()` runs -
+  // and the manual `/compact` path emits NO settle afterwards. So the retained
+  // occurrence must land WITHOUT any manufactured settlement.
+  //
+  // The deferral is a RETRY TIMER on the macrotask queue, not a microtask: a
+  // microtask queued inside this handler drains before the runner's
+  // `await handler(...)` continuation (`dist/extensions/runner.js:819`), i.e.
+  // while the host's abort controller is STILL present, and the send would be
+  // refused. A timer cannot run until the emit and the host's cleanup have both
+  // completed.
   await h.flushMicrotasks();
+  assert.equal(
+    h.injected.length,
+    0,
+    "no microtask-only release: the occurrence is not send-ready while the emit is in flight",
+  );
+  h.advance(1000);
   assert.equal(
     h.injected.length,
     1,
@@ -10780,7 +10909,7 @@ test("FEATURE3 R82-P1: a task booked past the 2^31-1 ms timer cap does NOT fire 
   // Advance the remainder of the horizon: the task fires once, exactly at due time.
   h.advance(THIRTY_DAYS - CAP + 1000);
   assert.equal(h.injected.length, 1, "fires exactly once when actually due");
-  assert.match(h.injected[0], /\[task far\]/, "the firing names the task id");
+  assert.match(h.injected[0], /^\[task far occurrence oc-[0-9a-z-]+\]/, "the firing names the task id and occurrence envelope");
   assert.deepEqual(persistedTasks(h).map((t) => t.id), [], "the one-shot is removed after firing");
 });
 
@@ -10800,6 +10929,7 @@ test("FEATURE3 R81-P1: a task due DURING the `session_compact` emit is retained,
       throw new Error("Cannot submit a prompt while compaction is in progress.");
     }
     h.injected.push(text);
+    h.persistUserMessage(PARENT_UUID, text);
     return undefined;
   };
 
@@ -10817,12 +10947,20 @@ test("FEATURE3 R81-P1: a task due DURING the `session_compact` emit is retained,
 
   h.emitCompactionEnd(true); // the probe's timer fires DURING this emit
   hostRefusesSend = false; // the host clears its abort controller only now
-  assert.deepEqual(
-    refused,
-    [],
-    "R81-P1: a task due during the `session_compact` emit must NOT be sent - the host still refuses it",
+  // R81-P1: the occurrence must NOT be DELIVERED at the terminal-event boundary.
+  // The host still refuses the send here, so an attempted send is rejected (the
+  // occurrence is retained and retried, not consumed) - what would be fatal is a
+  // COMMITTED delivery or a DESTROYED occurrence. Both are asserted below.
+  assert.equal(
+    h.injected.length,
+    0,
+    "R81-P1: nothing may be DELIVERED while the host still refuses the send",
   );
-  assert.equal(h.injected.length, 0, "nothing was delivered at the terminal-event boundary");
+  assert.equal(
+    persistedTasks(h).map((t) => t.id).includes("probe"),
+    true,
+    "and the occurrence is retained (not consumed) by the refused attempt",
+  );
 
   // FINAL REVIEW F1: the manual `/compact` path emits NO `agent_settled`
   // (`agent-session.js:2242-2261` returns after `_clearManualCompactionState()`),
@@ -10830,9 +10968,57 @@ test("FEATURE3 R81-P1: a task due DURING the `session_compact` emit is retained,
   // the handler returns, which is exactly where the controller is cleared. The
   // old expectation (`emitSettleAfterCompaction()` required) is what let manual
   // compaction suppress scheduled work indefinitely.
+  //
+  // BOUNDED RE-REVIEW F1: the release is a RETRY TIMER on the macrotask queue,
+  // NOT a microtask. A microtask queued inside this handler drains BEFORE the
+  // runner's `await handler(...)` continuation (`dist/extensions/runner.js:819`),
+  // i.e. while the host's abort controller is STILL present - the exact unsafe
+  // boundary this test is about. A timer cannot run until both the emit and the
+  // host's cleanup have completed, which is the real send-ready point.
   await h.flushMicrotasks();
+  assert.equal(
+    h.injected.length,
+    0,
+    "no microtask-only release: the occurrence is not send-ready while the emit is in flight",
+  );
+  h.advance(1000); // the retry lands, now that the host accepts
   assert.equal(h.injected.length, 1, "the retained occurrence lands without any settlement");
-  assert.equal(h.injected[0], "[task probe]\ndue mid-emit", "the firing carries the task id and prompt");
+  assert.match(h.injected[0], envelopePrompt("probe", "due mid-emit"), "the firing carries the task id and prompt");
+});
+
+test("FEATURE3 F1: a refusal the host SWALLOWS (void return, no throw) never consumes the occurrence", () => {
+  // This is the REAL host behaviour and the reason the synchronous try/catch in
+  // `injectTask` is not sufficient on its own. `api.sendUserMessage` is an async
+  // wrapper returning `void` (`extensions/types.d.ts:1243-1246`) and the host
+  // CATCHES its own rejection internally (`agent-session.js:2711-2718`), so a
+  // compaction refusal produces NO throw and NO return value. Any design that
+  // treats "the call returned" as "the host accepted" loses the occurrence.
+  //
+  // The harness models that faithfully: the stub returns `undefined` WITHOUT
+  // throwing while the host is refusing, exactly as the real wrapper does. The
+  // only signals available to the product are its own compaction tracking and
+  // the fact that no turn subsequently settles.
+  const h = feature3Harness();
+  h.sessionStart(PARENT_UUID);
+  h.declare(PARENT_UUID, `TASK:ADD {"id":"swallowed","prompt":"must survive","delayMs":1000}`);
+
+  // Swallowed refusal: no throw, no delivery, no return value.
+  h.pi.sendUserMessage = () => undefined;
+
+  h.emitCompactionStart();
+  h.advance(1000);
+  assert.deepEqual(
+    persistedTasks(h).map((t) => t.id),
+    ["swallowed"],
+    "a one-shot must still exist while the window is open (nothing consumed)",
+  );
+  h.emitCompactionEnd(true);
+  h.advance(1000);
+  assert.deepEqual(
+    persistedTasks(h).map((t) => t.id),
+    ["swallowed"],
+    "a SWALLOWED refusal must not consume the one-shot: the task is still deliverable",
+  );
 });
 
 test("FEATURE3 F6: a `TASK:ADD` inside a fenced code block does NOT create a task; the same line at top level does", () => {
@@ -10925,4 +11111,1011 @@ test("F5: every notify() event symbol in the product is declared (no undefinable
   assert.ok(used.length > 0, "the scan must find notify() call sites (guard against a vacuous pass)");
   const undeclared = used.filter((symbol) => !declared.has(symbol));
   assert.deepEqual(undeclared, [], `notify() event symbols must be declared constants, undeclared: ${undeclared}`);
+});
+
+// ---------------------------------------------------------------------------
+// FEATURE 3 / Oracle OPTION D (tagged durable outbox): positive-correlation
+// commit. The pre-OPTION-D design advanced/removed the due cursor BEFORE the
+// send and relied on `canAcceptNow()` to PREDICT acceptance. Because
+// `sendUserMessage` returns `void` and the host swallows its own rejection
+// (`agent-session.js:2711-2718`), a refused-but-predicted-ready send destroyed
+// the occurrence. The outbox design commits ONLY on a positively correlated,
+// PERSISTED transcript row, with at-least-once semantics and a documented
+// duplicate window.
+// ---------------------------------------------------------------------------
+
+/** The occurrence id carried by an injected prompt's envelope line. */
+const occurrenceIdOf = (text) => {
+  const match = /^\[task [^\]]*? occurrence (oc-[0-9a-z-]+)\]/.exec(text);
+  return match === null ? null : match[1];
+};
+
+/** A PERSISTED transcript row for a role, with one text part. */
+const transcriptRow = (role, text) => ({
+  type: "message",
+  id: `row-${role}`,
+  message: { role, content: [{ type: "text", text }] },
+});
+
+test("FEATURE3 OPTION-D: a CONFIRMED send (persisted transcript row) COMMITS the one-shot", () => {
+  // The positive control for the commit: the host persists the delivered row, so
+  // the scheduler must observe it and REMOVE the one-shot. Without the
+  // confirmation read this never happens and the task would be re-attempted
+  // forever (an unbounded duplicate storm); with it, the occurrence is consumed.
+  const h = feature3Harness();
+  h.sessionStart(PARENT_UUID);
+  h.declare(PARENT_UUID, `TASK:ADD {"id":"c1","prompt":"commit me","delayMs":1000}`);
+  h.advance(1000);
+  assert.equal(h.injected.length, 1, "the occurrence is delivered once");
+  assert.deepEqual(
+    persistedTasks(h),
+    [],
+    "a CONFIRMED one-shot is durably REMOVED",
+  );
+});
+
+test("FEATURE3 OPTION-D: a CONFIRMED interval advances to the cursor computed AT ARM TIME, not now()", () => {
+  // STEP 5 requires the cursor to advance to the value computed when the
+  // occurrence was ARMED. Using `now()` instead would let a long stall skip
+  // occurrences beyond the designed coalescing rule. The first attempt is a
+  // SWALLOWED refusal, so confirmation is delayed by the whole bounded window;
+  // the committed cursor must still be the FIRST arm-time slot, not a slot
+  // derived from the much later retry time.
+  const h = feature3Harness();
+  h.sessionStart(PARENT_UUID);
+  h.declare(PARENT_UUID, `TASK:ADD {"id":"arm","prompt":"cadence","delayMs":1000,"intervalMs":1000}`);
+  const declaredAt = h.tasksNow();
+  const firstArmCursor = declaredAt + 1000 + 1000; // due at declare+1000, next slot +1000
+  let attempts = 0;
+  h.pi.sendUserMessage = (text) => {
+    attempts += 1;
+    h.injected.push(text);
+    // Confirm ONLY the retry of the first occurrence; later occurrences stay
+    // unconfirmed so the FIRST committed cursor is the one observed.
+    if (attempts === 2) h.persistUserMessage(PARENT_UUID, text);
+    return undefined;
+  };
+  // Run past the bounded confirmation window and the retry so the commit lands
+  // at a time far later than the arm.
+  h.advance(10_000);
+  const committed = persistedTasks(h).find((t) => t.id === "arm")?.nextRunAtMs;
+  assert.ok(attempts >= 2, `the refused attempt must be retried, saw ${attempts}`);
+  assert.equal(
+    committed,
+    firstArmCursor,
+    "the cursor is the ARM-TIME slot, not one recomputed from the late retry time",
+  );
+  assert.notEqual(committed, h.tasksNow() + 1000, "the cursor is NOT recomputed from now()");
+});
+
+test("FEATURE3 OPTION-D: an ASSISTANT message echoing the envelope does NOT confirm delivery", () => {
+  // Correlation MUST require the exact envelope AND `role: \"user\"`. A model that
+  // restates the envelope text in its own reply must never be mistaken for the
+  // persisted delivery, or a refused send would be silently committed.
+  const h = feature3Harness();
+  h.sessionStart(PARENT_UUID);
+  h.declare(PARENT_UUID, `TASK:ADD {"id":"echo","prompt":"must survive echo","delayMs":1000}`);
+  // The host never persists the user row, but the assistant ECHOES an envelope
+  // that happens to name the armed occurrence id.
+  h.pi.sendUserMessage = (text) => {
+    h.injected.push(text);
+    const occurrenceId = occurrenceIdOf(text);
+    assert.ok(occurrenceId, "the injected prompt carries the envelope");
+    h.persistUserMessage(PARENT_UUID, text);
+    h.persistUserMessage(PARENT_UUID, "I saw the trigger.");
+    // Rewrite the persisted rows so ONLY an ASSISTANT row carries the envelope.
+    const file = h.sessionFileFor(PARENT_UUID);
+    writeFileSync(file, `${JSON.stringify(transcriptRow("assistant", text))}\n`);
+    return undefined;
+  };
+  h.advance(1000);
+  assert.deepEqual(
+    persistedTasks(h).map((t) => t.id),
+    ["echo"],
+    "an ASSISTANT echo of the envelope must NOT consume the one-shot",
+  );
+});
+
+test("FEATURE3 OPTION-D: an envelope for a DIFFERENT occurrence id does NOT confirm this occurrence", () => {
+  // The opaque id is the whole point of the correlation: a row naming ANOTHER
+  // occurrence (a stale delivery, a different task run) must not commit THIS one.
+  const h = feature3Harness();
+  h.sessionStart(PARENT_UUID);
+  h.declare(PARENT_UUID, `TASK:ADD {"id":"diff","prompt":"other id","delayMs":1000}`);
+  h.pi.sendUserMessage = (text) => {
+    h.injected.push(text);
+    const occurrenceId = occurrenceIdOf(text);
+    assert.ok(occurrenceId, "the injected prompt carries the envelope");
+    // Persist a USER row whose envelope names a DIFFERENT occurrence id.
+    const foreign = text.replace(occurrenceId, "oc-0000000000000000");
+    assert.notEqual(foreign, text, "the substituted envelope differs");
+    const file = h.sessionFileFor(PARENT_UUID);
+    writeFileSync(file, `${JSON.stringify(transcriptRow("user", foreign))}\n`);
+    return undefined;
+  };
+  h.advance(1000);
+  assert.deepEqual(
+    persistedTasks(h).map((t) => t.id),
+    ["diff"],
+    "an envelope for a DIFFERENT occurrence id must NOT consume this one",
+  );
+});
+
+test("FEATURE3 OPTION-D: a retry reuses the SAME occurrence id and advances the interval exactly once", () => {
+  // At-least-once retry must NOT mint a new id per attempt; otherwise the first
+  // (possibly delivered) attempt could never be correlated, and the duplicate
+  // window would be unobservable. This stub refuses to persist the first TWO
+  // attempts and persists the third, so the id is stable across retries.
+  const h = feature3Harness();
+  h.sessionStart(PARENT_UUID);
+  h.declare(PARENT_UUID, `TASK:ADD {"id":"retry","prompt":"retry me","delayMs":0,"intervalMs":1000}`);
+  let attempts = 0;
+  const envelopes = [];
+  h.pi.sendUserMessage = (text) => {
+    attempts += 1;
+    h.injected.push(text);
+    envelopes.push(occurrenceIdOf(text));
+    if (attempts >= 3) h.persistUserMessage(PARENT_UUID, text);
+    return undefined;
+  };
+  // Long enough for the confirmation window (25 x 200ms) to exhaust, the handoff
+  // to release, and two retries to be re-attempted.
+  h.advance(20_000);
+  assert.ok(attempts >= 3, `at-least-once retry must re-attempt, saw ${attempts}`);
+  const firstOccurrence = envelopes.slice(0, 3);
+  assert.equal(
+    new Set(firstOccurrence).size,
+    1,
+    `every retry of one occurrence must reuse the SAME id, saw ${firstOccurrence}`,
+  );
+  assert.ok(firstOccurrence.every((id) => id !== null), "each attempt carries a well-formed envelope id");
+});
+
+test("FEATURE3 OPTION-D: a DELAYED transcript persistence is confirmed by the poll, not assumed from the send", () => {
+  // Oracle OPTION D requires positive correlation, and the host appends to the
+  // transcript AFTER `message_start`/`message_end` (`agent-session.js:748-763`).
+  // The existing tests persist SYNCHRONOUSLY inside `sendUserMessage`, so they
+  // only ever exercise the immediate post-send check and never the poll. This test
+  // persists LATE: the send returns with an EMPTY transcript, so the immediate
+  // post-send check at `pumpTask` MUST fail and the row can only be observed by a
+  // later poll.
+  //
+  // The window must be tight or the test is VACUOUS. Two traps were proved out
+  // against the product:
+  //   * Persisting and then advancing past the whole bounded window lets the
+  //     exhausted poll re-pump the SAME occurrence, and that RETRY's immediate
+  //     post-send check sees the row - so the removal would be proved by the next
+  //     attempt, never by a poll. (`attempts` reached 2 in a probe.)
+  //   * Asserting only "task removed" cannot tell those apart.
+  // The discriminator is therefore `h.injected.length === 1`: the row is persisted
+  // strictly after the immediate check and BEFORE the first poll tick, and the
+  // clock advances by exactly one poll interval, so ONLY the poll tick can commit
+  // it. Disabling `confirmedInTranscript` at the poll site fails this test: no
+  // commit happens at the tick, the window exhausts, and a SECOND attempt is made
+  // (whose immediate check would then remove the task) - observable as
+  // `injected.length === 2`.
+  const h = feature3Harness();
+  h.sessionStart(PARENT_UUID);
+  h.declare(PARENT_UUID, `TASK:ADD {"id":"late","prompt":"delayed","delayMs":0}`);
+
+  let pending = null;
+  let sends = 0;
+  h.pi.sendUserMessage = (text) => {
+    h.injected.push(text);
+    sends += 1;
+    // Deliberately do NOT persist now: the host has not written the row yet, so
+    // the immediate post-send check must fail.
+    pending = text;
+    return undefined;
+  };
+
+  // Run the timer that delivers the occurrence, but ONLY far enough for the send
+  // and its immediate check to happen - NOT far enough for the first poll tick.
+  h.advance(1);
+  assert.equal(sends, 1, "precondition: exactly one attempt was sent");
+  assert.ok(pending !== null, "precondition: an attempt was made");
+  assert.deepEqual(
+    persistedTasks(h).map((t) => t.id),
+    ["late"],
+    "precondition: the unconfirmed one-shot is retained, not consumed",
+  );
+
+  // The transcript row lands in the gap between the immediate check and the first
+  // poll tick. From here, ONLY a poll can see it.
+  h.persistUserMessage(PARENT_UUID, pending);
+  h.advance(TASK_CONFIRM_RETRY_MS);
+
+  assert.deepEqual(
+    persistedTasks(h),
+    [],
+    "the late-persisted occurrence is confirmed by the POLL and the one-shot is removed",
+  );
+  // No retry was ever needed: the poll - not a later attempt's send-time check -
+  // observed the row. This is what fails when the poll's re-check is disabled.
+  assert.equal(
+    h.injected.length,
+    1,
+    "confirmation came from the poll, not from a later attempt's immediate check",
+  );
+});
+
+test("FEATURE3 OPTION-D: superseded confirmation work cannot corrupt the REPLACEMENT record", () => {
+  // HIGH-1's sibling: when a task is replaced mid-confirmation, the superseded
+  // occurrence must not later commit against the replacement. The replacement's
+  // prompt and schedule are the operator's new intent and must survive intact.
+  const h = feature3Harness();
+  h.sessionStart(PARENT_UUID);
+
+  let withheld = null;
+  h.pi.sendUserMessage = (text) => {
+    h.injected.push(text);
+    withheld = text; // never persisted: keeps occurrence A unconfirmed
+    return undefined;
+  };
+  h.declare(PARENT_UUID, `TASK:ADD {"id":"y","prompt":"old intent","delayMs":0}`);
+  h.advance(1000);
+
+  // Replace while A is still unconfirmed, with a distinct new schedule.
+  h.declare(PARENT_UUID, `TASK:ADD {"id":"y","prompt":"new intent","delayMs":5000}`);
+  // Now let the superseded occurrence's row land and run pending polls.
+  h.persistUserMessage(PARENT_UUID, withheld);
+  h.advance(1000);
+
+  const after = persistedTasks(h).filter((t) => t.id === "y");
+  assert.equal(after.length, 1, "exactly one replacement record exists");
+  assert.equal(after[0].prompt, "new intent", "the replacement prompt is intact");
+  assert.ok(
+    after[0].nextRunAtMs > h.nowValue(),
+    "and the replacement keeps its OWN future schedule, not a superseded cursor",
+  );
+});
+
+test("FEATURE3 HIGH-1: replacing a task while its occurrence is UNCONFIRMED retires the old poll and handoff", () => {
+  // Oracle final Review HIGH-1. `addTask` replaces the record with
+  // `tasks.set(task.id, task)` and then calls `armTask`, which clears only the
+  // FIRING timer (`clearTaskTimer`). The superseded occurrence's confirmation poll
+  // (`confirmTimers`) and the task handoff (`taskHandoff`) survive. The old poll
+  // then finds a replacement whose `occurrenceId` is undefined, hits the stale
+  // return at the `task.occurrenceId !== occurrenceId` check, and returns WITHOUT
+  // releasing the handoff or clearing the poll. Every later pump of that id then
+  // defers forever at the `taskHandoff !== null` gate, stalling the replacement
+  // and all subsequent work - a multi-day liveness failure.
+  const h = feature3Harness();
+  h.sessionStart(PARENT_UUID);
+
+  // The task is due immediately, but the host never persists, so occurrence A
+  // stays UNCONFIRMED and its confirmation poll remains pending.
+  h.pi.sendUserMessage = (text) => {
+    h.injected.push(text);
+    return undefined;
+  };
+  h.declare(PARENT_UUID, `TASK:ADD {"id":"x","prompt":"first","delayMs":0}`);
+  h.advance(1000);
+  assert.ok(
+    h.injected.some((t) => /first/.test(t)),
+    "precondition: the first occurrence was attempted and left unconfirmed",
+  );
+
+  // Replace `x` under the SAME id while A's confirmation poll is still pending.
+  // The replacement is due in the future so only the RETIREMENT of A's handoff is
+  // under test here, not a new delivery.
+  h.declare(PARENT_UUID, `TASK:ADD {"id":"x","prompt":"replacement","delayMs":600000}`);
+  assert.deepEqual(
+    persistedTasks(h).map((t) => t.prompt),
+    ["replacement"],
+    "precondition: the replacement replaced the record",
+  );
+
+  // Add an unrelated, independently due task. With the handoff properly retired it
+  // must be delivered; while the superseded handoff pins the slot, it never is.
+  h.declare(PARENT_UUID, `TASK:ADD {"id":"later","prompt":"later task","delayMs":0}`);
+  h.advance(30_000);
+
+  assert.ok(
+    h.injected.some((t) => /later task/.test(t)),
+    "a later task must be delivered: the superseded handoff did not pin the slot",
+  );
+
+  // And once the replacement comes due it must actually be delivered, proving the
+  // task itself is not permanently stalled behind the stale handoff.
+  h.pi.sendUserMessage = (text) => {
+    h.injected.push(text);
+    h.persistUserMessage(PARENT_UUID, text);
+    return undefined;
+  };
+  h.advance(700_000);
+  assert.ok(
+    h.injected.some((t) => /replacement/.test(t)),
+    "the replacement must be delivered once due, not deferred forever",
+  );
+});
+
+test("FEATURE3 OPTION-D: repeated unconfirmed attempts across an interval advance leave the task consistent", () => {
+  // The `task.occurrenceId !== occurrenceId` guard in `commitOccurrence` defends
+  // against a stale poll (armed for A, running after the task advanced to B).
+  // Instrumenting the product showed that path is not reachable through the
+  // public API: an id is minted only when `task.occurrenceId === undefined`, and
+  // the only other mint (`commitOccurrence` advancing an interval) clears the
+  // confirm timer first. So the guard is defence-in-depth, not a live path.
+  //
+  // This test pins the INVARIANT that makes it unreachable, which is the property
+  // that actually protects the design. It exercises the interleaving that would
+  // violate it - unconfirmed attempts that exhaust and re-attempt while the
+  // interval keeps advancing - and asserts the observable consequences hold.
+  const h = feature3Harness();
+  h.sessionStart(PARENT_UUID);
+  h.declare(
+    PARENT_UUID,
+    `TASK:ADD {"id":"inv","prompt":"payload","delayMs":0,"intervalMs":200}`,
+  );
+
+  const envelopes = [];
+  let persist = false;
+  h.pi.sendUserMessage = (text) => {
+    h.injected.push(text);
+    envelopes.push(occurrenceIdOf(text));
+    if (persist) h.persistUserMessage(PARENT_UUID, text);
+    return undefined;
+  };
+
+  // Phase 1: unconfirmed attempts; each poll pends and then exhausts.
+  h.advance(6000);
+  // Phase 2: confirmation resumes, so the interval advances and mints new ids.
+  persist = true;
+  h.advance(20_000);
+
+  const ids = envelopes.filter((id) => id !== null);
+  assert.ok(
+    new Set(ids).size >= 2,
+    `precondition: the interval advanced to new occurrence ids, saw ${new Set(ids).size}`,
+  );
+  // The run must end in a consistent state: the task survives, keeps its
+  // definition, and is armed for a real occurrence. A stale-poll commit would
+  // have corrupted exactly these fields.
+  const remaining = persistedTasks(h);
+  assert.deepEqual(remaining.map((t) => t.id), ["inv"], "the interval task survives");
+  assert.equal(remaining[0].intervalMs, 200, "its interval definition is unchanged");
+  assert.ok(
+    typeof remaining[0].occurrenceId === "string" && remaining[0].occurrenceId.length > 0,
+    "and it is armed for a real occurrence, never left with a corrupt id",
+  );
+  // Retries of one occurrence deliberately REUSE its id (at-least-once), and an
+  // id can legitimately be ARMED but not yet SENT when the run ends at a due
+  // boundary. This test asserts only what is observable through the public API.
+  //
+  // NOTE (MEDIUM-1, final Review): an earlier version of this test was named for
+  // an invariant about confirmation-poll REGISTRATION that the public API cannot
+  // observe, and backed it with `new Set(x).size <= x.length` - a tautology, since
+  // a Set built from an array is never larger than that array. Poll registration is
+  // now covered as real behaviour by the HIGH-1 replacement regression above; this
+  // test asserts delivery-level consistency only.
+  const sentIds = ids.filter((id) => id !== null);
+  assert.ok(
+    sentIds.every((id) => /^oc-[0-9a-f]+$/.test(id)),
+    "every delivered occurrence carries a well-formed id",
+  );
+  // The interval advances by confirmation, so at least one new occurrence must
+  // have been minted after the first - a stale commit would have skipped this.
+  assert.ok(
+    new Set(sentIds).size >= 2,
+    `confirmation must have advanced to a fresh occurrence, saw ${new Set(sentIds).size}`,
+  );
+  assert.ok(
+    remaining[0].nextRunAtMs > 0,
+    "and the task carries a real next-run cursor",
+  );
+});
+
+test("FEATURE3 OPTION-D: exhausted confirmation attempts RELEASE the handoff so a later task is not stalled", () => {
+  // Review 78 HIGH-1: a task pinned behind a never-settling handoff stalled every
+  // later task. Exhaustion must release the slot. Task `first` is due earlier and
+  // never confirms (swallowed refusal); task `second` becomes due afterwards and
+  // must still be delivered.
+  const h = feature3Harness();
+  h.sessionStart(PARENT_UUID);
+  h.declare(PARENT_UUID, `TASK:ADD {"id":"first","prompt":"never confirms","delayMs":0}`);
+  h.declare(PARENT_UUID, `TASK:ADD {"id":"second","prompt":"must not stall","delayMs":5000}`);
+  const refused = [];
+  h.pi.sendUserMessage = (text) => {
+    if (/occurrence .*\]\nnever confirms/.test(text)) {
+      refused.push(text);
+      return undefined; // swallowed refusal: no throw, no persisted row
+    }
+    h.injected.push(text);
+    h.persistUserMessage(PARENT_UUID, text);
+    return undefined;
+  };
+  // The first attempt is swallowed; its bounded confirmation window (25 x 200ms)
+  // must exhaust, releasing the handoff before `second` comes due at 5000ms.
+  h.advance(20_000);
+  assert.ok(refused.length >= 1, "the first task's send was attempted");
+  assert.ok(
+    h.injected.some((text) => /must not stall/.test(text)),
+    "the later task is delivered once the stalled task's handoff is released",
+  );
+});
+
+test("FEATURE3 OPTION-D: a restart re-attempts an armed, unconfirmed occurrence with the SAME id (at-least-once)", () => {
+  // STEP 8: the pending record is the outbox. A task whose `nextRunAtMs` is in
+  // the past and whose `occurrenceId` was never confirmed must be re-attempted on
+  // restart, reusing the SAME id, so a delivered-but-unrecorded occurrence is at
+  // worst duplicated (the documented at-least-once duplicate window) and never
+  // lost. This models the store left behind by a process that armed and sent but
+  // was killed before the transcript read could confirm.
+  const dir = mkdtempSync(join(tmpdir(), "supervisor-f3-restart-"));
+  const tasksPath = join(dir, "session-supervisor", "tasks.json");
+  const armed = {
+    id: "resume",
+    sessionId: PARENT_UUID,
+    prompt: "survive restart",
+    nextRunAtMs: 1, // long past
+    occurrenceId: "oc-fixedrestart0000000000000000",
+  };
+  mkdirSync(join(dir, "session-supervisor"), { recursive: true });
+  writeFileSync(tasksPath, JSON.stringify({ version: 1, tasks: [armed] }, null, 2));
+  const h = feature3Harness({ tasksPath });
+  const envelopes = [];
+  h.pi.sendUserMessage = (text) => {
+    h.injected.push(text);
+    envelopes.push(occurrenceIdOf(text));
+    h.persistUserMessage(PARENT_UUID, text);
+    return undefined;
+  };
+  h.sessionStart(PARENT_UUID, "reload");
+  h.advance(1000);
+  assert.ok(h.injected.length >= 1, "the past-due unconfirmed occurrence is re-attempted after restart");
+  assert.equal(
+    envelopes[0],
+    "oc-fixedrestart0000000000000000",
+    "the re-attempt reuses the SAME persisted occurrence id",
+  );
+  assert.deepEqual(
+    persistedTasks(h),
+    [],
+    "once confirmed, the one-shot is durably removed",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// FEATURE 3 g2 corrections: review-correction regressions.
+//
+// Blocker 1: an UNCONFIRMABLE oversized `TASK:ADD` prompt must be REJECTED at
+// `addTask` BEFORE it is accepted/persisted, because delivery is confirmed only
+// by positively correlating the persisted transcript row and the confirmation
+// read sees just the last `TRANSCRIPT_TAIL_BYTES` of the transcript. Blocker 2:
+// `persistTasks` must let the CURRENT on-disk copy of a FOREIGN record win
+// (replacements AND deletions), rather than re-serializing a stale cached copy.
+// ---------------------------------------------------------------------------
+
+/** Drive one `agent_before_settle` declaration and return the captured OSC chunks. */
+function declareCapturing(h, sid, text) {
+  const capture = captureStdout();
+  try {
+    h.pi.emit("agent_before_settle", boundaryEvent([assistant(text)]), h.ctxFor(sid));
+  } finally {
+    capture.restore();
+  }
+  return capture.chunks;
+}
+
+// The g3 rejection notice is a DISTINCT OSC 777 payload that NAMES the refusal,
+// the model-chosen id, and the limit. `mod.taskRejectionNotice` is the product's
+// own builder, so the test asserts the product's actual diagnostic bytes rather
+// than the generic `OSC_NOTIFY` constant (which an ordinary marker-less settle
+// emits even when the size guard is disabled - the non-discriminating assertion
+// the independent Review flagged).
+const rejectionNotice = (reason, taskId) => mod.taskRejectionNotice(reason, taskId);
+
+test("FEATURE3 g2 B1: an oversized TASK:ADD prompt is REJECTED (notified, not persisted, never armed)", () => {
+  // The worst-case serialized-row bound is `6 * codeUnits + overhead`, so a
+  // prompt whose worst case exceeds the 512 KiB confirmation tail can NEVER be
+  // positively correlated; re-sending it forever is the failure mode. A 200_000
+  // code-unit ASCII prompt is under the tail size in raw chars (so a naive
+  // `prompt.length > TRANSCRIPT_TAIL_BYTES` guard would ACCEPT it) yet its
+  // worst-case row (6 * 200_000 = 1_200_000) exceeds the tail and must be refused.
+  const h = feature3Harness();
+  h.sessionStart(PARENT_UUID);
+  const body = JSON.stringify({ id: "big", prompt: "x".repeat(200_000), delayMs: 1000 });
+
+  const chunks = declareCapturing(h, PARENT_UUID, `TASK:ADD ${body}`);
+
+  // g3 blocker 2: assert the ACTUAL diagnostic, not just "some notice". The
+  // refusal, the id, and the limit must all be present in the emitted bytes.
+  const notice = chunks.find((chunk) => chunk.includes("rejected:"));
+  assert.ok(notice !== undefined, `the rejection must emit a diagnostic notice, got ${JSON.stringify(chunks)}`);
+  assert.ok(notice.includes("big"), "the diagnostic NAMES the rejected task id");
+  assert.ok(notice.includes("too large to confirm delivery"), "the diagnostic NAMES the refusal reason");
+  assert.ok(
+    notice.includes(String(mod.TRANSCRIPT_TAIL_BYTES)),
+    `the diagnostic NAMES the confirmation-tail limit (${mod.TRANSCRIPT_TAIL_BYTES})`,
+  );
+  assert.equal(
+    notice,
+    rejectionNotice(
+      `prompt too large to confirm delivery (worst-case ${mod.worstCaseTaskRowBytes("big", "x".repeat(200_000))} bytes exceeds the ${mod.TRANSCRIPT_TAIL_BYTES}-byte confirmation tail)`,
+      "big",
+    ),
+    "the refusal notice is the product's exact diagnostic payload",
+  );
+  assert.deepEqual(
+    persistedTasks(h),
+    [],
+    "an unconfirmable task is NOT persisted (no unconfirmable outbox record)",
+  );
+  // The rejected task must not be armed either: advancing past its due time must
+  // produce no injection.
+  h.advance(60_000);
+  assert.equal(h.injected.length, 0, "a rejected task is never armed and never fires");
+});
+
+test("FEATURE3 g2 B1: a multibyte/escaping prompt is bounded by serialized BYTES, not char count", () => {
+  // The bound must account for JSON escaping and multibyte expansion, not just
+  // the character count. A prompt of 50_000 astral code points is 100_000 UTF-16
+  // code units and only 200_000 UTF-8 bytes, but its serialized worst case is
+  // 6 * 100_000 = 600_000 > the tail, so it must be rejected - whereas a naive
+  // UTF-8-byte-length or code-point-count check would accept it.
+  const h = feature3Harness();
+  h.sessionStart(PARENT_UUID);
+  const body = JSON.stringify({ id: "emoji", prompt: "\u{1F600}".repeat(50_000), delayMs: 1000 });
+
+  const chunks = declareCapturing(h, PARENT_UUID, `TASK:ADD ${body}`);
+
+  const notice = chunks.find((chunk) => chunk.includes("rejected:"));
+  assert.ok(notice !== undefined, `a multibyte-over-bound prompt is visibly rejected, got ${JSON.stringify(chunks)}`);
+  assert.ok(notice.includes("emoji"), "the diagnostic NAMES the rejected task id");
+  assert.ok(
+    notice.includes(String(mod.TRANSCRIPT_TAIL_BYTES)),
+    "the diagnostic NAMES the confirmation-tail limit",
+  );
+  assert.deepEqual(persistedTasks(h), [], "and is not persisted");
+  h.advance(60_000);
+  assert.equal(h.injected.length, 0, "and is never armed");
+});
+
+test("FEATURE3 g2 B1: a comfortably small prompt is still accepted and commits EXACTLY ONCE", () => {
+  // The rejection must not disturb the accepted path: a prompt comfortably under
+  // the limit (the size used throughout this suite) is accepted, persisted, fires
+  // once, is confirmed by the transcript, and is removed - no duplicate, no loss.
+  const h = feature3Harness();
+  h.sessionStart(PARENT_UUID);
+  h.declare(PARENT_UUID, `TASK:ADD {"id":"ok","prompt":"check the build","delayMs":1000}`);
+
+  assert.deepEqual(
+    persistedTasks(h).map((t) => t.id),
+    ["ok"],
+    "a small prompt is accepted and persisted",
+  );
+  h.advance(1000);
+  assert.equal(h.injected.length, 1, "it fires exactly once");
+  assert.match(h.injected[0], envelopePrompt("ok", "check the build"), "with the exact envelope + prompt");
+  assert.deepEqual(persistedTasks(h), [], "a confirmed one-shot is durably removed");
+  h.advance(60_000);
+  assert.equal(h.injected.length, 1, "and never re-sends: exactly one delivery in total");
+});
+
+test("FEATURE3 g2 B2: owner B's write does NOT resurrect a foreign task owner A CANCELLED", () => {
+  // SEQUENTIAL two-owner case. Owner B caches foreign task `a` when it first
+  // persists (the merge imports it). Owner A then CANCELS `a`, so disk becomes
+  // `["b"]`. When B writes `b2`, the OLD code saw `tasks.has("a") === true`,
+  // skipped the disk copy, and re-serialized the stale cached `a` - resurrecting a
+  // task the user cancelled. The current on-disk copy must win: `a` stays deleted.
+  const shared = join(mkdtempSync(join(tmpdir(), "supervisor-f3-g2-a-")), "session-supervisor", "tasks.json");
+  mkdirSync(dirname(shared), { recursive: true });
+  // Disk starts with owner A's task `a` (a foreign session for B).
+  writeFileSync(
+    shared,
+    JSON.stringify({
+      version: 1,
+      tasks: [{ id: "a", sessionId: "owner-a-session-uuid", prompt: "A task", nextRunAtMs: 9_000_000 }],
+    }),
+  );
+  const h = feature3Harness({ tasksPath: shared });
+  h.sessionStart(PARENT_UUID);
+  // B declares `b`, which persists and (correctly) imports foreign `a` into B's map.
+  h.declare(PARENT_UUID, `TASK:ADD {"id":"b","prompt":"owner B task","delayMs":1000}`);
+  assert.ok(
+    JSON.parse(readFileSync(shared, "utf8")).tasks.some((t) => t.id === "a"),
+    "precondition: B imported the foreign `a` into the shared store",
+  );
+
+  // Owner A CANCELS `a`: A's own write drops `a` and keeps `b` (foreign to A).
+  writeFileSync(
+    shared,
+    JSON.stringify({
+      version: 1,
+      tasks: [{ id: "b", sessionId: PARENT_UUID, prompt: "owner B task", nextRunAtMs: 1_001_000 }],
+    }),
+  );
+
+  // B now writes again (adds `b2`).
+  h.declare(PARENT_UUID, `TASK:ADD {"id":"b2","prompt":"owner B second","delayMs":1000}`);
+
+  const ids = JSON.parse(readFileSync(shared, "utf8")).tasks.map((t) => t.id).sort();
+  assert.deepEqual(ids, ["b", "b2"], `a cancelled foreign task must NOT be resurrected, got ${ids}`);
+});
+
+test("FEATURE3 g2 B2: a foreign REPLACEMENT on disk is preserved (B does not restore its stale copy)", () => {
+  // Owner B caches foreign task `c` (prompt "old"). The owner of `c` then REPLACES
+  // it on disk (prompt "new"). When B writes another task, the OLD code skipped
+  // the disk copy (`tasks.has("c")`) and re-serialized B's stale cached "old",
+  // discarding the foreign update. The current on-disk record must win.
+  const shared = join(mkdtempSync(join(tmpdir(), "supervisor-f3-g2-b-")), "session-supervisor", "tasks.json");
+  mkdirSync(dirname(shared), { recursive: true });
+  writeFileSync(
+    shared,
+    JSON.stringify({
+      version: 1,
+      tasks: [{ id: "c", sessionId: "owner-c-session-uuid", prompt: "old", nextRunAtMs: 9_000_000 }],
+    }),
+  );
+  const h = feature3Harness({ tasksPath: shared });
+  h.sessionStart(PARENT_UUID);
+  h.declare(PARENT_UUID, `TASK:ADD {"id":"d","prompt":"owner B task","delayMs":1000}`);
+  assert.equal(
+    JSON.parse(readFileSync(shared, "utf8")).tasks.find((t) => t.id === "c").prompt,
+    "old",
+    "precondition: B cached the foreign `c` with prompt \"old\"",
+  );
+
+  // The owner of `c` replaces it on disk (a NEW prompt) while keeping B's task.
+  writeFileSync(
+    shared,
+    JSON.stringify({
+      version: 1,
+      tasks: [
+        { id: "c", sessionId: "owner-c-session-uuid", prompt: "new", nextRunAtMs: 9_500_000 },
+        { id: "d", sessionId: PARENT_UUID, prompt: "owner B task", nextRunAtMs: 1_001_000 },
+      ],
+    }),
+  );
+
+  h.declare(PARENT_UUID, `TASK:ADD {"id":"d2","prompt":"owner B second","delayMs":1000}`);
+
+  const onDisk = JSON.parse(readFileSync(shared, "utf8")).tasks;
+  const c = onDisk.find((t) => t.id === "c");
+  assert.ok(c, "the foreign `c` is still present");
+  assert.equal(c.prompt, "new", "the CURRENT on-disk foreign replacement wins over B's stale cached copy");
+  assert.deepEqual(
+    onDisk.map((t) => t.id).sort(),
+    ["c", "d", "d2"],
+    "B's own tasks are present and the foreign record is not lost",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// FEATURE 3 g3 corrections: a second Review round (run 2209950b) failed two
+// delivery blockers. Blocker 1: an UNREADABLE/OVERSIZED store was treated as an
+// authoritative EMPTY foreign snapshot, so a successful rename PRUNED every
+// cached foreign record. Blocker 2: the oversize refusal passed its diagnostic
+// into `notify`'s `why` enum, discarding it (and notification dedup could
+// suppress even the generic notice).
+// ---------------------------------------------------------------------------
+
+test("FEATURE3 g3 B1: an oversized/unreadable store is NOT treated as an empty foreign snapshot", () => {
+  // The production read path: `readFile` is `defaultReadFile`, whose 2 MiB
+  // artifact cap makes a large-but-WRITABLE store read as `null`. The old code
+  // conflated "unreadable" with "empty": `foreign = []`, then a successful
+  // rename re-serialized the map WITHOUT the foreign records - DELETING another
+  // owner's tasks. This test uses the REAL fs reader (no injected readFile), so it
+  // exercises the actual 2 MiB rejection at `defaultReadFile`.
+  const shared = join(mkdtempSync(join(tmpdir(), "supervisor-f3-g3-a-")), "session-supervisor", "tasks.json");
+  mkdirSync(dirname(shared), { recursive: true });
+  // A small, READABLE store: owner A's foreign `a` (cached by B) plus B's `b`.
+  writeFileSync(
+    shared,
+    JSON.stringify({
+      version: 1,
+      tasks: [
+        { id: "a", sessionId: "owner-a-session-uuid", prompt: "A task", nextRunAtMs: 9_000_000 },
+        { id: "b", sessionId: PARENT_UUID, prompt: "owner B task", nextRunAtMs: 1_001_000 },
+      ],
+    }),
+  );
+  const h = feature3Harness({ tasksPath: shared });
+  h.sessionStart(PARENT_UUID);
+  // B re-persists, importing foreign `a` into B's in-memory map (precondition).
+  h.declare(PARENT_UUID, `TASK:ADD {"id":"b2","prompt":"owner B second","delayMs":1000}`);
+  assert.ok(
+    JSON.parse(readFileSync(shared, "utf8")).tasks.some((t) => t.id === "a"),
+    "precondition: B cached the foreign `a` and it is on disk",
+  );
+
+  // The store GROWS past the 2 MiB artifact cap. It still holds foreign `a` AND a
+  // foreign `z` that B has NEVER read into memory.
+  const huge = {
+    version: 1,
+    tasks: [
+      { id: "a", sessionId: "owner-a-session-uuid", prompt: "A task", nextRunAtMs: 9_000_000 },
+      { id: "z", sessionId: "owner-z-session-uuid", prompt: "z".repeat(2_500_000), nextRunAtMs: 9_000_000 },
+      { id: "b", sessionId: PARENT_UUID, prompt: "owner B task", nextRunAtMs: 1_001_000 },
+      { id: "b2", sessionId: PARENT_UUID, prompt: "owner B second", nextRunAtMs: 1_001_000 },
+    ],
+  };
+  writeFileSync(shared, JSON.stringify(huge));
+  assert.ok(readFileSync(shared, "utf8").length > 2 * 1024 * 1024, "the store now exceeds the 2 MiB artifact cap");
+
+  // B writes again. The store exists but is unreadable THROUGH THE ARTIFACT
+  // READER; the store's own (uncapped) reader must still yield an authoritative
+  // snapshot so no foreign record is pruned.
+  h.declare(PARENT_UUID, `TASK:ADD {"id":"b3","prompt":"owner B third","delayMs":1000}`);
+
+  const ids = JSON.parse(readFileSync(shared, "utf8")).tasks.map((t) => t.id).sort();
+  assert.ok(ids.includes("a"), `the cached foreign \`a\` must NOT be pruned when the store is unreadable, got ${ids}`);
+  assert.ok(ids.includes("z"), `the uncached foreign \`z\` must survive an authoritative store read, got ${ids}`);
+  assert.ok(ids.includes("b") && ids.includes("b2") && ids.includes("b3"), `B's owned tasks must all persist, got ${ids}`);
+});
+
+test("FEATURE3 g3 B1 control: a genuinely ABSENT store is still a valid first write", () => {
+  // The gate must NOT turn a first write into a failure: a store that does not
+  // exist yet is confirmed absent, so the owned ADD persists normally.
+  const shared = join(mkdtempSync(join(tmpdir(), "supervisor-f3-g3-empty-")), "session-supervisor", "tasks.json");
+  const h = feature3Harness({ tasksPath: shared });
+  h.sessionStart(PARENT_UUID);
+  h.declare(PARENT_UUID, `TASK:ADD {"id":"first","prompt":"first write","delayMs":1000}`);
+  assert.deepEqual(persistedTasks(h).map((t) => t.id), ["first"], "a first write still persists");
+  h.advance(1000);
+  assert.equal(h.injected.length, 1, "and the task still fires exactly once");
+});
+
+test("FEATURE3 g3 B2: the refusal diagnostic is emitted VERBATIM and is NOT suppressed by notification dedup", () => {
+  // The old code called `notify(OSC_NOTIFY, "<diagnostic>")`, passing the text
+  // into the `why` ENUM so it was discarded; the generic notice may also be
+  // suppressed by the `notified` dedupe. This drives a settle FIRST (which sets
+  // the dedupe flag), then an oversized declaration, and requires the diagnostic
+  // to still be observable - which fails on the old code (no output at all).
+  const h = feature3Harness();
+  h.sessionStart(PARENT_UUID);
+  // An in-TUI settle sets `notified`, so a plain `notify` would now be a no-op.
+  const settleChunks = declareCapturing(h, PARENT_UUID, "STATUS:DONE");
+  assert.ok(settleChunks.length > 0, "the settle emitted at least one notice (dedupe flag set)");
+
+  const id = "big-dedup";
+  const prompt = "x".repeat(200_000);
+  const body = JSON.stringify({ id, prompt, delayMs: 1000 });
+  const chunks = declareCapturing(h, PARENT_UUID, `TASK:ADD ${body}`);
+
+  assert.ok(
+    chunks.includes(
+      rejectionNotice(
+        `prompt too large to confirm delivery (worst-case ${mod.worstCaseTaskRowBytes(id, prompt)} bytes exceeds the ${mod.TRANSCRIPT_TAIL_BYTES}-byte confirmation tail)`,
+        id,
+      ),
+    ),
+    `the refusal diagnostic must be emitted verbatim even after dedupe, got ${JSON.stringify(chunks)}`,
+  );
+  assert.deepEqual(persistedTasks(h), [], "and the rejected task is not persisted");
+});
+
+test("FEATURE3 g3 B2: a model-authored id cannot inject control bytes into the refusal escape sequence", () => {
+  // The task id is model-chosen, so the refusal notice MUST sanitize it: BEL
+  // (`\x07`) terminates the OSC payload and ESC (`\x1b`) could begin a new
+  // sequence. A poisoned id must appear only as printable ASCII, never raw.
+  const sanitized = mod.sanitizeOscField("evil\x07\x1b]2;owned\x07");
+  assert.ok(!sanitized.includes("\x07"), "no BEL survives sanitization");
+  assert.ok(!sanitized.includes("\x1b"), "no ESC survives sanitization");
+  assert.equal(sanitized, "evil??]2;owned?", "each non-printable byte becomes `?` (BEL and ESC are two bytes)");
+
+  const h = feature3Harness();
+  h.sessionStart(PARENT_UUID);
+  const id = "evil\x07\x1b]2;pwn";
+  const body = JSON.stringify({ id, prompt: "x".repeat(200_000), delayMs: 1000 });
+  const chunks = declareCapturing(h, PARENT_UUID, `TASK:ADD ${body}`);
+  const notice = chunks.find((chunk) => chunk.includes("rejected:"));
+  assert.ok(notice !== undefined, "the refusal is emitted");
+  // Exactly one BEL, at the very end: the id did not terminate the sequence early.
+  assert.equal(notice.split("\x07").length - 1, 1, "the payload contains exactly one BEL terminator");
+  assert.ok(notice.endsWith("\x07"), "the BEL terminator is last");
+  assert.ok(!notice.includes("\x1b]2;pwn"), "the raw model id never reaches the escape sequence");
+});
+
+// ---------------------------------------------------------------------------
+// FEATURE 3 g4 corrections (run 4d9ba907, B1 completion): the authoritative-store
+// gate in `persistTasks` was still INCOMPLETE on two SEQUENTIAL paths that both
+// replaced an EXISTING store nobody had actually read:
+//   (1) BOTH readers fail -> `authoritative` stays false but the temp write and
+//       rename still ran unconditionally, replacing an unreadable store from a
+//       stale in-memory map and deleting foreign records this process never
+//       cached.
+//   (2) The store reads non-null but does NOT parse to `{tasks: [...]}` -> the
+//       old `parseTaskStore` returned `[]`, so a PARSE FAILURE masqueraded as an
+//       authoritative EMPTY snapshot, licensing a prune-and-replace.
+// These tests pin the corrected semantics: an existing store is replaced ONLY on
+// a successfully READ and successfully PARSED authoritative snapshot. A failed
+// read or a malformed/foreign-shaped store returns false BEFORE any reconcile,
+// prune, temp serialization, or rename, leaving the on-disk bytes byte-identical.
+// ---------------------------------------------------------------------------
+
+/**
+ * Read the store bytes back after a test made the file unreadable.
+ *
+ * The `chmod 000` that models "both readers fail" also blocks the TEST process
+ * from reading its own fixture, so permissions are restored first. This only
+ * changes the mode, never the content, so it cannot mask a byte change.
+ */
+const readBytesRestoringMode = (path) => {
+  chmodSync(path, 0o644);
+  return readFileSync(path, "utf8");
+};
+
+test("FEATURE3 g4 B1 both readers fail: an existing unreadable store is NOT replaced from a stale map", () => {
+  const dir = mkdtempSync(join(tmpdir(), "supervisor-f3-g4-a-"));
+  const shared = join(dir, "tasks.json");
+  // Disk starts with owner A's foreign task `a`.
+  writeFileSync(
+    shared,
+    JSON.stringify({
+      version: 1,
+      tasks: [{ id: "a", sessionId: "owner-a-session-uuid", prompt: "A task", nextRunAtMs: 9_000_000 }],
+    }),
+  );
+  const h = feature3Harness({ tasksPath: shared });
+  h.sessionStart(PARENT_UUID);
+  // B persists `b2`, which imports the foreign `a` into B's in-memory map.
+  h.declare(PARENT_UUID, `TASK:ADD {"id":"b2","prompt":"owner B task","delayMs":3000}`);
+  assert.ok(
+    JSON.parse(readFileSync(shared, "utf8")).tasks.some((t) => t.id === "a"),
+    "precondition: B cached the foreign `a` (it is re-serialized on B's write)",
+  );
+
+  // A foreign owner writes another record `z` that B has NEVER read into memory.
+  // The on-disk bytes are captured EXACTLY so equality can be asserted verbatim.
+  writeFileSync(
+    shared,
+    JSON.stringify({
+      version: 1,
+      tasks: [
+        { id: "a", sessionId: "owner-a-session-uuid", prompt: "A task", nextRunAtMs: 9_000_000 },
+        { id: "z", sessionId: "owner-z-session-uuid", prompt: "Z task never cached by B", nextRunAtMs: 9_000_000 },
+        { id: "b2", sessionId: PARENT_UUID, prompt: "owner B task", nextRunAtMs: 1_003_000 },
+      ],
+    }),
+  );
+  const before = readFileSync(shared, "utf8");
+
+  // BOTH readers now fail: the artifact reader's `openSync` throws EACCES and so
+  // does the uncapped `readFileSync`. The directory stays writable, so a rename
+  // would still be possible - that is exactly the unsafe path under test.
+  chmodSync(shared, 0o000);
+
+  // Drive a write attempt through the FIRING path, which GATES on the persist
+  // result: a false persist means the occurrence is NOT delivered (it is retried).
+  h.advance(3000);
+
+  assert.equal(h.injected.length, 0, "a failed authoritative read must make the write attempt return false (no delivery)");
+  const after = readBytesRestoringMode(shared);
+  assert.equal(after, before, "the on-disk bytes must be EXACTLY unchanged when neither reader could read the store");
+  const ids = JSON.parse(after).tasks.map((t) => t.id).sort();
+  assert.ok(ids.includes("z"), `a foreign record never cached by B must survive, got ${ids}`);
+});
+
+test("FEATURE3 g4 B1 corrupt store: malformed JSON is NOT an authoritative empty snapshot", () => {
+  const dir = mkdtempSync(join(tmpdir(), "supervisor-f3-g4-b-"));
+  const shared = join(dir, "tasks.json");
+  writeFileSync(
+    shared,
+    JSON.stringify({
+      version: 1,
+      tasks: [
+        { id: "a", sessionId: "owner-a-session-uuid", prompt: "A task", nextRunAtMs: 9_000_000 },
+        { id: "b2", sessionId: PARENT_UUID, prompt: "owner B task", nextRunAtMs: 1_003_000 },
+      ],
+    }),
+  );
+  const h = feature3Harness({ tasksPath: shared });
+  h.sessionStart(PARENT_UUID);
+  h.declare(PARENT_UUID, `TASK:ADD {"id":"b3","prompt":"owner B second","delayMs":3000}`);
+  assert.ok(
+    JSON.parse(readFileSync(shared, "utf8")).tasks.some((t) => t.id === "a"),
+    "precondition: B cached the foreign `a`",
+  );
+
+  // The store becomes MALFORMED. It is still small and read by the artifact
+  // reader, so `raw` is non-null - the old code then treated the parse failure as
+  // an authoritative EMPTY snapshot and pruned `a` on the next write.
+  const corrupt = "{ this is not valid json";
+  writeFileSync(shared, corrupt);
+
+  h.advance(3000);
+
+  assert.equal(h.injected.length, 0, "a malformed store must make the write attempt return false (no delivery)");
+  assert.equal(readFileSync(shared, "utf8"), corrupt, "a malformed store must be left byte-identical");
+});
+
+test("FEATURE3 g4 B1 invalid top-level shape: a non-`{tasks:[...]}` JSON store is NOT authoritative", () => {
+  const dir = mkdtempSync(join(tmpdir(), "supervisor-f3-g4-c-"));
+  const shared = join(dir, "tasks.json");
+  writeFileSync(
+    shared,
+    JSON.stringify({
+      version: 1,
+      tasks: [
+        { id: "a", sessionId: "owner-a-session-uuid", prompt: "A task", nextRunAtMs: 9_000_000 },
+        { id: "b2", sessionId: PARENT_UUID, prompt: "owner B task", nextRunAtMs: 1_003_000 },
+      ],
+    }),
+  );
+  const h = feature3Harness({ tasksPath: shared });
+  h.sessionStart(PARENT_UUID);
+  h.declare(PARENT_UUID, `TASK:ADD {"id":"b3","prompt":"owner B second","delayMs":3000}`);
+  assert.ok(
+    JSON.parse(readFileSync(shared, "utf8")).tasks.some((t) => t.id === "a"),
+    "precondition: B cached the foreign `a`",
+  );
+
+  // Valid JSON, but `tasks` is NOT an array: `parseTaskStore` yields `[]`, which
+  // the old code mistook for an authoritative empty store.
+  const wrongShape = JSON.stringify({ version: 1, tasks: 5 });
+  writeFileSync(shared, wrongShape);
+
+  h.advance(3000);
+
+  assert.equal(h.injected.length, 0, "an invalid top-level shape must make the write attempt return false (no delivery)");
+  assert.equal(readFileSync(shared, "utf8"), wrongShape, "an invalid top-level shape must be left byte-identical");
+});
+
+test("FEATURE3 g4 B1 valid empty store: `{\"version\":1,\"tasks\":[]}` IS authoritative and a write proceeds", () => {
+  // The discriminating CONTROL: an empty-but-VALID store is a real authoritative
+  // snapshot, so the gate must NOT turn a legitimate first-ish write into a
+  // failure. This is what separates "malformed" from "legitimately empty".
+  const dir = mkdtempSync(join(tmpdir(), "supervisor-f3-g4-d-"));
+  const shared = join(dir, "tasks.json");
+  writeFileSync(shared, JSON.stringify({ version: 1, tasks: [] }));
+
+  const h = feature3Harness({ tasksPath: shared });
+  h.sessionStart(PARENT_UUID);
+  h.declare(PARENT_UUID, `TASK:ADD {"id":"fresh","prompt":"into a valid empty store","delayMs":1000}`);
+
+  assert.deepEqual(persistedTasks(h).map((t) => t.id), ["fresh"], "a write into a valid empty store must persist");
+  h.advance(1000);
+  assert.equal(h.injected.length, 1, "and the task must still fire exactly once");
+});
+
+test("FEATURE3 g4 B1 recovery after readability returns: a failed attempt is retried and succeeds", () => {
+  const dir = mkdtempSync(join(tmpdir(), "supervisor-f3-g4-e-"));
+  const shared = join(dir, "tasks.json");
+  writeFileSync(
+    shared,
+    JSON.stringify({
+      version: 1,
+      tasks: [{ id: "a", sessionId: "owner-a-session-uuid", prompt: "A task", nextRunAtMs: 9_000_000 }],
+    }),
+  );
+  const h = feature3Harness({ tasksPath: shared });
+  h.sessionStart(PARENT_UUID);
+  // An INTERVAL task is retained after a confirmed firing, so the recovered run
+  // can assert the owned intent is PRESENT on disk (a one-shot would be removed
+  // by design once delivered).
+  h.declare(PARENT_UUID, `TASK:ADD {"id":"b2","prompt":"owner B task","delayMs":3000,"intervalMs":10000}`);
+  assert.ok(
+    JSON.parse(readFileSync(shared, "utf8")).tasks.some((t) => t.id === "a"),
+    "precondition: B cached the foreign `a`",
+  );
+
+  // A foreign owner adds `z` (never cached by B); capture the exact bytes.
+  writeFileSync(
+    shared,
+    JSON.stringify({
+      version: 1,
+      tasks: [
+        { id: "a", sessionId: "owner-a-session-uuid", prompt: "A task", nextRunAtMs: 9_000_000 },
+        { id: "z", sessionId: "owner-z-session-uuid", prompt: "Z task never cached by B", nextRunAtMs: 9_000_000 },
+        { id: "b2", sessionId: PARENT_UUID, prompt: "owner B task", nextRunAtMs: 1_003_000 },
+      ],
+    }),
+  );
+  const before = readFileSync(shared, "utf8");
+
+  // Unreadable store: the attempt fails closed and the bytes survive.
+  chmodSync(shared, 0o000);
+  h.advance(3000);
+  assert.equal(h.injected.length, 0, "the first attempt must fail closed while unreadable");
+  assert.equal(readBytesRestoringMode(shared), before, "the failed attempt must leave the store byte-identical");
+
+  // Readability returns; the bounded retry (`TASK_BUSY_RETRY_MS`) must now land.
+  h.advance(2000);
+  assert.equal(h.injected.length, 1, "the retry must deliver once the store is readable again");
+
+  const ids = JSON.parse(readFileSync(shared, "utf8")).tasks.map((t) => t.id).sort();
+  assert.ok(ids.includes("b2"), `B's owned intent must persist after recovery, got ${ids}`);
+  assert.ok(ids.includes("a") && ids.includes("z"), `foreign records must be preserved across recovery, got ${ids}`);
 });

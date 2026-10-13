@@ -170,6 +170,37 @@ export const OSC_NOTIFY_UNVERIFIED_ESCALATION =
   "\x1b]777;notify;Pi;Unverified user escalation - no confirmed user dependency\x07";
 
 /**
+ * Replace every character that could break out of an OSC 777 payload.
+ *
+ * The OSC 777 sequence is `ESC ] 777 ; notify ; <text> BEL`. `<text>` is
+ * terminated ONLY by BEL (`\x07`), so any control byte (BEL, ESC, CR, LF, ...)
+ * or non-ASCII byte inside model-authored text could terminate the sequence early
+ * and let the model inject terminal control. The task id is model-chosen
+ * (`parseTaskAdd` accepts any nonempty trimmed string), so it MUST be sanitized
+ * before it reaches an escape sequence: keep printable ASCII (`\x20`-`\x7e`),
+ * replace everything else with `?`. Printable ASCII cannot terminate the
+ * sequence and cannot begin a new escape.
+ */
+export function sanitizeOscField(value: string): string {
+  return value.replace(/[^\x20-\x7e]/g, "?");
+}
+
+/**
+ * The OSC 777 notice for a REJECTED scheduled task.
+ *
+ * g3 blocker 2: the oversize refusal passed its diagnostic text into `notify`'s
+ * `why` ENUM argument, so the text was discarded and the only observable output
+ * was the generic "Session needs attention" (which notification dedup could also
+ * suppress). A refusal must be observable and must name the refusal, the id and
+ * the limit - without inserting RAW model-authored bytes into the escape
+ * sequence, which `sanitizeOscField` enforces. `reason` is caller-constructed
+ * static text plus numbers, never model bytes.
+ */
+export function taskRejectionNotice(reason: string, taskId: string): string {
+  return `\x1b]777;notify;Pi;scheduled task id ${sanitizeOscField(taskId)} rejected: ${reason}\x07`;
+}
+
+/**
  * How long a completed WAIT may stay silent while its wake proof is checked.
  *
  * Bounded and short by design: this delays the notification, never the
@@ -406,13 +437,29 @@ import { dirname, join } from "node:path";
 /** The action-line prefix for a scheduling statement, at column zero. */
 export const TASK_ACTION_PREFIX = "TASK:";
 
-/** One task record as persisted (and read back). */
+/**
+ * One task record as persisted (and read back).
+ *
+ * FEATURE 3 / Oracle OPTION D (tagged durable outbox): the record ITSELF is the
+ * outbox. `occurrenceId` names the one occurrence currently ARMED (attempted but
+ * not yet POSITIVELY confirmed as persisted). It is persisted so a restart can
+ * re-attempt the SAME occurrence at least once rather than losing it or firing a
+ * fresh one. `nextRunAtMs` is NOT moved until confirmation: an interval's new
+ * cursor is held in `pendingAdvanceTo` (computed when the occurrence was armed)
+ * and committed only once the transcript row for `occurrenceId` is seen. Every
+ * retry reuses the SAME `occurrenceId`; a fresh id is minted only when an
+ * interval cursor actually advances or a task is created/replaced.
+ */
 export interface ScheduledTask {
   id: string;
   sessionId: string;
   prompt: string;
   nextRunAtMs: number;
   intervalMs?: number;
+  /** The occurrence currently armed (attempted, not yet confirmed). */
+  occurrenceId?: string;
+  /** The interval cursor to commit when `occurrenceId` is confirmed. */
+  pendingAdvanceTo?: number;
 }
 
 /**
@@ -475,18 +522,32 @@ export function parseTaskActions(
   structure?: LineStructure,
 ): TaskAction[] {
   const actions: TaskAction[] = [];
-  const lines = text.split("\n");
+  // CR NORMALIZATION (bounded re-review F6): `lineStructure` normalizes bare CRs
+  // before parsing, but this scanner splits the raw string on LF only, so a CR
+  // shifted every subsequent index and the ownership lookup read the WRONG line.
+  // `"intro\r```yaml\nTASK:CANCEL keep\n```"` consulted the fence OPENER's index
+  // for the fenced action. Normalize identically here so the indices agree.
+  const lines = text.replace(/\r\n?/g, "\n").split("\n");
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index].replace(/\s+$/, "");
     if (!/^TASK:/i.test(line)) continue;
-    // MARKDOWN OWNERSHIP (final review F6): a `TASK:` line that is merely
-    // DOCUMENTED - inside a fenced code block, block quote, list item or HTML
-    // block - must not create or cancel a real task. Without this an assistant
-    // explaining the syntax in a fenced example silently mutated the scheduler.
-    // `structure.inside` is the same container test that guards `STATUS:`. When
-    // no structure is supplied (unit tests of the raw scanner) the check is
-    // skipped, and the caller always supplies it.
-    if (structure !== undefined && structure.inside[index]) continue;
+    // MARKDOWN OWNERSHIP (final review F6, corrected here). `inside` is FENCE
+    // membership only, so the first fix still executed a `TASK:` line inside an
+    // HTML block or a LAZY block-quote/list continuation. The right distinction
+    // is DOCUMENT-LEVEL content versus container/code content, which is exactly
+    // `topLevel` - the line's innermost block is a document-level paragraph.
+    //
+    // Note this deliberately does NOT reuse the `paragraphStart` policy that
+    // guards `STATUS:`: that policy exists because a declaration must not sit
+    // beneath prose, but a `TASK:` action is a command, not a declaration, and
+    // legitimate adjacent top-level actions need not each begin a paragraph.
+    //
+    // When no structure is supplied (raw unit tests of the scanner) the check is
+    // skipped; every production caller supplies it.
+    if (structure !== undefined) {
+      if (structure.inside[index]) continue;
+      if (!structure.topLevel[index]) continue;
+    }
     const rest = line.slice(TASK_ACTION_PREFIX.length).trim();
     const space = rest.search(/\s/);
     const verb = (space < 0 ? rest : rest.slice(0, space)).toLowerCase();
@@ -528,21 +589,32 @@ export function parseTaskAdd(body: string): { id: string; prompt: string; delayM
   return result;
 }
 
-/** Parse the persisted store, ignoring any record that does not validate. */
-export function parseTaskStore(text: string): ScheduledTask[] {
+/**
+ * Parse the persisted store, returning `null` when the TEXT is not a valid store
+ * (malformed JSON, a non-object top level, or a non-array `tasks`) and the
+ * validated task list otherwise.
+ *
+ * The null/PARSED distinction is load-bearing in `persistTasks` (g4 B1): a
+ * malformed store must NOT be mistaken for an authoritative EMPTY snapshot,
+ * because that mistake licenses a prune-and-replace of a store whose contents
+ * were never actually read. A legitimately empty `{"tasks": []}` store parses
+ * to `[]` and IS authoritative. Individual records that fail validation are
+ * still skipped; their absence does not make the whole store invalid.
+ */
+export function parseTaskStoreStrict(text: string): ScheduledTask[] | null {
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
   } catch {
-    return [];
+    return null;
   }
-  if (parsed === null || typeof parsed !== "object") return [];
+  if (parsed === null || typeof parsed !== "object") return null;
   const raw = (parsed as { tasks?: unknown }).tasks;
-  if (!Array.isArray(raw)) return [];
+  if (!Array.isArray(raw)) return null;
   const tasks: ScheduledTask[] = [];
   for (const entry of raw) {
     if (entry === null || typeof entry !== "object") continue;
-    const candidate = entry as { id?: unknown; sessionId?: unknown; prompt?: unknown; nextRunAtMs?: unknown; intervalMs?: unknown };
+    const candidate = entry as { id?: unknown; sessionId?: unknown; prompt?: unknown; nextRunAtMs?: unknown; intervalMs?: unknown; occurrenceId?: unknown; pendingAdvanceTo?: unknown };
     if (typeof candidate.id !== "string" || candidate.id.length === 0) continue;
     if (typeof candidate.sessionId !== "string") continue;
     if (typeof candidate.prompt !== "string") continue;
@@ -556,9 +628,23 @@ export function parseTaskStore(text: string): ScheduledTask[] {
     if (typeof candidate.intervalMs === "number" && Number.isFinite(candidate.intervalMs) && candidate.intervalMs > 0) {
       task.intervalMs = candidate.intervalMs;
     }
+    // The outbox fields round-trip so an armed-but-unconfirmed occurrence
+    // survives a restart; an invalid value is dropped (the occurrence is simply
+    // re-armed with a fresh id, which is the safe at-least-once direction).
+    if (typeof candidate.occurrenceId === "string" && candidate.occurrenceId.length > 0) {
+      task.occurrenceId = candidate.occurrenceId;
+    }
+    if (typeof candidate.pendingAdvanceTo === "number" && Number.isFinite(candidate.pendingAdvanceTo)) {
+      task.pendingAdvanceTo = candidate.pendingAdvanceTo;
+    }
     tasks.push(task);
   }
   return tasks;
+}
+
+/** Parse the persisted store, ignoring any record that does not validate. */
+export function parseTaskStore(text: string): ScheduledTask[] {
+  return parseTaskStoreStrict(text) ?? [];
 }
 
 /** Serialize the store in its persisted shape. */
@@ -567,16 +653,58 @@ export function serializeTaskStore(tasks: ScheduledTask[]): string {
 }
 
 /**
- * The model-visible firing prompt: the task id then the declared prompt, in the
- * artifact's exact format.
+ * The scheduler-owned correlation envelope for one armed occurrence.
+ *
+ * Oracle OPTION D: the injected message carries a FIXED, machine-recognizable
+ * line naming the task and the OPAQUE `occurrenceId`. Confirmation requires this
+ * EXACT line in a `role: "user"` PERSISTED transcript row, so an assistant that
+ * merely ECHOES the text can never confirm delivery. The envelope folds in the
+ * former `[task <id>]` prefix convention, so the line remains the first line of
+ * the injected message.
+ */
+export function taskOccurrenceEnvelope(taskId: string, occurrenceId: string): string {
+  return `[task ${taskId} occurrence ${occurrenceId}]`;
+}
+
+/**
+ * The model-visible firing prompt: the correlation envelope line then the
+ * declared prompt. The STORED `task.prompt` is never modified; only the injected
+ * copy is prefixed.
  */
 export function taskFiringPrompt(task: ScheduledTask): string {
-  return `[task ${task.id}]\n${task.prompt}`;
+  const occurrenceId = task.occurrenceId ?? "";
+  return `${taskOccurrenceEnvelope(task.id, occurrenceId)}\n${task.prompt}`;
 }
 
 /** Bounded retry while an injected turn is still in flight, so a busy handoff
  * defers without a tight loop and without dropping the occurrence. */
 export const TASK_BUSY_RETRY_MS = 1000;
+
+/**
+ * Bounded confirmation schedule (Oracle OPTION D).
+ *
+ * After a send is ATTEMPTED the scheduler polls the PERSISTED TRANSCRIPT for the
+ * matching envelope. The host emits `message_start`/`message_end` BEFORE it
+ * appends to the transcript (`agent-session.js:748-763`), so no event or microtask
+ * proves persistence - only a later read does. Poll at `TASK_CONFIRM_RETRY_MS`
+ * for at most `TASK_CONFIRM_MAX_ATTEMPTS` times; on exhaustion the handoff is
+ * released (so later tasks are never stalled) and the occurrence stays armed, so
+ * a later pump RE-ATTEMPTS it with the SAME id (at-least-once).
+ */
+export const TASK_CONFIRM_RETRY_MS = 200;
+export const TASK_CONFIRM_MAX_ATTEMPTS = 25;
+
+/**
+ * A fresh OPAQUE occurrence id.
+ *
+ * Minted when an occurrence is ARMED and re-minted only when an interval cursor
+ * advances or a task is created/replaced. It is random so it cannot collide
+ * across a restart or a second process, and it is never derived from the clock
+ * or the task id.
+ */
+export function mintOccurrenceId(): string {
+  return mintLineageToken().replace(/^ln-/, "oc-");
+}
 
 /**
  * A fresh TRANSIENT registration token, never persisted.
@@ -3005,6 +3133,128 @@ function defaultStatSize(path: string): number | null {
   }
 }
 
+/** The most-recent bytes of a session transcript read for confirmation. */
+export const TRANSCRIPT_TAIL_BYTES = 512 * 1024;
+
+/**
+ * Worst-case serialized bytes one UTF-16 code unit of transcript text can cost.
+ *
+ * `JSON.stringify` escapes a control character (and `"`/`\\`) to `\uXXXX`, which
+ * is SIX bytes per code unit; a valid non-ASCII code unit is emitted raw and
+ * UTF-8 encodes to at most three bytes (an astral pair, two code units, to four).
+ * SIX is therefore the per-code-unit worst case, so `6 * text.length` is a
+ * conservative upper bound on the serialized row's UTF-8 byte length.
+ */
+export const TRANSCRIPT_ROW_WORST_CASE_BYTES_PER_CODE_UNIT = 6;
+
+/** Fixed JSON key/framing overhead of one persisted transcript row. */
+const TRANSCRIPT_ROW_FIXED_OVERHEAD_BYTES = 512;
+
+/**
+ * A conservative WORST-CASE bound on the serialized transcript-row bytes for a
+ * candidate `TASK:ADD` prompt.
+ *
+ * The host persists a delivered message as a JSONL row that wraps the injected
+ * text in a JSON object (`{type:"message", message:{role:"user", content:[{
+ * type:"text", text:<injected>}]}}`), so the row can expand well beyond the
+ * prompt's own length: every code unit may escape to six bytes and the row adds
+ * fixed key framing. `transcriptConfirmsDelivery` reads only the last
+ * `TRANSCRIPT_TAIL_BYTES` of the transcript and SKIPS a line it cannot
+ * `JSON.parse`, so a delivery row that begins BEFORE the tail window can NEVER be
+ * positively correlated and its occurrence would re-send forever. This bound is
+ * therefore computed at `TASK:ADD` time to REJECT an oversized task BEFORE it is
+ * accepted, persisted, or armed (see `addTask`).
+ */
+export function worstCaseTaskRowBytes(taskId: string, prompt: string): number {
+  // The injected text is the correlation envelope + "\n" + the prompt. The
+  // occurrence id is opaque but bounded (`oc-` + 32 hex), so use its maximum
+  // width to stay conservative regardless of the id minted at arm time.
+  const envelope = taskOccurrenceEnvelope(taskId, `oc-${"f".repeat(32)}`);
+  const text = `${envelope}\n${prompt}`;
+  return (
+    text.length * TRANSCRIPT_ROW_WORST_CASE_BYTES_PER_CODE_UNIT +
+    TRANSCRIPT_ROW_FIXED_OVERHEAD_BYTES
+  );
+}
+
+/**
+ * Read the TAIL of a persisted session transcript, or null when unreadable.
+ *
+ * Oracle OPTION D: confirmation reads the PERSISTED transcript, not an event.
+ * A session JSONL grows for the life of the session and can exceed the 2 MiB
+ * whole-artifact cap `defaultReadFile` enforces, so this reads only the most
+ * recent `TRANSCRIPT_TAIL_BYTES`. The just-appended delivery row is one of the
+ * LAST lines, so a tail is sufficient; a partial first line is simply ignored by
+ * the line parser (an unparseable JSON line is skipped). The read is
+ * FAIL-CLOSED: any error resolves to null (no confirmation), so an unreadable
+ * transcript can never fabricate a commit.
+ */
+function readTranscriptTail(path: string): string | null {
+  let fd: number | null = null;
+  try {
+    const size = statSync(path).size;
+    if (size <= 0) return "";
+    const length = Math.min(size, TRANSCRIPT_TAIL_BYTES);
+    const start = size - length;
+    const buffer = Buffer.alloc(length);
+    fd = openSync(path, "r");
+    let offset = 0;
+    while (offset < length) {
+      const read = readSync(fd, buffer, offset, length - offset, start + offset);
+      if (read <= 0) break;
+      offset += read;
+    }
+    if (offset < length) return null;
+    return buffer.toString("utf8");
+  } catch {
+    return null;
+  } finally {
+    if (fd !== null) {
+      try {
+        closeSync(fd);
+      } catch {
+        // best-effort only
+      }
+    }
+  }
+}
+
+/**
+ * Whether a transcript tail contains a `role: "user"` row carrying `envelope`.
+ *
+ * Correlation requires BOTH the exact envelope string AND `role: "user"`: an
+ * assistant message that merely echoes the envelope text (a quoted example, a
+ * restatement) MUST NOT confirm delivery. Rows are the host's persisted JSONL
+ * entries (`{type:"message", message:{role, content:[{type:"text",text}]}}`);
+ * a line that does not parse, or carries no text, is skipped rather than
+ * interpreted. The check is a substring match on the exact envelope, which the
+ * opaque occurrence id makes unambiguous.
+ */
+export function transcriptConfirmsDelivery(transcript: string | null, envelope: string): boolean {
+  if (transcript === null || transcript.length === 0) return false;
+  for (const line of transcript.split("\n")) {
+    if (line.length === 0) continue;
+    let entry: unknown;
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      continue; // a partial tail line cannot confirm anything
+    }
+    if (entry === null || typeof entry !== "object") continue;
+    const message = (entry as { message?: unknown }).message;
+    if (message === null || typeof message !== "object") continue;
+    if ((message as { role?: unknown }).role !== "user") continue;
+    const content = (message as { content?: unknown }).content;
+    if (!Array.isArray(content)) continue;
+    for (const part of content) {
+      if (part === null || typeof part !== "object") continue;
+      const text = (part as { text?: unknown }).text;
+      if (typeof text === "string" && text.includes(envelope)) return true;
+    }
+  }
+  return false;
+}
+
 /**
  * Filesystem reader used in production; any failure resolves to null.
  *
@@ -3635,6 +3885,30 @@ function sessionIdentity(ctx: SupervisorContext | undefined): string {
 }
 
 /**
+ * The persisted session transcript path, for the scheduled-task confirmation
+ * read (Oracle OPTION D).
+ *
+ * The REAL host exposes session identity only through
+ * `ctx.sessionManager.getSessionFile()`, so that is tried first. A
+ * minimal/fixture context supplies the direct `ctx.sessionFile` fallback. This
+ * is deliberately SEPARATE from `sessionIdentity`: the identity may legitimately
+ * be a bare uuid (as a fixture context supplies), which is not a file path, so
+ * the two must not be conflated. An absent path returns "", which makes
+ * confirmation impossible and leaves the occurrence ARMED rather than wrongly
+ * committed.
+ */
+function sessionTranscriptPath(ctx: SupervisorContext | undefined): string {
+  try {
+    const fromManager = ctx?.sessionManager?.getSessionFile?.();
+    if (typeof fromManager === "string" && fromManager.length > 0) return fromManager;
+  } catch {
+    // A throwing accessor yields no path; fall through to the direct field.
+  }
+  const file = ctx?.sessionFile;
+  return typeof file === "string" && file.length > 0 ? file : "";
+}
+
+/**
  * Interpret one owner reply as witnessed-wake proof for THIS session.
  *
  * The reply must (1) name the same item, (2) belong to this session, and
@@ -4258,10 +4532,28 @@ export function registerSessionSupervisor(
   let compactionClosable = false;
   let registrationToken = mintRegistrationToken();
   let currentSessionId = "";
+  // The persisted session transcript path for the CURRENT session, captured from
+  // the session context. The confirmation read needs it because the commit point
+  // is the PERSISTED transcript, not an event. In production this comes from
+  // `ctx.sessionManager.getSessionFile()`; a minimal/fixture context supplies the
+  // direct `ctx.sessionFile` fallback. Empty means "no transcript to read", in
+  // which case confirmation can never happen and the occurrence stays armed.
+  let currentSessionFile = "";
   // The task whose injected turn is still in flight, if any. One handoff guard:
   // a second firing for the same (or any) task is deferred until the resulting
   // turn settles, so an injected turn is never overlapped.
   let taskHandoff: string | null = null;
+  /**
+   * Bounded confirmation polls, kept SEPARATE from `taskTimers`.
+   *
+   * Oracle OPTION D: after a send is ATTEMPTED, the occurrence is confirmed only
+   * when its envelope is seen in the persisted transcript. Until then `taskHandoff`
+   * holds the scheduler's single in-flight slot, so the poll MUST be able to
+   * release it on exhaustion without colliding with a firing/cancel retry keyed by
+   * the same task id. A dedicated map guarantees that (the same reasoning as
+   * `cancelRetries`).
+   */
+  const confirmTimers = new Map<string, unknown>();
 
   /**
    * Deliver a due task's prompt as a user message in this session.
@@ -4280,26 +4572,72 @@ export function registerSessionSupervisor(
    * So delivery is conditional on the host being able to ACCEPT it. The caller
    * checks `canAcceptNow()` first and retains the occurrence when it cannot.
    */
+  /**
+   * Attempt delivery. Returns `true` only when the send was ACCEPTED.
+   *
+   * A `try/catch` cannot see the host's real refusal: `sendUserMessage` is an
+   * `async` wrapper that returns `void` (`extensions/types.d.ts:1243-1246`) and
+   * the host CATCHES its own rejection internally (`agent-session.js:2711-2718`,
+   * `runner.emitError`). A synchronous throw only happens for a few early
+   * guard failures. So a `void` return means ATTEMPTED, never ACCEPTED.
+   *
+   * Oracle OPTION D inversion: this function only SENDS. It never advances or
+   * removes the durable cursor and never treats its own return as proof of
+   * delivery. The caller persists the pending occurrence record BEFORE calling
+   * here and commits only after the transcript confirms the envelope.
+   */
   const injectTask = (task: ScheduledTask): boolean => {
     if (typeof api.sendUserMessage !== "function") return false;
+    if (!canAcceptNow()) return false;
     try {
       api.sendUserMessage(taskFiringPrompt(task), { deliverAs: "followUp" });
       return true;
     } catch {
+      // A synchronous throw is a refusal we CAN observe; treat it as not sent.
       return false;
+    }
+  };
+
+  /** Whether the persisted transcript currently proves this occurrence landed. */
+  const confirmedInTranscript = (task: ScheduledTask): boolean => {
+    if (task.occurrenceId === undefined) return false;
+    if (currentSessionFile.length === 0) return false;
+    return transcriptConfirmsDelivery(
+      readTranscriptTail(currentSessionFile),
+      taskOccurrenceEnvelope(task.id, task.occurrenceId),
+    );
+  };
+
+  /** Clear one task's armed confirmation poll, if any. */
+  const clearConfirmTimer = (id: string) => {
+    const handle = confirmTimers.get(id);
+    if (handle === undefined) return;
+    confirmTimers.delete(id);
+    try {
+      cancelScheduled(handle);
+    } catch {
+      // best-effort only
     }
   };
 
   /**
    * Whether the host can currently ACCEPT an injected user message.
    *
+   * Oracle OPTION D: this is NO LONGER the commit gate. Correctness cannot rest
+   * on predicting whether the host will accept a send, because a refusal is
+   * swallowed (`agent-session.js:2711-2718`) and the prediction can be wrong when
+   * a later async handler suspends the compact emit across timer turns. The gate
+   * is now the PERSISTED TRANSCRIPT (`confirmedInTranscript`); this predicate is
+   * retained only to DEFER a pointless attempt while compaction is observably in
+   * flight, which avoids burning a confirmation window on a send the host will
+   * drop. It is kept (rather than removed) because the compaction-event tests
+   * assert that no send is even ATTEMPTED while the window is open.
+   *
    * Pi THROWS on a send while compacting, before it inspects the delivery mode
    * (`agent-session.js:1534-1535`), and the host swallows that rejection
    * internally (`:2711-2718` emits an error and discards it). The public
    * `api.sendUserMessage` therefore returns `void` (`extensions/types.d.ts:1243-
-   * 1246`), so NO acknowledgement of a refusal is available to the caller: a
-   * fire-and-forget send silently loses an occurrence the duplicate guard has
-   * already consumed.
+   * 1246`), so NO acknowledgement of a refusal is available to the caller.
    *
    * Neither `api.isCompacting()` nor `api.isIdle()` can help. `isCompacting` is
    * a getter on `AgentSession` (`:1204`) and is NOT exposed to extensions; and
@@ -4312,7 +4650,7 @@ export function registerSessionSupervisor(
    * (`extensions/types.d.ts:587-610`): `session_before_compact` fires before
    * compaction and `session_compact` / `session_compact_failed` fire when it ends
    * or fails. Tracking that pair gives a real, production-observable answer, so
-   * this guard is keyed on it rather than on a surface that does not exist.
+   * this defer is keyed on it rather than on a surface that does not exist.
    */
   const canAcceptNow = (): boolean => !compacting;
 
@@ -4340,20 +4678,118 @@ export function registerSessionSupervisor(
       // lost-update window to a concurrent write between the read and the rename;
       // it does not make the store a transaction, because there is no lock.
       //
-      // A missing or unreadable store is NOT a failure: on a first write there is
-      // nothing to merge, and refusing to persist would drop the task entirely.
-      // Only a WRITE failure is fatal, because only that leaves the guard
-      // unlanded.
-      let foreign: ScheduledTask[] = [];
+      // CURRENT-ON-DISK-WINS FOR FOREIGN RECORDS (g2 blocker 2): the previous rule
+      // imported a foreign record only when its id was ABSENT from local memory,
+      // then re-serialized the whole map. That resurrects a foreign task another
+      // process CANCELLED (its id is still cached locally) and discards a foreign
+      // UPDATE (the stale cached copy is re-written). For every record this
+      // process does NOT own, the CURRENT on-disk copy is authoritative: an
+      // on-disk foreign record REPLACES the local copy, and a foreign id cached
+      // locally but ABSENT from disk is DELETED rather than re-written. Records
+      // this process owns are untouched and still win. This fixes the SEQUENTIAL
+      // two-owner case; the no-lock concurrent window remains the documented bound.
+      //
+      // AUTHORITATIVE-SNAPSHOT GATE (g3 blocker 1): a `null` read is NOT proof
+      // that the store is EMPTY. `readFile` is the artifact reader, whose 2 MiB
+      // cap (see `defaultReadFile`) makes a large-but-writable task store read as
+      // `null`; a throw/corruption does the same. The previous code conflated
+      // "unreadable" with "empty", so a successful rename then PRUNED every
+      // cached foreign record and replaced the file with the pruned map - silently
+      // DELETING another owner's tasks. A first write (no file yet) is genuinely
+      // empty and may proceed. An existing store must be read with a store
+      // reader that is NOT artifact-capped before any foreign record is pruned or
+      // the store is replaced; only a confirmed absent store or a successful,
+      // authoritative snapshot justifies a write that drops records.
+      //
+      // g4 B1 completion: the gate above was still INCOMPLETE on two SEQUENTIAL
+      // paths, both of which replaced a store nobody had actually read:
+      //   (1) BOTH readers fail (`readFile` refuses it and the uncapped
+      //       `readFileSync` throws). `authoritative` stayed false, but the temp
+      //       serialization and rename below still ran unconditionally, replacing
+      //       an existing unreadable store from a stale in-memory map.
+      //   (2) The store reads non-null but does NOT parse to `{tasks: [...]}`.
+      //       The old `parseTaskStore` returned `[]` for malformed JSON, so a
+      //       PARSE FAILURE looked like an authoritative EMPTY foreign snapshot,
+      //       enabling pruning AND replacement.
+      // Both paths now `return false` BEFORE reconciliation, pruning, temp
+      // serialization, or rename. Existence itself is established with `statSync`
+      // so an access/stat error is NOT mistaken for a confirmed absence.
+      let storeExists: boolean;
       try {
-        foreign = parseTaskStore(readFile(tasksPath));
-      } catch {
-        foreign = [];
-      }
-      for (const other of foreign) {
-        if (other.sessionId !== currentSessionId && !tasks.has(other.id)) {
-          tasks.set(other.id, other);
+        statSync(tasksPath);
+        storeExists = true;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+          // Confirmed absent: nothing to merge, first write proceeds.
+          storeExists = false;
+        } else {
+          // Existence could not be established (e.g. EACCES on the parent
+          // directory). Fail closed rather than treating it as a first write,
+          // which would clobber whatever the store actually holds.
+          return false;
         }
+      }
+      let authoritative = false;
+      let foreign: ScheduledTask[] = [];
+      if (!storeExists) {
+        authoritative = true;
+      } else {
+        let raw: string | null = null;
+        try {
+          raw = readFile(tasksPath);
+        } catch {
+          raw = null;
+        }
+        if (raw === null) {
+          // The store exists but the (artifact-capped) reader refused it. Read
+          // the store itself, which is not an artifact and has no such cap, so a
+          // legitimate >2 MiB store still yields an authoritative snapshot.
+          try {
+            raw = readFileSync(tasksPath, "utf8");
+          } catch {
+            raw = null;
+          }
+        }
+        if (raw === null) {
+          // An existing store neither reader could read is NOT an authoritative
+          // empty snapshot. Refuse the write so the on-disk bytes survive.
+          return false;
+        }
+        const snapshot = parseTaskStoreStrict(raw);
+        if (snapshot === null) {
+          // The text parsed (or did not) but is NOT a `{tasks: [...]}` store.
+          // A malformed store must never look like an authoritative empty one.
+          return false;
+        }
+        foreign = snapshot;
+        authoritative = true;
+      }
+      const onDiskForeignIds = new Set<string>();
+      for (const other of foreign) {
+        // An on-disk record owned by THIS process, or an on-disk id this process
+        // owns in memory, is not foreign: this process's owned copy wins.
+        if (other.sessionId === currentSessionId) continue;
+        const local = tasks.get(other.id);
+        if (local !== undefined && local.sessionId === currentSessionId) continue;
+        tasks.set(other.id, other);
+        onDiskForeignIds.add(other.id);
+      }
+      if (authoritative) {
+        // A foreign id this process cached but that is ABSENT from disk reflects a
+        // landed foreign change (typically a cancellation); do NOT re-serialize
+        // it. Without an authoritative snapshot this prune is UNSOUND (absence is
+        // unobserved, not established), so it is SKIPPED - an unreadable store
+        // must never delete a cached foreign record.
+        for (const [id, local] of [...tasks.entries()]) {
+          if (local.sessionId === currentSessionId) continue;
+          if (onDiskForeignIds.has(id)) continue;
+          tasks.delete(id);
+        }
+      }
+      if (!authoritative) {
+        // No authoritative snapshot was established (only reachable if a future
+        // edit reintroduces a non-returning path): do not replace the store.
+        return false;
       }
       writeFileSync(tmp, serializeTaskStore([...tasks.values()]));
       renameSync(tmp, tasksPath);
@@ -4428,6 +4864,11 @@ export function registerSessionSupervisor(
    * active one is RETAINED for its exact session to resume, never delivered into
    * a different one and never run through a hidden runner. A busy handoff defers
    * with a bounded retry rather than overlapping turns.
+   *
+   * Oracle OPTION D: this pump only ARMS and ATTEMPTS. It persists the pending
+   * occurrence record BEFORE sending (so the record is the outbox), then confirms
+   * by reading the PERSISTED transcript on a bounded timer. It never advances or
+   * removes the durable cursor on the strength of a `void` send.
    */
   const pumpTask = (id: string, token: string) => {
     if (token !== registrationToken) return;
@@ -4459,74 +4900,233 @@ export function registerSessionSupervisor(
       return;
     }
     if (!canAcceptNow()) {
-      // Host cannot accept a send right now (compaction). Retain the occurrence
-      // UNCONSUMED and retry, rather than committing a firing that would be
-      // silently rejected (Review 78 round 2, HIGH-1).
+      // Host cannot accept a send right now (compaction). DEFER the attempt - this
+      // avoids burning a confirmation window on a send the host will drop - and
+      // retry. Correctness no longer depends on this predicate: a wrong prediction
+      // now costs a delayed attempt, never a lost occurrence.
       clearTaskTimer(id);
       const handle = schedule(() => pumpTask(id, token), TASK_BUSY_RETRY_MS);
       taskTimers.set(id, handle);
       return;
     }
 
-    // DUPLICATE GUARD: advance/remove the due cursor DURABLY BEFORE injection, so
-    // a crash between persistence and delivery cannot re-fire the same
-    // occurrence on restart. One-shot -> remove once; interval -> advance past
-    // `now`. Overdue occurrences are therefore coalesced into THIS single check:
-    // a due time 144 intervals in the past yields exactly one firing.
+    // STEP 3 (persist the pending record and establish the handoff BEFORE the
+    // send). Mint the occurrence id and, for an interval, the cursor to commit on
+    // confirmation. `nextRunAtMs` is deliberately LEFT ALONE: it is the durable
+    // re-derivation key, so a restart re-attempts the SAME overdue occurrence.
     //
-    // If the store cannot be written the occurrence must NOT be delivered: the
-    // guard would not have landed, so a restart could replay it. Retain the task
-    // and retry instead of consuming the occurrence on an unpersisted state.
-    if (task.intervalMs !== undefined) {
-      const previousDue = task.nextRunAtMs;
-      task.nextRunAtMs = advanceDuePast(task.intervalMs, task.nextRunAtMs, now());
+    // If the store cannot be written the occurrence must NOT be attempted: the
+    // pending record would not have landed, so a restart could not re-attempt it
+    // and the at-least-once guarantee would be broken. Retain the task and retry.
+    if (task.occurrenceId === undefined) {
+      task.occurrenceId = mintOccurrenceId();
+      if (task.intervalMs !== undefined) {
+        task.pendingAdvanceTo = advanceDuePast(task.intervalMs, task.nextRunAtMs, now());
+      }
       if (!persistTasks()) {
-        task.nextRunAtMs = previousDue; // undo the in-memory advance
+        // Undo the in-memory arming; nothing has been sent.
+        delete task.occurrenceId;
+        delete task.pendingAdvanceTo;
         clearTaskTimer(id);
         const handle = schedule(() => pumpTask(id, token), TASK_BUSY_RETRY_MS);
         taskTimers.set(id, handle);
         return;
       }
-      taskHandoff = id;
-      if (!injectTask(task)) {
-        // The send was refused: the occurrence is CONSUMED on disk already, so
-        // release the handoff and surface the loss rather than stalling every
-        // later task behind a handoff that will never settle.
-        taskHandoff = null;
-        notify(OSC_NOTIFY_UNVERIFIED_ESCALATION, `scheduled task ${id} could not be delivered`);
+    } else if (task.pendingAdvanceTo === undefined && task.intervalMs !== undefined) {
+      // A record restored from disk may carry an armed id but not the target
+      // cursor (e.g. an older store). Re-derive and persist it so confirmation
+      // has a cursor to commit.
+      task.pendingAdvanceTo = advanceDuePast(task.intervalMs, task.nextRunAtMs, now());
+      if (!persistTasks()) {
+        delete task.pendingAdvanceTo;
+        clearTaskTimer(id);
+        const handle = schedule(() => pumpTask(id, token), TASK_BUSY_RETRY_MS);
+        taskTimers.set(id, handle);
         return;
       }
-      armTask(task);
-      return;
     }
-    tasks.delete(id);
-    if (!persistTasks()) {
-      tasks.set(id, task); // undo the in-memory removal
-      clearTaskTimer(id);
+
+    // STEP 3 (cont.): establish the handoff, then ATTEMPT the send. A `void`
+    // return means ATTEMPTED, never ACCEPTED.
+    clearTaskTimer(id);
+    taskHandoff = id;
+    if (!injectTask(task)) {
+      // The send could not even be attempted (a synchronous throw or an absent
+      // surface). Release the handoff so later tasks are not suppressed, and
+      // retry the SAME occurrence later - the pending record stays armed.
+      taskHandoff = null;
       const handle = schedule(() => pumpTask(id, token), TASK_BUSY_RETRY_MS);
       taskTimers.set(id, handle);
       return;
     }
-    clearTaskTimer(id);
-    taskHandoff = id;
-    if (!injectTask(task)) {
-      taskHandoff = null;
-      notify(OSC_NOTIFY_UNVERIFIED_ESCALATION, `scheduled task ${id} could not be delivered`);
+
+    // STEP 4: confirm from the PERSISTED TRANSCRIPT, never from the send. Check
+    // once immediately (a host that persisted before returning confirms at once),
+    // then poll on a bounded timer. The occurrence id is captured here so the
+    // poll can only ever commit THIS occurrence.
+    const occurrenceId = task.occurrenceId;
+    if (confirmedInTranscript(task)) {
+      commitOccurrence(id, token, occurrenceId);
+      return;
     }
+    scheduleConfirmation(id, token, occurrenceId);
+  };
+
+  /**
+   * Commit a CONFIRMED occurrence durably (STEP 5).
+   *
+   * By the time this runs the transcript has been seen to contain the exact
+   * envelope for `task.occurrenceId` in a `role: "user"` row, which is the only
+   * positive-correlation proof of delivery available. An interval advances to the
+   * cursor computed at ARM TIME (`pendingAdvanceTo`) and gets a FRESH occurrence
+   * id; a one-shot is removed. The handoff is always released, so a later task is
+   * never stalled behind a confirmed one.
+   *
+   * CONFIRMATION IS INDEPENDENT OF THE HANDOFF: a settle legitimately releases the
+   * handoff while a confirmation poll is still pending, and the poll must still be
+   * able to commit the occurrence it was armed for. The commit therefore keys on
+   * `task.occurrenceId === occurrenceId` (the SAME occurrence still armed), not on
+   * the handoff slot. If the task has since advanced to a different occurrence,
+   * this commit is stale and is a safe no-op.
+   *
+   * On a persist failure the in-memory state is rolled back and retried, using
+   * the same idiom as the rest of this scheduler: a commit that did not reach
+   * disk must not be treated as having landed.
+   */
+  const commitOccurrence = (id: string, token: string, occurrenceId: string | undefined) => {
+    const task = tasks.get(id);
+    if (task === undefined) {
+      if (taskHandoff === id) taskHandoff = null;
+      clearConfirmTimer(id);
+      return;
+    }
+    if (occurrenceId === undefined || task.occurrenceId !== occurrenceId) {
+      // The occurrence this poll was armed for is no longer the armed one (a
+      // later occurrence replaced it): this is a stale poll, not a commit.
+      clearConfirmTimer(id);
+      return;
+    }
+    clearConfirmTimer(id);
+    // Capture the pre-commit state so a failed persist can be undone exactly.
+    const previousDue = task.nextRunAtMs;
+    const previousOccurrence = task.occurrenceId;
+    const previousAdvance = task.pendingAdvanceTo;
+    if (task.intervalMs !== undefined) {
+      // Advance to the cursor computed at ARM time, NOT `now()`: a long stall must
+      // not skip occurrences beyond the designed coalescing rule.
+      task.nextRunAtMs = task.pendingAdvanceTo ?? advanceDuePast(task.intervalMs, task.nextRunAtMs, now());
+      delete task.pendingAdvanceTo;
+      task.occurrenceId = mintOccurrenceId();
+    } else {
+      tasks.delete(id);
+    }
+    if (!persistTasks()) {
+      // Roll back the durable-commit attempt and retry it.
+      if (task.intervalMs !== undefined) {
+        task.nextRunAtMs = previousDue;
+        if (previousOccurrence !== undefined) task.occurrenceId = previousOccurrence;
+        else delete task.occurrenceId;
+        if (previousAdvance !== undefined) task.pendingAdvanceTo = previousAdvance;
+        else delete task.pendingAdvanceTo;
+      } else {
+        tasks.set(id, task);
+      }
+      if (taskHandoff === id) taskHandoff = null;
+      const handle = schedule(() => pumpTask(id, token), TASK_BUSY_RETRY_MS);
+      taskTimers.set(id, handle);
+      return;
+    }
+    if (taskHandoff === id) taskHandoff = null;
+    if (task.intervalMs !== undefined) armTask(task);
+  };
+
+  /**
+   * Poll the persisted transcript for the armed occurrence (STEP 4, bounded).
+   *
+   * The host appends to the transcript AFTER it emits `message_start`/`
+   * message_end` (`agent-session.js:748-763`), so no event handler or microtask
+   * proves persistence; only a later read does. Poll up to
+   * `TASK_CONFIRM_MAX_ATTEMPTS` times at `TASK_CONFIRM_RETRY_MS`. On exhaustion the
+   * handoff is RELEASED (so later tasks are not stalled - Review 78 HIGH-1) and a
+   * retry pump re-ATTEMPTS the SAME occurrence id (at-least-once).
+   */
+  const scheduleConfirmation = (
+    id: string,
+    token: string,
+    occurrenceId: string | undefined,
+    attempt = 1,
+  ) => {
+    clearConfirmTimer(id);
+    const handle = schedule(() => {
+      if (token !== registrationToken) return;
+      const task = tasks.get(id);
+      // A task that has advanced to a different occurrence (or vanished) makes
+      // this poll stale; committing is a no-op guarded inside `commitOccurrence`.
+      if (task !== undefined && confirmedInTranscript(task)) {
+        commitOccurrence(id, token, occurrenceId);
+        return;
+      }
+      if (task === undefined || task.occurrenceId !== occurrenceId) return;
+      if (attempt >= TASK_CONFIRM_MAX_ATTEMPTS) {
+        // Bounded exhaustion: release the handoff and re-attempt the occurrence
+        // later with the SAME id. The pending record is persisted, so a restart
+        // would re-attempt it too.
+        if (taskHandoff === id) taskHandoff = null;
+        clearTaskTimer(id);
+        const retry = schedule(() => pumpTask(id, token), TASK_BUSY_RETRY_MS);
+        taskTimers.set(id, retry);
+        return;
+      }
+      scheduleConfirmation(id, token, occurrenceId, attempt + 1);
+    }, TASK_CONFIRM_RETRY_MS);
+    confirmTimers.set(id, handle);
   };
 
   /** Register one validated `TASK:ADD`, owned by the current session. */
   const addTask = (body: string) => {
     const parsed = parseTaskAdd(body);
     if (parsed === null || currentSessionId.length === 0) return;
+    // UNCONFIRMABLE-PROMPT REJECTION (g2 blocker 1): delivery is confirmed ONLY by
+    // positively correlating the persisted transcript row, and the confirmation
+    // read sees just the last `TRANSCRIPT_TAIL_BYTES` of the transcript. A prompt
+    // whose serialized row could begin before that window can NEVER be confirmed,
+    // so the occurrence would re-send forever. REJECT it here - before it is
+    // accepted, persisted, or armed - with a visible notice naming the id and the
+    // limit. The bound is a conservative WORST CASE (see `worstCaseTaskRowBytes`),
+    // so this only ever refuses a prompt that could plausibly exceed the window.
+    const worstCaseBytes = worstCaseTaskRowBytes(parsed.id, parsed.prompt);
+    if (worstCaseBytes > TRANSCRIPT_TAIL_BYTES) {
+      notifyTaskRejection(
+        `prompt too large to confirm delivery ` +
+          `(worst-case ${worstCaseBytes} bytes exceeds the ${TRANSCRIPT_TAIL_BYTES}-byte confirmation tail)`,
+        parsed.id,
+      );
+      return;
+    }
     // CROSS-SESSION ID COLLISION (final review F3): ids are model-chosen, so a
     // second session can pick an id this store already holds for ANOTHER session.
     // Silently overwriting would delete that session's task. Refuse instead; the
     // instruction to re-issue under a free id is a notice, not a silent mutation.
     const existing = tasks.get(parsed.id);
     if (existing !== undefined && existing.sessionId !== currentSessionId) {
-      notify(OSC_NOTIFY, `scheduled task id ${parsed.id} is already owned by another session`);
+      notifyTaskRejection("id is already owned by another session", parsed.id);
       return;
+    }
+    // HIGH-1 (final Review): REPLACING a same-session task under the same id must
+    // retire the superseded occurrence's confirmation poll AND handoff. `armTask`
+    // below clears only the FIRING timer, so without this the old poll survives,
+    // then hits the stale return in `scheduleConfirmation` (the replacement has no
+    // `occurrenceId` yet) and returns WITHOUT releasing `taskHandoff`. Every later
+    // pump of this id would then defer forever at the handoff gate, permanently
+    // stalling the replacement and every task queued behind it.
+    //
+    // The superseded occurrence's delivery is deliberately NOT committed and NOT
+    // re-attempted: the operator replaced it, so the old prompt is withdrawn. This
+    // only retires the lifecycle state that would otherwise leak.
+    if (existing !== undefined) {
+      clearConfirmTimer(parsed.id);
+      if (taskHandoff === parsed.id) taskHandoff = null;
+      clearTaskTimer(parsed.id);
     }
     const task: ScheduledTask = {
       id: parsed.id,
@@ -4536,6 +5136,15 @@ export function registerSessionSupervisor(
     };
     if (parsed.intervalMs !== undefined) task.intervalMs = parsed.intervalMs;
     tasks.set(task.id, task);
+    // BOUNDED RE-REVIEW F3: the persist result is deliberately NOT treated as a
+    // success gate here. An unsaved ADD is recoverable - the FIRING path re-checks
+    // `persistTasks()` before consuming an occurrence, so a task that never
+    // reached disk simply cannot be delivered as a committed occurrence. Refusing
+    // the ADD outright would also break the tested contract that a task created
+    // while the store is unwritable still exists in memory and is retried (see
+    // `TASK:CANCEL is retried until it lands`, which creates its subject under an
+    // unwritable store). What must never happen is a SILENT overwrite of another
+    // session's record, which the collision check above prevents.
     persistTasks();
     armTask(task);
   };
@@ -4576,25 +5185,60 @@ export function registerSessionSupervisor(
    * `armCurrentSessionTasks` and the pump path so no other code can resurrect or
    * fire a task whose cancellation has not yet landed.
    */
+  /**
+   * Drop a pending cancellation retry AND cancel its handle.
+   *
+   * BOUNDED RE-REVIEW F2: every path that removed a `cancelRetries` entry was
+   * deleting the MAP ENTRY ONLY, leaving the scheduled callback alive. A stale
+   * callback then ran later against a REUSED id and deleted the replacement
+   * task: (1) persist `x`, fail the delete, arm retry R; (2) make the store
+   * writable and cancel `x` successfully - R disappears from the map but stays
+   * scheduled; (3) add a NEW task with id `x`; (4) R fires and deletes it. The
+   * registration-token check does not help, because the token is still current.
+   * Untracked handles could also outlive shutdown.
+   */
+  const dropCancelRetry = (id: string) => {
+    const handle = cancelRetries.get(id);
+    if (handle !== undefined) {
+      try {
+        cancelScheduled(handle);
+      } catch {
+        // best-effort only
+      }
+      cancelRetries.delete(id);
+    }
+  };
+
   const cancelTaskNow = (id: string) => {
     const task = tasks.get(id);
     if (task === undefined) {
       pendingCancels.delete(id);
-      cancelRetries.delete(id);
+      dropCancelRetry(id);
+      // Oracle OPTION D: a cancelled task must not keep the scheduler's single
+      // handoff slot pinned by a poll for it.
+      clearConfirmTimer(id);
+      if (taskHandoff === id) taskHandoff = null;
       return;
     }
     tasks.delete(id);
     clearTaskTimer(id);
     if (persistTasks()) {
       pendingCancels.delete(id);
-      cancelRetries.delete(id);
+      dropCancelRetry(id);
+      // Oracle OPTION D (STEP 7): a cancellation releases the handoff too, so a
+      // task cancelled mid-confirmation cannot stall later tasks.
+      clearConfirmTimer(id);
+      if (taskHandoff === id) taskHandoff = null;
       return;
     }
     tasks.set(id, task); // undo: the deletion did not land on disk
     clearTaskTimer(id);
     const token = registrationToken;
     // Re-arm nothing for FIRING; only the cancellation is retried. Keying this in
-    // `cancelRetries` keeps it out of reach of the firing machinery.
+    // `cancelRetries` keeps it out of reach of the firing machinery. The previous
+    // handle (if any) is cancelled first, so a repeated cancellation attempt
+    // cannot leave an untracked timer behind.
+    dropCancelRetry(id);
     const handle = schedule(() => {
       if (token !== registrationToken) return;
       cancelTaskNow(id);
@@ -4645,6 +5289,20 @@ export function registerSessionSupervisor(
       }
     }
     cancelRetries.clear();
+    // Oracle OPTION D: pending confirmation polls hold the handoff slot, so a
+    // reload must cancel them too (a task restored from disk is re-armed below).
+    for (const handle of confirmTimers.values()) {
+      try {
+        cancelScheduled(handle);
+      } catch {
+        // best-effort only
+      }
+    }
+    confirmTimers.clear();
+    // A reload opens a new registration scope: any prior in-flight handoff is
+    // void, and `handleSessionStart` already nulls it. Assert it here too so the
+    // two entry points cannot diverge.
+    taskHandoff = null;
     let text: string | null = null;
     try {
       text = readFileSync(tasksPath, "utf8");
@@ -4678,6 +5336,10 @@ export function registerSessionSupervisor(
     if (identity.length === 0) return;
     if (identity === currentSessionId) return;
     currentSessionId = identity;
+    // Oracle OPTION D: keep the confirmation transcript bound to the live
+    // session, so a task pumped for THIS session is confirmed against THIS
+    // session's transcript.
+    currentSessionFile = sessionTranscriptPath(ctx);
     armCurrentSessionTasks();
   };
 
@@ -5077,6 +5739,26 @@ export function registerSessionSupervisor(
     } catch {
       // best-effort only
     }
+  };
+
+  /**
+   * Report a REJECTED scheduled task as a visible, self-describing notice.
+   *
+   * g3 blocker 2: the refusals used to call `notify(OSC_NOTIFY, "<diagnostic>")`,
+   * which passed the diagnostic as the `why` ENUM argument, so the text was
+   * discarded and only the generic notice - suppressible by the `notified` dedupe
+   * - could be observed. This emits the diagnostic on its OWN notice, BEFORE the
+   * dedupe is consulted, so the refusal, id and limit are ALWAYS observable, and
+   * then marks the epoch notified so no second generic notice follows. The id is
+   * sanitized by `taskRejectionNotice`; `reason` is caller-owned static text.
+   */
+  const notifyTaskRejection = (reason: string, taskId: string) => {
+    try {
+      process.stdout.write(taskRejectionNotice(reason, taskId));
+    } catch {
+      // best-effort only: a closed stdout must not swallow the rejection
+    }
+    notified = true;
   };
 
   // --- WAIT verification ---------------------------------------------------
@@ -6158,6 +6840,10 @@ export function registerSessionSupervisor(
     registrationToken = mintRegistrationToken();
     taskHandoff = null;
     currentSessionId = sessionIdentity(ctx);
+    // Oracle OPTION D: capture the persisted transcript path for the CURRENT
+    // session so confirmation can read it. Captured here (every session_start)
+    // rather than inside `sessionIdentity`, whose value may be a bare uuid.
+    currentSessionFile = sessionTranscriptPath(ctx);
     restoreTasks();
     // Pi distinguishes WHY a session start fired
     // (`dist/core/extensions/types.d.ts:562-569`): `startup` | `reload` |
@@ -6358,6 +7044,17 @@ export function registerSessionSupervisor(
       }
     }
     cancelRetries.clear();
+    // Oracle OPTION D: confirmation polls hold real timers and pin the handoff
+    // slot. Clear them so no callback outlives the session it belonged to; the
+    // persisted occurrence record makes the task re-attemptable after restart.
+    for (const handle of confirmTimers.values()) {
+      try {
+        cancelScheduled(handle);
+      } catch {
+        // best-effort only
+      }
+    }
+    confirmTimers.clear();
   };
 
   const resetForInput = (event: unknown, ctx: SupervisorContext) => {
@@ -6587,36 +7284,72 @@ export function registerSessionSupervisor(
    *
    * So pumping SYNCHRONOUSLY inside this handler is unsafe (the controller is
    * still alive, `prompt()` is refused - that was R81-P1, and it was correct),
-   * while waiting for a settle is unsafe too (manual `/compact` never emits one -
-   * that is F1). The only correct boundary is just AFTER this handler returns:
-   * the host clears the controller in the very next statement. A zero-delay
-   * deferral lands there, and `canAcceptNow()` still guards it, so a host that
-   * changed that ordering would refuse rather than lose the occurrence.
+   * BOUNDED RE-REVIEW F1: this handler is REMOVED. An earlier revision armed a
+   * sticky `compactionClosable` flag here so the next settle would release the
+   * window, but `markCompactionClosable` was then unregistered, leaving the flag
+   * set by nothing and the backstop effectively dead. The settle path still
+   * consults the flag (harmlessly), and `closeCompactionWindow` now both marks
+   * the window closable and schedules the retained tasks on the real event loop.
    */
-  const markCompactionClosable = () => {
-    compactionClosable = true;
-    return undefined;
+
+  /**
+   * Retry the retained tasks shortly, on the REAL event loop.
+   *
+   * BOUNDED RE-REVIEW F1: a `queueMicrotask` here was WRONG. The runner AWAITS
+   * each handler (`dist/core/extensions/runner.js:819`, `await handler(event, ctx)`),
+   * and the host clears its compaction controller only after the whole emit
+   * resolves (`agent-session.js:2259`). A microtask queued inside the handler is
+   * drained BEFORE that awaiting continuation resumes, so it pumped while the
+   * controller was still present and the send was refused - exactly the R81-P1
+   * loss the deferral was meant to avoid. A microtask cannot express "after the
+   * host's await chain has resumed".
+   *
+   * A timer can. `TASK_BUSY_RETRY_MS` runs on the macrotask queue, so it lands
+   * after both the emit and the controller cleanup, and `canAcceptNow()` still
+   * guards delivery if some host ordering differs. This reuses the SAME
+   * retain-and-retry path `pumpTask` already takes when it cannot accept, so
+   * there is one mechanism rather than a second, subtly-different one.
+   */
+  const pumpRetainedSoon = () => {
+    for (const id of [...taskTimers.keys()]) {
+      const task = tasks.get(id);
+      if (task === undefined || task.sessionId !== currentSessionId) continue;
+      if (task.nextRunAtMs > now()) continue; // not due: leave its own timer armed
+      // Schedule the actual pump on the next macrotask. This does NOT re-arm a
+      // `TASK_BUSY_RETRY_MS` delay: the compaction window has already closed, so
+      // the occurrence is deliverable now. Deferring to a macrotask (rather than
+      // calling `pumpTask` inline) keeps the call off the emit's synchronous
+      // stack - the same boundary F1 requires - while delivering on THIS
+      // wake-up instead of waiting out another retry interval.
+      clearTaskTimer(id);
+      const handle = schedule(() => pumpTask(id, registrationToken), 0);
+      taskTimers.set(id, handle);
+    }
   };
 
   /**
-   * Close the compaction window once the host has cleared its controller, then
-   * pump what the window retained.
+   * Close the compaction window at the terminal compaction event.
    *
-   * FINAL REVIEW F1: this replaces a settle-only release that never fired for a
-   * manual `/compact`, because the host emits no `agent_settled` on that path.
-   * The release is DEFERRED by one microtask-free turn so it runs after our
-   * handler returns - the exact point at which `_clearManualCompactionState()`
-   * has run (`dist/core/agent-session.js:2258`) and `prompt()` accepts again.
-   * Pumping synchronously here would instead fire into a still-refusing window
-   * (R81-P1). `pumpRetainedAfterCompaction` re-checks due times, so nothing
-   * fires early, and `canAcceptNow()` remains the delivery guard.
+   * FINAL REVIEW F1: replaces a settle-only release that never fired for a manual
+   * `/compact`, because the host emits no `agent_settled` on that path. The window
+   * is marked closable here and the retained tasks are SCHEDULED for a retry on
+   * the real event loop (`pumpRetainedSoon`), which is the first point after the
+   * host's await chain and controller cleanup. An earlier revision used a
+   * microtask, which drained too early and was itself unsafe.
    */
   const closeCompactionWindow = () => {
-    compactionClosable = false;
-    queueMicrotask(() => {
-      compacting = false;
-      pumpRetainedAfterCompaction();
-    });
+    compactionClosable = true;
+    // Clear the flag and schedule the retained tasks on the REAL event loop.
+    //
+    // The flag is cleared HERE rather than in a queued callback because the host
+    // clears its abort controller one statement after this emit resolves
+    // (`agent-session.js:2259`). The retry below cannot run until the macrotask
+    // queue is reached, which is necessarily after that cleanup, so the window is
+    // genuinely closed by the time anything is pumped. `canAcceptNow()` still
+    // guards the send, so a host with a different ordering refuses rather than
+    // loses the occurrence.
+    compacting = false;
+    pumpRetainedSoon();
     return undefined;
   };
 
