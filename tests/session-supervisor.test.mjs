@@ -7,9 +7,9 @@
 // the proposal or the OSC notification it produces.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
@@ -10248,6 +10248,15 @@ function feature3Harness({ sessionId = PARENT_UUID, tasksPath = null, streaming 
     sessionStart,
     declare,
     settle,
+    // FINAL REVIEW F1: the compaction release is deferred with `queueMicrotask`,
+    // so it lands just AFTER the terminal compaction handler returns - the point
+    // at which the host runs `_clearManualCompactionState()`. Tests must drain
+    // microtasks instead of manufacturing a settlement the manual `/compact`
+    // path never emits (`agent-session.js:2242-2261`).
+    flushMicrotasks: async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    },
     store,
     ctxFor,
     path,
@@ -10587,12 +10596,32 @@ test("FEATURE3: TASK:CANCEL is retried until it lands, and the task never fires"
 // for. `armTask`, `armCurrentSessionTasks` and `pumpTask` therefore all consult
 // `pendingCancels` before arming or delivering.
 test("FEATURE3: a cancellation that has not reached disk survives a store reload and never fires", () => {
-  const parentBlocker = join(mkdtempSync(join(tmpdir(), "supervisor-f3-rl-")), "blocker");
-  writeFileSync(parentBlocker, "not a directory");
-  const tasksPath = join(parentBlocker, "tasks.json");
+  const dir = mkdtempSync(join(tmpdir(), "supervisor-f3-rl-"));
+  const tasksPath = join(dir, "tasks.json");
+  // FINAL REVIEW F2: the task MUST be durably persisted BEFORE the store is made
+  // unwritable, so the reload has something real to restore. The earlier revision
+  // broke the store FIRST, declared the task anyway, and so never wrote it: reload
+  // read nothing, and `timers.every(...)` below passed vacuously on an EMPTY
+  // array. That test could not fail, and the reviewer proved it.
   const h = feature3Harness({ tasksPath });
   h.sessionStart(PARENT_UUID);
   h.declare(PARENT_UUID, `TASK:ADD {"id":"ghost","prompt":"must not run","delayMs":3000}`);
+  assert.deepEqual(
+    persistedTasks(h).map((t) => t.id),
+    ["ghost"],
+    "precondition: the task is durably persisted BEFORE the store breaks",
+  );
+
+  // Now model a store that is READABLE BUT STALE - the realistic failure. The
+  // task is already on disk (asserted above), the store stays READABLE so a
+  // reload WILL restore `ghost` into `tasks`, and the directory is made
+  // read-only so the cancellation cannot land (`persistTasks` writes a sibling
+  // `.tmp` then renames, so a read-only DIRECTORY blocks it with EACCES - a
+  // read-only file would not, because the write goes to the sibling first).
+  // Reload restoring `ghost` is exactly the state in which the
+  // cancellation-intent guards are load-bearing: without them the restored task
+  // is re-armed and fires.
+  chmodSync(dirname(tasksPath), 0o555);
   h.declare(PARENT_UUID, "TASK:CANCEL ghost\nSTATUS:DONE");
 
   // The cancellation could not reach disk, so it is rolled back in memory and a
@@ -10603,15 +10632,17 @@ test("FEATURE3: a cancellation that has not reached disk survives a store reload
   // cancellation is still outstanding, and the task must not be re-armed from
   // the in-memory copy during the reload.
   h.sessionStart(PARENT_UUID);
-  assert.ok(
-    h.timers.every((handle) => handle.due > h.tasksNow() + 1_000),
-    "the cancelled task is NOT re-armed to fire at its original due time",
-  );
+  // The discriminator is FIRING, not the mere existence of a timer: a pending
+  // cancellation legitimately keeps a 1s RETRY timer armed (TASK_BUSY_RETRY_MS),
+  // so asserting "no timer is due soon" would reject the correct behaviour. What
+  // must NOT happen is delivery. Advance well past the task's original due time
+  // (3000ms) and past several retry intervals and assert nothing was injected.
+  assert.deepEqual(h.injected, [], "no delivery while the cancellation is outstanding");
   h.advance(600_000);
   assert.deepEqual(h.injected, [], "a task with an outstanding cancellation must NEVER fire");
 
   // Once the store becomes writable the retried cancellation lands for good.
-  rmSync(parentBlocker, { force: true });
+  chmodSync(dirname(tasksPath), 0o755);
   h.sessionStart(PARENT_UUID);
   h.advance(600_000);
   assert.deepEqual(h.injected, [], "still never fires after the store recovers");
@@ -10634,7 +10665,7 @@ test("FEATURE3: a cancellation that has not reached disk survives a store reload
   // send is still refused when that event fires. The re-pump therefore happens at
   // the settle boundary, and this test emits BOTH so the premature-pump regression
   // cannot come back.
-  test("FEATURE3: a task due during compaction is RETAINED and fires once compaction truly ends", () => {
+  test("FEATURE3: a task due during compaction is RETAINED and fires once compaction truly ends", async () => {
   const h = feature3Harness();
   // Compaction must be opened through the REAL event pair, not a harness flag:
   // the product learns about compaction only from these events.
@@ -10660,21 +10691,28 @@ test("FEATURE3: a cancellation that has not reached disk survives a store reload
     "the occurrence is RETAINED, not consumed, during compaction",
   );
 
-  // Compaction ends. A send is STILL refused at `session_compact` (R79-P1): the
-  // host clears its abort controller only afterwards. Assert the state change
-  // WITHOUT advancing the clock, so the task's OWN timer cannot be what delivers
-  // it - otherwise this would conflate the premature re-pump with normal expiry.
+  // Compaction ends. A send is STILL refused DURING the `session_compact` emit
+  // (R79-P1), because the host clears its abort controller only after that
+  // awaited emit returns. Assert the state change WITHOUT advancing the clock, so
+  // the task's OWN timer cannot be what delivers it.
   h.emitCompactionEnd(true);
   assert.deepEqual(
-    h.injected,
+    refused,
     [],
     "R79-P1: `session_compact` is not send-ready - the host clears its abort controller afterwards",
   );
+  assert.equal(h.injected.length, 0, "nothing is delivered at the terminal-event instant");
 
-  // The settle boundary is when the send is genuinely accepted again.
-  h.emitSettleAfterCompaction();
-  h.advance(60_000);
-  assert.equal(h.injected.length, 1, "the retained occurrence is delivered exactly once the host can accept");
+  // FINAL REVIEW F1: the release is DEFERRED past the handler return, which is
+  // where `_clearManualCompactionState()` runs - and the manual `/compact` path
+  // emits NO settle afterwards. So the retained occurrence must land on the next
+  // microtask WITHOUT any manufactured settlement; requiring one was the defect.
+  await h.flushMicrotasks();
+  assert.equal(
+    h.injected.length,
+    1,
+    "the retained occurrence is delivered once the host can accept, with no settlement",
+  );
 });
 
 // REVIEW 79 R79-P2 (rev 115): EARLY FIRING. The compaction-window re-pump must
@@ -10746,7 +10784,7 @@ test("FEATURE3 R82-P1: a task booked past the 2^31-1 ms timer cap does NOT fire 
   assert.deepEqual(persistedTasks(h).map((t) => t.id), [], "the one-shot is removed after firing");
 });
 
-test("FEATURE3 R81-P1: a task due DURING the `session_compact` emit is retained, then delivered at settle", () => {
+test("FEATURE3 R81-P1: a task due DURING the `session_compact` emit is retained, then delivered once the handler returns", async () => {
   const h = feature3Harness();
   h.sessionStart(PARENT_UUID);
   h.declare(PARENT_UUID, `TASK:ADD {"id":"probe","prompt":"due mid-emit","delayMs":1000}`);
@@ -10786,8 +10824,105 @@ test("FEATURE3 R81-P1: a task due DURING the `session_compact` emit is retained,
   );
   assert.equal(h.injected.length, 0, "nothing was delivered at the terminal-event boundary");
 
-  // The settle is the first send-ready boundary; the retained occurrence lands.
-  h.emitSettleAfterCompaction();
-  assert.equal(h.injected.length, 1, "the retained occurrence is delivered once the session is genuinely send-ready");
+  // FINAL REVIEW F1: the manual `/compact` path emits NO `agent_settled`
+  // (`agent-session.js:2242-2261` returns after `_clearManualCompactionState()`),
+  // so the release must NOT wait for a settlement - it is deferred to just after
+  // the handler returns, which is exactly where the controller is cleared. The
+  // old expectation (`emitSettleAfterCompaction()` required) is what let manual
+  // compaction suppress scheduled work indefinitely.
+  await h.flushMicrotasks();
+  assert.equal(h.injected.length, 1, "the retained occurrence lands without any settlement");
   assert.equal(h.injected[0], "[task probe]\ndue mid-emit", "the firing carries the task id and prompt");
+});
+
+test("FEATURE3 F6: a `TASK:ADD` inside a fenced code block does NOT create a task; the same line at top level does", () => {
+  // Final-review F6: task parsing scanned every column-zero `TASK:` line with no
+  // Markdown ownership check, so an assistant DOCUMENTING the syntax inside a
+  // fenced example silently mutated the scheduler. `structure.inside` is the same
+  // container test that guards `STATUS:`, and this row pins BOTH directions so
+  // the guard cannot be satisfied by rejecting everything.
+  const fenced = feature3Harness();
+  fenced.sessionStart(PARENT_UUID);
+  fenced.declare(
+    PARENT_UUID,
+    ["Here is how to schedule a task:", "```text", 'TASK:ADD {"id":"doc","prompt":"p","delayMs":1000}', "```"].join("\n"),
+  );
+  assert.deepEqual(
+    persistedTasks(fenced).map((t) => t.id),
+    [],
+    "a documented TASK: line inside a fence must NOT create a task",
+  );
+
+  const topLevel = feature3Harness();
+  topLevel.sessionStart(PARENT_UUID);
+  topLevel.declare(PARENT_UUID, 'TASK:ADD {"id":"real","prompt":"p","delayMs":1000}');
+  assert.deepEqual(
+    persistedTasks(topLevel).map((t) => t.id),
+    ["real"],
+    "the identical line at top level MUST still create a task (the guard must not over-reject)",
+  );
+});
+
+test("FEATURE3 F6: a `TASK:CANCEL` inside a fence does NOT cancel a real task", () => {
+  const h = feature3Harness();
+  h.sessionStart(PARENT_UUID);
+  h.declare(PARENT_UUID, 'TASK:ADD {"id":"keep","prompt":"p","delayMs":1000}');
+  assert.deepEqual(persistedTasks(h).map((t) => t.id), ["keep"], "precondition: task exists");
+
+  h.declare(PARENT_UUID, ["Documenting cancellation:", "```text", "TASK:CANCEL keep", "```"].join("\n"));
+  assert.deepEqual(
+    persistedTasks(h).map((t) => t.id),
+    ["keep"],
+    "a fenced TASK:CANCEL must not cancel a real task",
+  );
+
+  h.declare(PARENT_UUID, "TASK:CANCEL keep");
+  assert.deepEqual(persistedTasks(h), [], "a top-level TASK:CANCEL still cancels");
+});
+
+test("FEATURE3 F3: persisting merges a FOREIGN session's records instead of deleting them", () => {
+  // Final-review F3: persistTasks serialized this process's whole map over the
+  // file, so a second Pi process's task was silently deleted by any later write.
+  // The merge keeps records this registration does not own.
+  const shared = join(mkdtempSync(join(tmpdir(), "supervisor-f3-shared-")), "session-supervisor", "tasks.json");
+  const h = feature3Harness({ tasksPath: shared });
+  h.sessionStart(PARENT_UUID);
+  h.declare(PARENT_UUID, 'TASK:ADD {"id":"mine","prompt":"p","delayMs":1000}');
+
+  // A DIFFERENT owner writes a task into the same store behind this process.
+  const foreign = {
+    id: "theirs",
+    sessionId: "some-other-session-uuid",
+    prompt: "other",
+    nextRunAtMs: 9_999_999_999,
+  };
+  writeFileSync(shared, JSON.stringify({ version: 1, tasks: [foreign] }));
+
+  // Now this process writes again (adding a second owned task).
+  h.declare(PARENT_UUID, 'TASK:ADD {"id":"mine2","prompt":"p","delayMs":1000}');
+
+  const onDisk = JSON.parse(readFileSync(shared, "utf8"));
+  const ids = onDisk.tasks.map((t) => t.id).sort();
+  assert.ok(ids.includes("theirs"), `a foreign session's record must survive this process's write, got ${ids}`);
+  assert.ok(ids.includes("mine") && ids.includes("mine2"), `this session's records are present, got ${ids}`);
+});
+
+test("F5: every notify() event symbol in the product is declared (no undefinable OSC constant)", () => {
+  // Final-review F5: the scheduled-task delivery-failure branches called
+  // `notify(UNVERIFIED_ESCALATION, ...)` while the export is
+  // `OSC_NOTIFY_UNVERIFIED_ESCALATION`. The module still LOADS, because a
+  // ReferenceError is deferred to branch execution - so the failure notice threw
+  // exactly when it was needed, and a green suite could not see it. This is a
+  // whole-class static check rather than a row per site.
+  const src = readFileSync(
+    new URL("../shell/config/pi/extensions/session-supervisor.ts", import.meta.url),
+    "utf8",
+  );
+  const declared = new Set(
+    [...src.matchAll(/^(?:export )?const ([A-Z][A-Z0-9_]+)/gm)].map((m) => m[1]),
+  );
+  const used = [...new Set([...src.matchAll(/notify\(\s*([A-Z][A-Z0-9_]+)\s*,/g)].map((m) => m[1]))];
+  assert.ok(used.length > 0, "the scan must find notify() call sites (guard against a vacuous pass)");
+  const undeclared = used.filter((symbol) => !declared.has(symbol));
+  assert.deepEqual(undeclared, [], `notify() event symbols must be declared constants, undeclared: ${undeclared}`);
 });

@@ -470,11 +470,23 @@ export interface TaskAction {
  * marker" - the parser simply scans every line and the marker line is not a
  * `TASK:` line.
  */
-export function parseTaskActions(text: string): TaskAction[] {
+export function parseTaskActions(
+  text: string,
+  structure?: LineStructure,
+): TaskAction[] {
   const actions: TaskAction[] = [];
-  for (const raw of text.split("\n")) {
-    const line = raw.replace(/\s+$/, "");
+  const lines = text.split("\n");
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index].replace(/\s+$/, "");
     if (!/^TASK:/i.test(line)) continue;
+    // MARKDOWN OWNERSHIP (final review F6): a `TASK:` line that is merely
+    // DOCUMENTED - inside a fenced code block, block quote, list item or HTML
+    // block - must not create or cancel a real task. Without this an assistant
+    // explaining the syntax in a fenced example silently mutated the scheduler.
+    // `structure.inside` is the same container test that guards `STATUS:`. When
+    // no structure is supplied (unit tests of the raw scanner) the check is
+    // skipped, and the caller always supplies it.
+    if (structure !== undefined && structure.inside[index]) continue;
     const rest = line.slice(TASK_ACTION_PREFIX.length).trim();
     const space = rest.search(/\s/);
     const verb = (space < 0 ? rest : rest.slice(0, space)).toLowerCase();
@@ -4222,6 +4234,14 @@ export function registerSessionSupervisor(
   // reached disk. Retained so a failed cancellation is RETRIED rather than
   // silently rolled back into "the task keeps firing" (Review 78 round 2, HIGH-2).
   const pendingCancels = new Set<string>();
+  /**
+   * Cancellation-retry timers, kept SEPARATE from `taskTimers`.
+   *
+   * FINAL REVIEW F2: sharing the firing map let a pump or arm overwrite the
+   * cancellation retry, so a failed cancellation could be replaced by an ordinary
+   * firing retry and never land. Cancellation retries live only here.
+   */
+  const cancelRetries = new Map<string, unknown>();
   // True between `session_before_compact` and the settle that follows the
   // matching terminal compaction event. The host exposes no compaction
   // predicate to extensions, so the EVENT PAIR is the only production-observable
@@ -4313,6 +4333,28 @@ export function registerSessionSupervisor(
     try {
       mkdirSync(dirname(tasksPath), { recursive: true });
       const tmp = `${tasksPath}.${process.pid}.tmp`;
+      // MERGE-BEFORE-WRITE (final review F3): several Pi processes may own this
+      // store, and a whole-file replace from this process's map silently deletes
+      // another process's tasks. Re-read the file, keep records this process does
+      // not own, and let only this process's OWNED records win. This narrows the
+      // lost-update window to a concurrent write between the read and the rename;
+      // it does not make the store a transaction, because there is no lock.
+      //
+      // A missing or unreadable store is NOT a failure: on a first write there is
+      // nothing to merge, and refusing to persist would drop the task entirely.
+      // Only a WRITE failure is fatal, because only that leaves the guard
+      // unlanded.
+      let foreign: ScheduledTask[] = [];
+      try {
+        foreign = parseTaskStore(readFile(tasksPath));
+      } catch {
+        foreign = [];
+      }
+      for (const other of foreign) {
+        if (other.sessionId !== currentSessionId && !tasks.has(other.id)) {
+          tasks.set(other.id, other);
+        }
+      }
       writeFileSync(tmp, serializeTaskStore([...tasks.values()]));
       renameSync(tmp, tasksPath);
       return true;
@@ -4351,13 +4393,14 @@ export function registerSessionSupervisor(
 
   /** Arm one task's callback against the CURRENT registration fence. */
   const armTask = (task: ScheduledTask) => {
+    // FINAL REVIEW F2 CORRECTION: the earlier NOTE here claimed a task with an
+    // outstanding cancellation could never reach this point. THE FINAL REVIEW
+    // DISPROVED THAT and the claim was never established - failed deletion
+    // RESTORES the task into `tasks` (see `cancelTaskNow`), so it is present and
+    // armable while `persistTasks()` keeps failing. A cancellation intent
+    // therefore outranks ownership and due time here.
+    if (pendingCancels.has(task.id)) return;
     clearTaskTimer(task.id);
-    // NOTE: a task with an OUTSTANDING cancellation cannot reach here. It is
-    // deleted from `tasks` before the retry timer is installed, and a reload
-    // rebuilds the map from a store the cancelled task was never written to. The
-    // retry therefore owns delivery and arming would be a no-op at best - an
-    // earlier revision guarded here, but the branch was UNREACHABLE and was
-    // removed rather than shipped unverified.
     const token = registrationToken;
     // Clamp: an unclamped horizon > 2^31-1 ms is silently CLAMPED BY NODE TO 1 MS,
     // which would fire the task immediately. Re-arming at the cap makes a long
@@ -4370,6 +4413,7 @@ export function registerSessionSupervisor(
   /** Arm every task owned by the CURRENT session, and nothing else. */
   const armCurrentSessionTasks = () => {
     for (const task of tasks.values()) {
+      if (pendingCancels.has(task.id)) continue; // F2: cancellation intent outranks ownership
       if (task.sessionId === currentSessionId) armTask(task);
       else clearTaskTimer(task.id);
     }
@@ -4389,6 +4433,10 @@ export function registerSessionSupervisor(
     if (token !== registrationToken) return;
     const task = tasks.get(id);
     if (task === undefined) return;
+    // FINAL REVIEW F2: a pending cancellation outranks a due time. Without this a
+    // settlement that pumped a due task could deliver it AFTER the user cancelled,
+    // which is the "cancelled then revived" defect.
+    if (pendingCancels.has(id)) return;
     if (task.sessionId !== currentSessionId) return; // retained until its session resumes
     // DUE-TIME RE-CHECK: a timer armed at the 2^31-1 ms cap wakes before the task
     // is actually due (the cap is ≈ 24.855 days, so a multi-year horizon needs
@@ -4445,7 +4493,7 @@ export function registerSessionSupervisor(
         // release the handoff and surface the loss rather than stalling every
         // later task behind a handoff that will never settle.
         taskHandoff = null;
-        notify(UNVERIFIED_ESCALATION, `scheduled task ${id} could not be delivered`);
+        notify(OSC_NOTIFY_UNVERIFIED_ESCALATION, `scheduled task ${id} could not be delivered`);
         return;
       }
       armTask(task);
@@ -4463,7 +4511,7 @@ export function registerSessionSupervisor(
     taskHandoff = id;
     if (!injectTask(task)) {
       taskHandoff = null;
-      notify(UNVERIFIED_ESCALATION, `scheduled task ${id} could not be delivered`);
+      notify(OSC_NOTIFY_UNVERIFIED_ESCALATION, `scheduled task ${id} could not be delivered`);
     }
   };
 
@@ -4471,6 +4519,15 @@ export function registerSessionSupervisor(
   const addTask = (body: string) => {
     const parsed = parseTaskAdd(body);
     if (parsed === null || currentSessionId.length === 0) return;
+    // CROSS-SESSION ID COLLISION (final review F3): ids are model-chosen, so a
+    // second session can pick an id this store already holds for ANOTHER session.
+    // Silently overwriting would delete that session's task. Refuse instead; the
+    // instruction to re-issue under a free id is a notice, not a silent mutation.
+    const existing = tasks.get(parsed.id);
+    if (existing !== undefined && existing.sessionId !== currentSessionId) {
+      notify(OSC_NOTIFY, `scheduled task id ${parsed.id} is already owned by another session`);
+      return;
+    }
     const task: ScheduledTask = {
       id: parsed.id,
       sessionId: currentSessionId,
@@ -4506,34 +4563,61 @@ export function registerSessionSupervisor(
     cancelTaskNow(id);
   };
 
-  /** Attempt the durable deletion for `id`; retry while the write keeps failing. */
+  /**
+   * Attempt the durable deletion for `id`; retry while the write keeps failing.
+   *
+   * FINAL REVIEW F2: the retry handle must NOT live in `taskTimers`, because that
+   * map is shared with ordinary firing timers. `armTask` and `pumpTask` both call
+   * `clearTaskTimer(id)` then set their own handle under the same key, so a
+   * settlement that pumped this task could REPLACE the cancellation retry with an
+   * ordinary firing retry and the cancellation would be silently forgotten. The
+   * retry is therefore kept in a dedicated `cancelRetries` map keyed by id, and
+   * `pendingCancels` - the durable INTENT - is consulted by `armTask`,
+   * `armCurrentSessionTasks` and the pump path so no other code can resurrect or
+   * fire a task whose cancellation has not yet landed.
+   */
   const cancelTaskNow = (id: string) => {
     const task = tasks.get(id);
     if (task === undefined) {
       pendingCancels.delete(id);
+      cancelRetries.delete(id);
       return;
     }
     tasks.delete(id);
     clearTaskTimer(id);
     if (persistTasks()) {
       pendingCancels.delete(id);
+      cancelRetries.delete(id);
       return;
     }
     tasks.set(id, task); // undo: the deletion did not land on disk
     clearTaskTimer(id);
     const token = registrationToken;
+    // Re-arm nothing for FIRING; only the cancellation is retried. Keying this in
+    // `cancelRetries` keeps it out of reach of the firing machinery.
     const handle = schedule(() => {
       if (token !== registrationToken) return;
       cancelTaskNow(id);
     }, TASK_BUSY_RETRY_MS);
-    taskTimers.set(id, handle);
+    cancelRetries.set(id, handle);
   };
 
   /** Consume every `TASK:` action line from a boundary's final message. */
   const consumeTaskActions = (boundary: AgentBeforeSettleLike) => {
     const text = messageText(finalProjectedMessage(boundary));
     if (text.length === 0) return;
-    for (const action of parseTaskActions(text)) {
+    // A parser failure here must degrade to the SAFE default - consume NO
+    // actions - rather than throwing out of the settlement handler. This mirrors
+    // the guarded marker read below, and CORR51 R3 pins that a parser fault at
+    // the boundary notifies instead of escaping. Structure is derived inside the
+    // guard so the ownership check cannot itself become the throw site.
+    let actions: TaskAction[];
+    try {
+      actions = parseTaskActions(text, lineStructure(text));
+    } catch {
+      return;
+    }
+    for (const action of actions) {
       if (action.verb === "add") addTask(action.body);
       else cancelTask(action.body);
     }
@@ -4549,6 +4633,18 @@ export function registerSessionSupervisor(
       }
     }
     taskTimers.clear();
+    // FINAL REVIEW F2: a cancellation whose write never landed is STILL INTENT.
+    // A reload must not silently forget it and re-arm the task from the store,
+    // which is the "reload restores a cancelled task" defect. Retries are
+    // cancelled and rebuilt; the intent set survives, and `armTask` honors it.
+    for (const handle of cancelRetries.values()) {
+      try {
+        cancelScheduled(handle);
+      } catch {
+        // best-effort only
+      }
+    }
+    cancelRetries.clear();
     let text: string | null = null;
     try {
       text = readFileSync(tasksPath, "utf8");
@@ -4558,6 +4654,13 @@ export function registerSessionSupervisor(
     tasks = new Map();
     if (text !== null) {
       for (const task of parseTaskStore(text)) tasks.set(task.id, task);
+    }
+    // A task whose cancellation is still pending must be deleted again rather
+    // than resumed; `cancelTaskNow` retries the write and clears the intent only
+    // once it lands.
+    for (const id of [...pendingCancels]) {
+      if (tasks.has(id)) cancelTaskNow(id);
+      else pendingCancels.delete(id);
     }
     armCurrentSessionTasks();
   };
@@ -6242,6 +6345,19 @@ export function registerSessionSupervisor(
       }
     }
     taskTimers.clear();
+    // FINAL REVIEW F2: cancellation retries hold real timers too. Clearing only
+    // `taskTimers` left them armed past shutdown, so a callback could outlive the
+    // session it belonged to. The INTENT set is preserved deliberately - a
+    // cancellation that never reached disk is still intended, and the next
+    // registration completes it via `restoreTasks`.
+    for (const handle of cancelRetries.values()) {
+      try {
+        cancelScheduled(handle);
+      } catch {
+        // best-effort only
+      }
+    }
+    cancelRetries.clear();
   };
 
   const resetForInput = (event: unknown, ctx: SupervisorContext) => {
@@ -6442,18 +6558,65 @@ export function registerSessionSupervisor(
    *
    * `compaction_end` is NOT exposed to extensions (the only compaction events in
    * `dist/core/extensions/types.d.ts:1169-1171` are `session_before_compact`,
-   * `session_compact` and `session_compact_failed`), so a settle is the true
-   * send-ready boundary. Both terminal compaction events remain registered
-   * through this handler so a settlement is ARMED in BOTH directions; a
-   * `session_compact_failed` marks the window closable at the next settle rather
-   * than clearing it immediately, because the host rejects a send while it is
-   * still failing-and-retrying compaction and the next settle is exactly the
-   * point at which delivery becomes safe again. Keep it registered even if it
-   * only marks the flag: without it a throw or an abort after
-   * `session_before_compact` would arm the settle-close on nothing.
+   * `session_compact` and `session_compact_failed`).
+   *
+   * FINAL REVIEW F1 (this fix): the earlier settle-based release was WRONG for
+   * MANUAL compaction. In that path the host runs `await emit(session_compact)`
+   * at `:2242`, then `_clearManualCompactionState()` at `:2259`, then an INTERNAL
+   * `_emit(compaction_end)` at `:2261`, and returns - it emits NO `agent_settled`.
+   * So a retained task waited for a settlement that manual `/compact` never
+   * produces, suppressing scheduled work indefinitely; the suite hid this by
+   * MANUFACTURING the settlement (`tests/session-supervisor.test.mjs:10189-10197`).
+   *
+   * The correct boundary is therefore this handler: `session_compact` is emitted
+   * one statement BEFORE `_clearManualCompactionState()`, so when our handler
+   * returns, the controller IS cleared and `prompt()` accepts again. Clearing
+   * here is safe - and it is why the close must stay tied to the terminal event
+   * rather than to a settlement. The flag is cleared directly, and retained due
+   * tasks are pumped; any still-future task is left to its own timer.
+   *
+   * `session_compact_failed` takes the SAME path: the host clears its controller
+   * on that path too, so a later settle is not required.
+   *
+   * THE ORDERING THAT DECIDES THE MECHANISM (verified at
+   * `dist/core/agent-session.js:2242-2261`):
+   *   await emit(session_compact)      // our handler runs HERE
+   *   _clearManualCompactionState()    // controller cleared only AFTER we return
+   *   _emit(compaction_end)            // internal only
+   *   return                           // NO agent_settled on the manual path
+   *
+   * So pumping SYNCHRONOUSLY inside this handler is unsafe (the controller is
+   * still alive, `prompt()` is refused - that was R81-P1, and it was correct),
+   * while waiting for a settle is unsafe too (manual `/compact` never emits one -
+   * that is F1). The only correct boundary is just AFTER this handler returns:
+   * the host clears the controller in the very next statement. A zero-delay
+   * deferral lands there, and `canAcceptNow()` still guards it, so a host that
+   * changed that ordering would refuse rather than lose the occurrence.
    */
   const markCompactionClosable = () => {
     compactionClosable = true;
+    return undefined;
+  };
+
+  /**
+   * Close the compaction window once the host has cleared its controller, then
+   * pump what the window retained.
+   *
+   * FINAL REVIEW F1: this replaces a settle-only release that never fired for a
+   * manual `/compact`, because the host emits no `agent_settled` on that path.
+   * The release is DEFERRED by one microtask-free turn so it runs after our
+   * handler returns - the exact point at which `_clearManualCompactionState()`
+   * has run (`dist/core/agent-session.js:2258`) and `prompt()` accepts again.
+   * Pumping synchronously here would instead fire into a still-refusing window
+   * (R81-P1). `pumpRetainedAfterCompaction` re-checks due times, so nothing
+   * fires early, and `canAcceptNow()` remains the delivery guard.
+   */
+  const closeCompactionWindow = () => {
+    compactionClosable = false;
+    queueMicrotask(() => {
+      compacting = false;
+      pumpRetainedAfterCompaction();
+    });
     return undefined;
   };
 
@@ -6494,8 +6657,8 @@ export function registerSessionSupervisor(
     compactionClosable = false;
     return undefined;
   });
-  api.on("session_compact", markCompactionClosable);
-  api.on("session_compact_failed", markCompactionClosable);
+  api.on("session_compact", closeCompactionWindow);
+  api.on("session_compact_failed", closeCompactionWindow);
   api.on("input", resetForInput);
   api.on("before_agent_start", handleBeforeAgentStart);
   api.on("message_start", handleMessageStart);
