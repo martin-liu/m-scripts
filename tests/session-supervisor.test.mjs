@@ -10153,7 +10153,13 @@ function feature3Harness({ sessionId = PARENT_UUID, tasksPath = null, streaming 
     tasksPath: path,
     now: () => now,
     schedule: (run, ms) => {
-      const handle = { run, due: now + ms, id: ++seq };
+      // Faithful to Node: a delay above 2^31-1 ms is CLAMPED TO 1 MS with a
+      // `TimeoutOverflowWarning`, not saturated to the cap. Reproduced here so a
+      // task booked beyond ~24.855 days fires almost immediately unless the
+      // product clamps and re-arms. Measured on Node: requesting 2592000000 ms
+      // yields `_idleTimeout === 1`.
+      const effective = ms > 2147483647 ? 1 : ms;
+      const handle = { run, due: now + effective, id: ++seq, requested: ms, effective };
       timers.push(handle);
       return handle;
     },
@@ -10707,6 +10713,39 @@ test("FEATURE3: compaction end does NOT fire a task whose due time has not arriv
 // abort-controller lifetime - never by a harness flag the product cannot read -
 // so the test genuinely fails if the product clears `compacting` at the wrong
 // boundary: the probe send would be attempted and the host would refuse it.
+test("FEATURE3 R82-P1: a task booked past the 2^31-1 ms timer cap does NOT fire early and still fires when due", () => {
+  const h = feature3Harness();
+  h.sessionStart(PARENT_UUID);
+  const THIRTY_DAYS = 2592000000;
+  const CAP = 2147483647;
+  h.declare(PARENT_UUID, `TASK:ADD {"id":"far","prompt":"monthly check","delayMs":${THIRTY_DAYS}}`);
+
+  // The very first arm must not request an unrepresentable delay. Before the
+  // clamp, `schedule` received 2592000000 and Node clamped it to 1 ms, so the
+  // task fired ~immediately AND the one-shot removed itself from the store.
+  assert.equal(h.timers.length, 1, "one timer armed");
+  assert.ok(
+    h.timers[0].requested <= CAP,
+    `armed delay must be clamped to the 2^31-1 cap, got ${h.timers[0].requested}`,
+  );
+
+  // Just past the cap the timer wakes, but the task is NOT yet due, so the
+  // due-time re-check must re-arm instead of delivering early.
+  h.advance(CAP + 1);
+  assert.equal(h.injected.length, 0, "must NOT fire early after the capped wake");
+  assert.deepEqual(
+    persistedTasks(h).map((t) => t.id),
+    ["far"],
+    "the task must survive the intermediate hop (an early one-shot would have removed itself)",
+  );
+
+  // Advance the remainder of the horizon: the task fires once, exactly at due time.
+  h.advance(THIRTY_DAYS - CAP + 1000);
+  assert.equal(h.injected.length, 1, "fires exactly once when actually due");
+  assert.match(h.injected[0], /\[task far\]/, "the firing names the task id");
+  assert.deepEqual(persistedTasks(h).map((t) => t.id), [], "the one-shot is removed after firing");
+});
+
 test("FEATURE3 R81-P1: a task due DURING the `session_compact` emit is retained, then delivered at settle", () => {
   const h = feature3Harness();
   h.sessionStart(PARENT_UUID);

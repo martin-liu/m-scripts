@@ -4333,6 +4333,22 @@ export function registerSessionSupervisor(
     }
   };
 
+  /**
+   * Longest delay `setTimeout` can represent.
+   *
+   * A delay above 2^31-1 ms does not merely saturate: Node emits
+   * `TimeoutOverflowWarning` and clamps the timer to **1 ms**, so a task booked
+   * ~25+ days out would fire almost immediately. Measured: requesting
+   * 2592000000 ms (30 days) yields `_idleTimeout === 1`. A one-shot then
+   * consumes its occurrence durably and deletes itself, executing at the wrong
+   * time with no notification (delivery succeeds; only the timing is wrong).
+   *
+   * The clamp is therefore paired with the due-time re-check in `pumpTask`: a
+   * horizon longer than this re-arms in bounded hops instead of firing early.
+   * 2^31-1 ms is ≈ 24.855 days.
+   */
+  const MAX_TIMER_DELAY_MS = 2147483647;
+
   /** Arm one task's callback against the CURRENT registration fence. */
   const armTask = (task: ScheduledTask) => {
     clearTaskTimer(task.id);
@@ -4343,7 +4359,10 @@ export function registerSessionSupervisor(
     // earlier revision guarded here, but the branch was UNREACHABLE and was
     // removed rather than shipped unverified.
     const token = registrationToken;
-    const delay = Math.max(0, task.nextRunAtMs - now());
+    // Clamp: an unclamped horizon > 2^31-1 ms is silently CLAMPED BY NODE TO 1 MS,
+    // which would fire the task immediately. Re-arming at the cap makes a long
+    // horizon a sequence of bounded waits rather than an early fire.
+    const delay = Math.min(MAX_TIMER_DELAY_MS, Math.max(0, task.nextRunAtMs - now()));
     const handle = schedule(() => pumpTask(task.id, token), delay);
     taskTimers.set(task.id, handle);
   };
@@ -4371,6 +4390,14 @@ export function registerSessionSupervisor(
     const task = tasks.get(id);
     if (task === undefined) return;
     if (task.sessionId !== currentSessionId) return; // retained until its session resumes
+    // DUE-TIME RE-CHECK: a timer armed at the 2^31-1 ms cap wakes before the task
+    // is actually due (the cap is ≈ 24.855 days, so a multi-year horizon needs
+    // many hops). Without this gate the capped wake would deliver EARLY. Re-arm
+    // for the remaining time instead of proceeding.
+    if (task.nextRunAtMs > now()) {
+      armTask(task);
+      return;
+    }
     if (taskHandoff !== null) {
       // One occurrence per task, one handoff: defer past the in-flight turn.
       clearTaskTimer(id);
