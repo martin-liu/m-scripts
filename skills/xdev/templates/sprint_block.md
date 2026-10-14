@@ -1,17 +1,10 @@
 ### Sprint N: {Title}
 
-**schema_version:** 1.2
-
-Apply `skills/xdev/SKILL.md` template and lifecycle rules.
-Preserve every required schema field and historical snapshot binding.
+**schema_version:** 2.0
+Canonical state, todo, snapshot, evidence, and Review rules: `skills/xdev/SKILL.md`.
 
 #### Contract
-The authoritative checkbox todo list in `plan_and_track.md` is maintained only
-by the Orchestrator; this sprint records references to its stable todo IDs.
-
-- **Logical Task ID:**
-- **Generation:**
-- **Runtime ID (transport metadata):**
+- **Task ledger reference:** {logical task ID + generation entry}
 - **Scope:**
 - **Allowed files:**
 - **Target/baseline references:**
@@ -24,38 +17,31 @@ by the Orchestrator; this sprint records references to its stable todo IDs.
 - **Assumptions:**
 
 #### Completion Report
-- **Files changed:** exact paths
+- **Files changed:** {exact paths}
 - **Status:** pending / running / completed / failed / blocked / cancelled / superseded
 - **Validation evidence:**
-  | Revision | Snapshot ID | Owner | Check/scenario | Expected | Actual | Status | Exit status | Raw reference (when material) |
+  | Revision | Snapshot ID | Owner | Check/scenario or command | Expected | Actual | Status (PASS/FAIL/BLOCKED) | Exit status | Raw reference (when material) |
   |---|---|---|---|---|---|---|---|---|
-- **Criteria status:** one result per acceptance criterion
-- **Assigned todo IDs:** {IDs from the authoritative list}
-- **Per-todo result / proposed follow-up:** {Orchestrator reconciliation records discharge; Fixer/Oracle proposals only}
-- **Durable evidence reference(s):** {repo path + hash, immutable artifact/URL, or inline material evidence; transport-only references cannot discharge todos}
-- **Deviations/blockers:** none, or exact details
+- **Proposed follow-up:** {distinct follow-up work and todo/ledger references}
+- **Deviations/blockers:** {none or exact details and evidence}
 
 #### Review Readiness
-- **Exact unit / contract / snapshot:**
-- **Snapshot manifest contents:** {repository root/base; sorted relevant paths/status/modes/byte hashes; manifest hash; explicit exclusions}
-- **Acceptance criteria:** all satisfied / not satisfied (criterion results above)
-- **Todo reconciliation:** consistent at revision {revision}; implementation/correction/integration/required-validation todos discharged; Review-action todo {ID/status}
-- **Non-superseded results integrated:** yes / no
-- **Pending implementation, correction, or integration tasks:** none / listed
-- **Required validation against snapshot:** all `PASS` / not ready (evidence above)
-- **Prior actionable findings:** resolved and revalidated / outstanding
-- **Known actionable in-scope defect:** none / listed
-- **Gate:** `REVIEW_READY` / `NOT_REVIEW_READY` / `BLOCKED_REVIEW` (explicit non-delivery only)
-- **Remaining actions / blocker evidence:**
+- **Exact unit / contract / snapshot:** {references; snapshot binding under canonical rules}
+- **Acceptance criteria:** {results and evidence references}
+- **Todo reconciliation:** {revision; scoped implementation/correction/integration/required-validation settlement references; Review-action todo ID/status}
+- **Non-superseded results integrated:** {yes/no; ledger references}
+- **Pending tasks:** {none or ledger references}
+- **Required validation against snapshot:** {all PASS or outstanding; evidence references}
+- **Prior actionable findings:** {resolved and revalidated or outstanding; references}
+- **Known actionable in-scope defect:** {none or listed}
+- **Gate:** {REVIEW_READY or unmet readiness; BLOCKED_REVIEW is non-delivery, never approval}
+- **Remaining authorized actions:** {actions or none; blocker evidence}
 
 #### Evaluation Verdict
 - **Review revision:**
 - **Review owner:**
-- **Snapshot identity:** {same immutable snapshot ID used by required validation}
-- **Expected:**
-- **Actual:**
+- **Snapshot ID:** {same snapshot ID used by required validation; binding reference}
 - **Verdict:** PASS / FAIL
 - **Reason code (when precondition fails):** REVIEW_PRECONDITION_NOT_MET
-- **Exit status:**
-- **Review evidence reference (when material):**
+- **Review evidence reference:**
 - **Review findings:**
