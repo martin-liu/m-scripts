@@ -38,6 +38,12 @@ Canonical state, todo, snapshot, evidence, and Review rules: `skills/xdev/SKILL.
 - **Remaining authorized actions:** {actions or none; blocker evidence}
 
 #### Evaluation Verdict
+{One verdict per Review-covered unit. Batch consecutive sprints that share a contract,
+invariants, or validation into a single delivery unit and record one verdict spanning them;
+split into a separate verdict only for failure isolation, ordering, or materially different
+invariants. Never record one verdict per corrected finding, and never re-Review a single
+correction while other findings from the same Review remain outstanding.}
+- **Reviewed sprint IDs:** {one or more sprint IDs covered by this verdict}
 - **Review revision:**
 - **Review owner:**
 - **Snapshot ID:** {same snapshot ID used by required validation; binding reference}

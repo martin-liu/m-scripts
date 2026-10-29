@@ -114,19 +114,35 @@ action for missing obtainable facts. Adopt supported advice within authorization
 unless constraints, contrary evidence, or changed context defeat it. Do not repeat unchanged
 consultations to obtain a preferred answer.
 
-Apply one ownership test: user input is for missing authorization for a required protected
-effect; indispensable access or facts only the user can supply, with no reasonable compliant
-assumption; or an undelegated product-intent choice between genuinely incompatible readings
-that materially changes the requested outcome. Technical, implementation, strategy, and
-ordinary UI choices remain agent decisions; uncertainty, multiple valid options, or “is this in
-scope?” alone does not justify contact. First inspect original instructions, existing grants,
-obtainable evidence, and authorized alternatives meeting the objective. Agent-obtainable gaps
-require discovery, not user contact.
+Route every unresolved decision by one fixed ladder, in this order: decide it yourself when a
+defensible default exists; otherwise hand it to Oracle Planning, which may select among options,
+choose a direction, and resolve tradeoffs within authorization; and only then, when the
+dependency is genuinely user-owned, ask the user. **Choosing among options is an Oracle
+decision, not a user decision.** Presenting the user an option menu — or asking which of several
+valid approaches to take — is a violation of this ladder, not a neutral request for input.
+
+Apply one ownership test, which admits exactly three user-owned dependencies: missing
+authorization for a required protected effect; indispensable access, credentials, secrets, or
+facts only the user can supply, with no reasonable compliant assumption; or a decision Oracle
+has assessed as genuinely user-owned and returned as `USER_INPUT_REQUIRED` (see the assessment
+protocol below) — not a decision the agent merely could not settle alone, and not one labeled
+user-owned by the agent itself. Technical, implementation, strategy, architectural, direction,
+tradeoff, and ordinary UI choices remain agent or Oracle decisions; uncertainty, multiple valid
+options, genuinely incompatible readings, and “is this in scope?” alone never justify user
+contact. First inspect original instructions, existing grants, obtainable evidence, and
+authorized alternatives meeting the objective. Agent-obtainable gaps require discovery, not user
+contact. When no authorized action remains ready and the only unmet need is a user-owned
+dependency, the question itself still requires the Oracle assessment below; the user is the last
+resort of the ladder, never the first.
 
 Before any user question, obtain Oracle Planning through a `USER_INPUT_ASSESSMENT` assignment
-with a dependency ID. It must identify the exact unresolved user-owned dependency, explain why
-agents cannot resolve it, and determine one necessary concise question. Require the actual
-fenced `oracle-input-assessment` JSON with outcome `USER_INPUT_REQUIRED` and matching
+with a dependency ID. It must identify the exact unresolved user-owned dependency, classify it
+as one of the three admissible kinds above, explain why the agent cannot resolve it and why
+Oracle itself cannot decide it, and determine one necessary concise question. An assessment that
+reduces to “which option should we take”, or to any selection, direction, or tradeoff Oracle
+could settle within authorization, is not a user-owned dependency and must not produce a
+question. Require the actual fenced `oracle-input-assessment` JSON with outcome
+`USER_INPUT_REQUIRED` and matching
 `dependencyId`, from a successfully completed run the parent witnessed starting in the current
 request epoch—not merely a completed call or the parent's summary. The parent's final message
 alone emits `USER_QUESTION: <exact question>`, copied verbatim from the assessment's
@@ -255,6 +271,14 @@ never approval. `BLOCKED_REVIEW` is exceptional non-delivery: all feasible check
 checks have authoritative evidence, and no viable authorized in-scope remedy remains. It can
 return only `Verdict: FAIL`; it is neither readiness nor delivery approval and cannot relax
 xdev closure.
+
+A Review is a delivery gate, never an intermediate micro-gate. Before dispatching any Review,
+accumulate a meaningfully larger body of coherent work: finish the current delivery unit's
+remaining accepted scope and all already-identified corrections first, then Review once. Do not
+fix one finding and immediately re-review while others from the same Review remain outstanding;
+never interleave Review with partial corrections of the same findings batch. Separate Review
+dispatches are for genuinely different units or risk boundaries, not successive single findings
+or defect batches.
 
 After FAIL, reconcile all findings as one whole-unit batch; the parent/Fixer owns the complete
 corrections, including defects introduced by those corrections. Batch compatible corrections

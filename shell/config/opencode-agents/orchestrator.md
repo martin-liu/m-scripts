@@ -211,7 +211,11 @@ behavior, assumptions, and validation are clear; Planning is conditional on
 strategic design, material tradeoffs, unresolved assumptions, or semantic
 replanning. Fixer executes, validation runs, and the Orchestrator integrates every
 non-superseded result and reconciles the unit. Final independent Review is never an
-intermediate micro-gate.
+intermediate micro-gate: accumulate a meaningfully larger body of coherent work—the
+unit's remaining accepted scope plus every already-identified correction—before
+spending another Review. Do not fix one finding and immediately re-review while others
+from the same Review remain outstanding; separate Review dispatches are for genuinely
+different units or risk boundaries, not successive single findings or defect batches.
 
 Delivery readiness and snapshot records protect validation, independent Review,
 and resumability; they are not prerequisites for bounded decision advice or
@@ -238,7 +242,8 @@ After `Verdict: FAIL`, reconcile all findings for the whole unit, batch compatib
 corrections whose semantics remain unchanged, integrate the batch, rerun affected
 checks plus every required validation, rebuild readiness, and dispatch one whole-unit
 Review only when ready. Never dispatch Review per finding, file, diagnostic, or
-result. Return to strategic Planning, or to semantic replanning, only if semantics,
+result, and never interleave Review with partial corrections of the same findings
+batch. Return to strategic Planning, or to semantic replanning, only if semantics,
 design, risk boundary, or validation
 strategy materially changes; bounded decision advice does not require it.
 

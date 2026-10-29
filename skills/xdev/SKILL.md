@@ -138,6 +138,8 @@ Successful completion requires Outcome `delivered`, final-validation results for
 
 Each completed risk-boundary sprint receives independent delivery Review only after the global `REVIEW_READY` gate and xdev todo reconciliation. Scoped implementation, correction, integration, and validation todos must be discharged; the designated Review-action todo may remain open until its result is integrated. `BLOCKED_REVIEW` is non-delivery and cannot change closure requirements.
 
+Batch sprints before Review. A sprint's own completion is not by itself a reason to Review: consolidate consecutive sprints into one delivery Review whenever they share a contract, invariants, or validation, and hold a Review-receivable unit until its accepted scope and all already-identified corrections are complete. Split into a separate Review only for failure isolation, ordering, or materially different invariants—not merely because a sprint boundary was reached. The global prohibition on re-dispatching a full Review per finding or defect batch applies to xdev sprints: never Review one corrected finding while others from the same Review remain outstanding, and never fix-and-review sprint by sprint when the sprints form one delivery unit. Reuse the last-sprint verdict for the whole-state Review only when scope and evidence coincide.
+
 A last or only sprint Review may also serve as final whole-state Review when scope and evidence coincide. Terminal transitions follow **Parent-objective closure**; `conclusively blocked` is terminal non-delivery, never successful completion.
 
 ## Parent-objective closure
@@ -169,7 +171,7 @@ Missing, contradictory, stale, or unreconciled todo state prevents Review readin
 ## Lifecycle
 
 1. Author and accept the baseline under the authority rules above and applicable global source-corpus requirements. Invoke Planning only when its global triggers apply; there is no preimplementation Baseline Review. Record the final-validation execution owner in the baseline.
-2. Execute approved bounded sprint contracts. Use review-worthy risk boundaries, not arbitrary files or checklist items: combine mechanical changes sharing a contract and validation; split for failure isolation, ordering, or materially different invariants.
+2. Execute approved bounded sprint contracts. Use review-worthy risk boundaries, not arbitrary files or checklist items: combine mechanical changes sharing a contract and validation; split for failure isolation, ordering, or materially different invariants. Prefer fewer, larger sprints so each Review covers a meaningfully larger completed body of work; do not split merely to produce more review boundaries.
 3. Reconcile evidence under **Baseline, sprint, and Review evidence**, then apply **Completion and Review** and the global whole-unit correction procedure.
 4. The designated owner runs the approved final checks; the Orchestrator integrates their evidence. Obtain final whole-state Review, reusing the last-sprint verdict only when scope and evidence coincide.
 5. Reconcile completion and settle the objective under **Parent-objective closure**.

@@ -70,7 +70,13 @@ Settlement references distinguish satisfied work from evidence-backed unmet/bloc
 |---|---|---|---|---|---|---|---|---|
 
 ## Sprint Records
-{Sprint blocks with their original snapshot bindings.}
+{Sprint blocks with their original snapshot bindings. Sprints sharing a contract, invariants,
+or validation may share one batched delivery Review and its single Evaluation Verdict; record
+that verdict under the covering sprint block and reference the covered sprint IDs.}
+
+## Review Coverage Log
+{Optional when batching: list each Review dispatch with its reviewed sprint IDs and verdict
+reference, so the batching of sprints into Reviews is auditable without a verdict per sprint.}
 
 ## Final Validation Evidence
 | Revision | Snapshot ID | Owner | Check/scenario or command | Expected | Actual | Status (PASS/FAIL/BLOCKED) | Exit status | Raw reference (when material) | Findings |

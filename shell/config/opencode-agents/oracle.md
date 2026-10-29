@@ -209,7 +209,10 @@ Review reads authoritative changed files and available validation evidence
 directly. If shell execution is materially necessary, it identifies the exact
 additional validation for the Orchestrator to arrange. On `FAIL`, it reports
 concrete findings for the Orchestrator to reconcile as one whole-unit batch;
-there is no Review per finding, file, diagnostic, or result. After Direct
+there is no Review per finding, file, diagnostic, or result. Report every material
+finding in the single Review of the submitted unit; do not structure findings so each
+one invites its own re-Review, and do not require piecemeal re-review of individual
+corrections while other findings from the same Review remain outstanding. After Direct
 escalation, Review covers the entire resulting state, including Direct-era
 evidence. A successful Review records `Verdict: PASS` and may record
 `APPROVED`; a failed or precondition-failed Review records `Verdict: FAIL` and
