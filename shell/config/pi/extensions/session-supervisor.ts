@@ -559,6 +559,14 @@ export function registerSessionSupervisor(
   // beyond what an inspected artifact yields on demand.
   let observedRuns = new Map<string, ObservedRun>();
 
+  // --- Subagent-idleness evidence ------------------------------------------
+  // "Real idle" needs BOTH the main agent idle AND no child still running, and
+  // the second half is only knowable from lifecycle evidence. `observationTopicsReady`
+  // records that both START/terminal subscriptions were actually installed. When it
+  // is false the inventory is not usable, and because "unknown" must never become
+  // "idle", the idle gate refuses to nudge. See `subagentsKnownIdle`.
+  let observationTopicsReady = false;
+
   // --- Provenance index ----------------------------------------------------
   // The persistent half of the observed-run record: WITHOUT result text, and
   // WITHOUT any verification outcome, timer, or execution permit. It exists so
@@ -1496,23 +1504,39 @@ export function registerSessionSupervisor(
    * A missing `on`, an unsupported topic, or a throwing subscriber leaves the
    * ledger empty, which can only make an escalation unverified. Nothing here
    * launches, resumes, or cancels a run.
+   *
+   * `observationTopicsReady` records that BOTH subscriptions were installed. The
+   * idle gate depends on it: without a working ledger we cannot prove any
+   * subagent is idle, and "unknown" must mean "do not nudge". Checking only
+   * whether `api.events.on` EXISTS would miss a subscriber that throws, so the
+   * flag is set from the actual subscribe attempts.
    */
   const observeRunEvents = () => {
     const bus = api.events;
     if (bus === undefined || typeof bus.on !== "function") return;
+    let installed = 0;
     for (const topic of [OBSERVED_RUN_START_TOPIC, OBSERVED_RUN_TERMINAL_TOPIC]) {
       try {
         bus.on(topic, (event: unknown) => {
           if (topic === OBSERVED_RUN_START_TOPIC) observeStart(event);
           else observeTerminal(event);
         });
+        installed += 1;
       } catch {
-        // A bus that refuses a subscription simply cannot attest anything.
+        // A bus that refuses a subscription cannot attest anything, so the
+        // ledger is not usable and the idle gate must fail closed.
       }
     }
+    if (installed === 2) observationTopicsReady = true;
   };
 
-  /** True only when the host reports an idle agent; unknown means not idle. */
+  /**
+   * True only when the host reports an idle agent; unknown means not idle.
+   *
+   * This is the MAIN agent's idleness ONLY. It says nothing about subagents: a
+   * settle while a child still runs reports `true` here. See
+   * `subagentsKnownIdle` for the other half of "real idle".
+   */
   const isIdle = (ctx: SupervisorContext): boolean => {
     try {
       return ctx?.isIdle?.() === true;
@@ -1710,6 +1734,107 @@ export function registerSessionSupervisor(
   };
 
   /**
+   * Whether a child's on-disk status proves the run has CLOSED.
+   *
+   * The accepted set is pi-subagents' OWN terminal vocabulary, taken from the
+   * installed package so the two cannot drift:
+   *   - `TERMINAL_STATES = new Set(["complete", "failed", "stopped", "rejected"])`
+   *     (`bundle/chunk-5YIITCPD.js:1227`)
+   * `partial` is additionally treated as closed because it IS in the package's
+   * `isTerminalJobStatus` predicate (`:447`) - a partial run has ended, even
+   * though its result is incomplete.
+   *
+   * Deliberately NOT `ownerStateIsTerminal`: that function treats `paused` as
+   * non-terminal because a paused run is not a proven automatic wake OWNER, which
+   * is the right question for AUTHORIZING a silent wait. Here the question is the
+   * opposite one - does this child still occupy the session? - and a `paused` run
+   * is retained by the runtime and may still hold live descendants, so for
+   * ACTIVITY it stays unresolved. Blocking a nudge grants no authority, so the
+   * asymmetry is safe.
+   */
+  const childStatusClosed = (state: string | null): boolean =>
+    state === "complete" ||
+    state === "failed" ||
+    state === "stopped" ||
+    state === "rejected" ||
+    state === "partial";
+
+  /**
+   * Whether available lifecycle evidence establishes that NO relevant subagent
+   * remains unresolved - i.e. "real idle" also holds for children.
+   *
+   * The whole-point inversion: this returns `false` (do not nudge) both when a
+   * child is known to be running AND when the evidence is UNKNOWN. Unknown must
+   * never degrade into permission, because nudging into live work is the defect
+   * this exists to fix.
+   *
+   * Inventory is the UNION of the live ledger and the provenance index. Input or
+   * tree replacement CLEARS both (`clearObservedRuns`), but a new request does
+   * not terminate an earlier child, so a reload/restore path that recovers the
+   * prior rows still blocks. Records from a PREVIOUS request epoch therefore
+   * still count: an outstanding child does not stop mattering because we started
+   * a new turn. This is a deliberately broader scope than the ownership checks
+   * use - and that is safe precisely because blocking a nudge confers nothing.
+   *
+   * Only rows bound to THIS session (by bare UUID) are considered. A positively
+   * foreign session's row is excluded.
+   *
+   * FAIL DIRECTION (user decision, m02697): when a child's state cannot be
+   * DETERMINED AT ALL - no lifecycle view, no usable identity, no readable
+   * `status.json` - the run is treated as DEAD rather than live. The user's
+   * reasoning: a main agent waiting on a child that can never be observed would
+   * otherwise stall FOREVER, and a stall is unbounded while a spurious nudge is
+   * cheap and self-correcting (the nudge says "continue if not finished", so it
+   * is harmless against finished work).
+   *
+   * This does NOT override POSITIVE evidence of life. A readable `running` or
+   * `paused` state is proof the child occupies the session, so it still blocks.
+   * The rule applies only to genuinely undeterminable cases - "unknown" is not
+   * the same as "known not to be terminal".
+   */
+  const subagentsKnownIdle = (ctx: SupervisorContext): boolean => {
+    // No lifecycle view at all: nothing can be determined, so treat every child
+    // as dead and allow the nudge (see FAIL DIRECTION above).
+    if (!observationTopicsReady) return true;
+    const uuid = sessionUuid(sessionIdentity(ctx));
+    const candidates = new Map<string, { run: ObservedRun | null; record: ProvenanceRecord | null }>();
+    for (const run of observedRuns.values()) {
+      candidates.set(run.runId, { run, record: provenance.get(run.runId) ?? null });
+    }
+    for (const record of provenance.values()) {
+      if (!candidates.has(record.runId)) candidates.set(record.runId, { run: null, record });
+    }
+    for (const candidate of candidates.values()) {
+      const bound = candidate.run?.sessionUuid ?? candidate.record?.sessionUuid ?? "";
+      if (bound.length > 0 && uuid.length > 0 && bound !== uuid) continue; // foreign session
+      // An unbound row cannot be attributed: undeterminable, so treat as dead.
+      if (bound.length === 0) continue;
+      if (uuid.length === 0) continue; // cannot bind at all: undeterminable
+      // A terminal TOMBSTONE retires the run even if no disk state is readable.
+      if (candidate.run?.terminal === true) continue;
+      const asyncDir = candidate.run?.asyncDir ?? candidate.record?.asyncDir ?? null;
+      // No async dir to inspect means the state cannot be determined: dead.
+      if (asyncDir === null) continue;
+      const state = readChildStatusState(asyncDir);
+      // Unreadable/missing/absent `status.json` cannot be determined: dead. A
+      // child whose artifacts are gone has no observable process to wait for.
+      if (state === null) continue;
+      if (childStatusClosed(state)) continue;
+      // POSITIVE evidence of life: the child demonstrably occupies the session,
+      // so we must not nudge into it.
+      return false;
+    }
+    return true;
+  };
+
+  /** Read a child's `status.json` state through the same seam as the WAIT paths. */
+  const readChildStatusState = (asyncDir: string): string | null => {
+    const status = readJsonArtifact(join(asyncDir, "status.json"), readFile);
+    if (status === null) return null;
+    return typeof status.state === "string" && status.state.length > 0 ? status.state : null;
+  };
+
+  /**
    * Send ONE static continue-nudge when the session is genuinely idle with
    * unfinished declared work.
    *
@@ -1730,6 +1855,10 @@ export function registerSessionSupervisor(
     if (continuationDisabled) return false; // PI_MAX_CONTINUATIONS=0 disables entirely
     if (userStopLatched) return false; // a user stop outranks any automatic nudge
     if (!isIdle(ctx)) return false; // nothing will happen unless we interact
+    // "Real idle" also requires that no child is still running. A live subagent
+    // means work IS happening, so nudging here would inject a message into a
+    // session that is already busy - the reported defect.
+    if (!subagentsKnownIdle(ctx)) return false;
     if (IDLE_NUDGE_EXCLUDED_STATUSES.has(status)) return false; // DONE/BLOCKED/FAILED/unknown
     if (typeof api.sendUserMessage !== "function") return false; // fail closed: no send surface
     const session = sessionIdentity(ctx);

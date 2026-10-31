@@ -12891,15 +12891,40 @@ function idleContinueContext({ isIdle = true, entries = [] } = {}) {
  * latch only works from a bound listener) with a `startup` reason, i.e. a brand
  * new scope that inherits no cooldown.
  */
-function idleContinueHarness({ isIdle = true, status, env = {}, aborted = false, paneId = "pane-7", write } = {}) {
+function idleContinueHarness({ isIdle = true, status, env = {}, aborted = false, paneId = "pane-7", write, runs = [] } = {}) {
   let clock = 1_000_000;
   const pi = makePi();
+  // SIMPLE IDLE AUTO-CONTINUE: "real idle" needs a workable subagent-lifecycle
+  // view. This fake bus records its subscriptions and, unless the test supplies
+  // runs, is simply EMPTY - which is the correct description of a session with no
+  // child running. Without it the idle gate treats child state as UNKNOWN and
+  // refuses to nudge, which is the safe direction but not what most of these
+  // tests are about.
+  const subscribed = [];
+  // A DELIVERABLE bus: subscriptions are recorded, and `deliverStart` feeds a
+  // START observation the way a real host does - AFTER `session_start`, because
+  // the product opens a fresh observation epoch there (`clearObservedRuns`). A
+  // run seeded during registration would be wiped and the test would be
+  // exercising an impossible sequence.
+  pi.events = {
+    on(topic, handler) {
+      subscribed.push({ topic, handler });
+      return undefined;
+    },
+  };
+  const deliver = (topic, event) => {
+    for (const s of subscribed) if (s.topic === topic) s.handler(event);
+  };
   const previous = process.env.ZELLIJ_PANE_ID;
   process.env.ZELLIJ_PANE_ID = paneId;
   const out = captureStdout(write);
   mod.registerSessionSupervisor(pi, { now: () => clock, ...env });
   const h = idleContinueContext({ isIdle });
   pi.emit("session_start", { type: "session_start", reason: "startup" }, h.ctx);
+  // Seed the child-lifecycle observations AFTER session_start, in the order a
+  // real host delivers them. `runs` is expressed as an ordered trace so a test
+  // can express "this run started and is still live" or "...and then finished".
+  for (const run of runs) deliver(run.topic, run.event);
   const settle = (text) => {
     h.ctx.sessionManager.buildSessionProjection = () => ({
       messages: text === undefined ? [] : [assistant(text)],
@@ -12917,6 +12942,7 @@ function idleContinueHarness({ isIdle = true, status, env = {}, aborted = false,
     out,
     restore,
     settle,
+    subscribed,
     advance: (ms) => (clock += ms),
     nudges: () => pi.userMessages.filter((m) => m.text === IDLE_NUDGE),
     /** Every oscillator-notification payload written during the test. */
@@ -13165,6 +13191,233 @@ test("IDLE-CONTINUE: a quiet nudge does not consume later UI attention", () => {
     });
   } finally {
     restore();
+  }
+});
+
+// ===========================================================================
+// IDLE-CONTINUE: "real idle" requires no live subagent
+//
+// User-reported defect (m02579): "when it wating for subagent and there's a
+// real subagent running, the auto-continue still triggered. When we say `real
+// idle`, means both main and sub agents are idle".
+//
+// The gate is deliberately asymmetric: a child is treated as STILL RUNNING
+// unless evidence proves it CLOSED. Unknown evidence therefore blocks the nudge,
+// because nudging into live work is the defect, while blocking a nudge only
+// falls back to the ordinary notification.
+// ===========================================================================
+
+/**
+ * Write a child run directory carrying an authoritative `status.json`.
+ *
+ * `status.json` is the runtime's own artifact (pi-subagents reads it at
+ * `bundle/chunk-5YIITCPD.js:1254` and `:8173`), so a readable state is POSITIVE
+ * evidence about whether a child still occupies the session. Returns the run
+ * directory to pass as `asyncDir`.
+ */
+function writeChildStatus(status) {
+  const dir = mkdtempSync(join(tmpdir(), "idle-continue-child-"));
+  writeFileSync(join(dir, "status.json"), JSON.stringify(status));
+  return dir;
+}
+
+/** A `subagent:async-started` observation bound to the idle-continue session. */
+function runStartEvent(runId, asyncDir = null) {
+  return {
+    type: "subagent:async-started",
+    version: 1,
+    runId,
+    id: runId,
+    agent: "oracle",
+    sessionFile: "/sessions/idle-continue.jsonl",
+    sessionId: "/sessions/idle-continue.jsonl",
+    asyncDir,
+  };
+}
+
+/**
+ * A `subagent:child-status` observation marking a run terminal.
+ *
+ * `stopped` is pi-subagents' ACTUAL terminal value on this topic: the package's
+ * child-status guard accepts only `started` / `stopping` / `stopped`
+ * (`bundle/chunk-5YIITCPD.js:669`), and `stopped` is the one the extension
+ * retires provenance on. Every other terminal-topic test in this file uses it.
+ */
+function runTerminalEvent(runId) {
+  return {
+    type: "subagent.child-status",
+    version: 1,
+    runId,
+    childRunId: runId,
+    status: "stopped",
+    ts: 1_000_000,
+    sessionFile: "/sessions/idle-continue.jsonl",
+    sessionId: "/sessions/idle-continue.jsonl",
+  };
+}
+
+// --- THE DEFECT: a live child with OBSERVABLE state blocks the nudge ---
+test("IDLE-CONTINUE: a live subagent with readable status suppresses the nudge and notifies", () => {
+  // A child whose `status.json` is READABLE and says `running` is positively
+  // alive, so the session is NOT really idle. This is the user's reported defect.
+  const dir = writeChildStatus({ state: "running" });
+  const h = idleContinueHarness({
+    paneId: "pane-7",
+    runs: [{ topic: mod.OBSERVED_RUN_START_TOPIC, event: runStartEvent("run-live", dir) }],
+  });
+  try {
+    withPlatform("darwin", () => h.settle(CONTINUE_MARKER));
+    assert.equal(h.nudges().length, 0, "a demonstrably live subagent must NOT be auto-continued into");
+    assert.equal(h.notices().length, 1, "without a nudge, the notification is the fallback");
+  } finally {
+    h.restore();
+  }
+});
+
+// --- A `paused` child is still POSITIVELY live ---
+test("IDLE-CONTINUE: a paused subagent still suppresses the nudge", () => {
+  // `paused` is not terminal for ACTIVITY: the runtime retains the run and it may
+  // hold live descendants, so it is positive evidence of occupancy.
+  const dir = writeChildStatus({ state: "paused" });
+  const h = idleContinueHarness({
+    paneId: "pane-7",
+    runs: [{ topic: mod.OBSERVED_RUN_START_TOPIC, event: runStartEvent("run-paused", dir) }],
+  });
+  try {
+    withPlatform("darwin", () => h.settle(CONTINUE_MARKER));
+    assert.equal(h.nudges().length, 0, "a paused child still occupies the session");
+    assert.equal(h.notices().length, 1, "so the settlement notifies instead");
+  } finally {
+    h.restore();
+  }
+});
+
+// --- UNDETERMINABLE child state is treated as DEAD (user rule m02697) ---
+test("IDLE-CONTINUE: an undeterminable child state is treated as dead and nudges", () => {
+  // The user's rule: a child whose state CANNOT BE DETERMINED must not block, or a
+  // main agent waiting on an unobservable child would stall forever. A run with
+  // no async dir at all is exactly that case.
+  const h = idleContinueHarness({
+    paneId: "pane-7",
+    runs: [{ topic: mod.OBSERVED_RUN_START_TOPIC, event: runStartEvent("run-unknown", null) }],
+  });
+  try {
+    withPlatform("darwin", () => h.settle(CONTINUE_MARKER));
+    assert.equal(h.nudges().length, 1, "undeterminable means dead, so the nudge proceeds");
+    assert.deepEqual(h.notices(), [], "and it is silent");
+  } finally {
+    h.restore();
+  }
+});
+
+// --- A TERMINATED child no longer blocks ---
+test("IDLE-CONTINUE: a terminated subagent permits the nudge again", () => {
+  const h = idleContinueHarness({
+    paneId: "pane-7",
+    runs: [
+      { topic: mod.OBSERVED_RUN_START_TOPIC, event: runStartEvent("run-done") },
+      { topic: mod.OBSERVED_RUN_TERMINAL_TOPIC, event: runTerminalEvent("run-done") },
+    ],
+  });
+  try {
+    withPlatform("darwin", () => h.settle(CONTINUE_MARKER));
+    assert.equal(h.nudges().length, 1, "a finished child leaves the session genuinely idle");
+    assert.deepEqual(h.notices(), [], "and that nudge is silent");
+  } finally {
+    h.restore();
+  }
+});
+
+// --- Undeterminable lifecycle view does NOT block (user rule m02697) ---
+test("IDLE-CONTINUE: no child-lifecycle view at all still nudges", () => {
+  // With no bus, child state cannot be determined. The user's rule says treat
+  // that as dead rather than stalling forever.
+  const pi = makePi();
+  const previous = process.env.ZELLIJ_PANE_ID;
+  process.env.ZELLIJ_PANE_ID = "pane-7";
+  const out = captureStdout();
+  try {
+    mod.registerSessionSupervisor(pi, { now: () => 1_000_000 });
+    const h = idleContinueContext({ isIdle: true });
+    pi.emit("session_start", { type: "session_start", reason: "startup" }, h.ctx);
+    h.ctx.sessionManager.buildSessionProjection = () => ({ messages: [assistant(CONTINUE_MARKER)] });
+    withPlatform("darwin", () => pi.emit("agent_settled", { type: "agent_settled", aborted: false }, h.ctx));
+    assert.equal(
+      pi.userMessages.filter((m) => m.text === IDLE_NUDGE).length,
+      1,
+      "undeterminable child state is treated as dead, so the nudge proceeds",
+    );
+    assert.equal(out.chunks.filter((c) => c.startsWith("\u001b]777;")).length, 0, "and it is quiet");
+  } finally {
+    out.restore();
+    if (previous === undefined) delete process.env.ZELLIJ_PANE_ID;
+    else process.env.ZELLIJ_PANE_ID = previous;
+  }
+});
+
+// --- A child bound to a DIFFERENT session does not block ---
+test("IDLE-CONTINUE: a subagent from another session does not suppress the nudge", () => {
+  const foreign = runStartEvent("run-elsewhere");
+  foreign.sessionFile = "/sessions/some-other-session.jsonl";
+  foreign.sessionId = "/sessions/some-other-session.jsonl";
+  const h = idleContinueHarness({
+    paneId: "pane-7",
+    runs: [{ topic: mod.OBSERVED_RUN_START_TOPIC, event: foreign }],
+  });
+  try {
+    withPlatform("darwin", () => h.settle(CONTINUE_MARKER));
+    assert.equal(h.nudges().length, 1, "another session's child is not our business");
+  } finally {
+    h.restore();
+  }
+});
+
+// --- The reported scenario: STATUS:WAIT on a POSITIVELY-live child ---
+test("IDLE-CONTINUE: waiting on a demonstrably live child notifies and does not nudge", () => {
+  const dir = writeChildStatus({ state: "running" });
+  const h = idleContinueHarness({
+    paneId: "pane-7",
+    runs: [{ topic: mod.OBSERVED_RUN_START_TOPIC, event: runStartEvent("run-live", dir) }],
+  });
+  try {
+    withPlatform("darwin", () => h.settle(WAIT_MARKER));
+    assert.equal(
+      h.nudges().length,
+      0,
+      "a WAIT on a demonstrably running child must not be auto-continued",
+    );
+    assert.equal(h.notices().length >= 1, true, "the settlement still asks for attention");
+  } finally {
+    h.restore();
+  }
+});
+
+// --- Subscription robustness: a throwing subscribe is undeterminable ---
+test("IDLE-CONTINUE: a bus whose subscription throws is undeterminable and nudges", () => {
+  const pi = makePi();
+  pi.events = {
+    on() {
+      throw new Error("unsupported topic");
+    },
+  };
+  const previous = process.env.ZELLIJ_PANE_ID;
+  process.env.ZELLIJ_PANE_ID = "pane-7";
+  const out = captureStdout();
+  try {
+    mod.registerSessionSupervisor(pi, { now: () => 1_000_000 });
+    const h = idleContinueContext({ isIdle: true });
+    pi.emit("session_start", { type: "session_start", reason: "startup" }, h.ctx);
+    h.ctx.sessionManager.buildSessionProjection = () => ({ messages: [assistant(CONTINUE_MARKER)] });
+    withPlatform("darwin", () => pi.emit("agent_settled", { type: "agent_settled", aborted: false }, h.ctx));
+    assert.equal(
+      pi.userMessages.filter((m) => m.text === IDLE_NUDGE).length,
+      1,
+      "a bus that cannot subscribe is undeterminable, so the nudge proceeds",
+    );
+  } finally {
+    out.restore();
+    if (previous === undefined) delete process.env.ZELLIJ_PANE_ID;
+    else process.env.ZELLIJ_PANE_ID = previous;
   }
 });
 
