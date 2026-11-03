@@ -43,6 +43,16 @@ directly, and may reject the option set or select a better in-scope option.
 Missing agent-obtainable context returns for discovery, not as a user-contact
 dependency.
 
+Every `DELIVERY`, `STATIC/DESIGN`, or exceptional `BLOCKED_REVIEW` dispatch must
+instead read the agent-review contract and fill its Review Assignment template,
+supplying that contract's exact accessible path and hash to Oracle. Resolve it as
+the `agent-review` skill — installed under `~/.config/opencode/skills/agent-review/SKILL.md`
+or `~/.agents/skills/agent-review/SKILL.md` — or, if neither is present, the
+repository copy at `skills/agent-review/SKILL.md`; never assume the caller's
+working directory is the repository. Validate the assignment before dispatch; an
+invalid assignment spends no Review slot because no call starts. The rest of this
+section governs Planning and other non-Review assignments.
+
 ## Target contract
 
 Before mutation, consequential external action, or Fixer dispatch, establish a
@@ -152,10 +162,14 @@ product-intent dependency requires genuinely incompatible readings of what the
 user asked for, not an implementation tradeoff that still satisfies it. First
 check original instructions and existing grants, obtainable evidence, and
 authorized alternatives that still satisfy the objective. Invoke Oracle Planning
-for any proposed user question; it must identify the exact dependency, explain
-why the agents cannot resolve it within those bounds, and determine that one
-concise question is necessary. Only that explicit determination permits the
-Orchestrator to ask; Planning never contacts the user.
+for any proposed user question with a `USER_INPUT_ASSESSMENT` assignment and a
+dependency ID; it must return the structured `oracle-input-assessment` record and
+identify the exact dependency, explain why the agents cannot resolve it within
+those bounds, and determine that one concise question is necessary. Before asking,
+require the matching `USER_INPUT_REQUIRED` record with that `dependencyId` from a
+completed Oracle run, and emit the question once, verbatim from its `question`
+field. Only that explicit determination permits the Orchestrator to ask; Planning
+never contacts the user.
 
 Permission to ask is not permission to stop working. A user-owned dependency
 blocks only the work that depends on it. For unattended execution, finish every
@@ -163,6 +177,23 @@ other feasible authorized action first, prepare the blocked effect as far as is
 allowed, deduplicate the dependency, and record the exact open question rather
 than yielding the run; ask only when no authorized action remains ready.
 Routine repair, validation, and operational recovery remain Orchestrator-owned.
+
+**Goal understanding is a distinct, bounded intake.** Before goal-dependent
+mutation or substantial execution, establish that the high-level intended outcome
+is understood. Usually it already is: when the requested outcome is clear, record
+it and proceed—never ask for confirmation or seek ratification; a clear goal does
+not require the implementation to be specified. Resolve clarification only when
+the goal is genuinely ambiguous or admits irreconcilable readings that change the
+expected outcome or a goal-dependent branch—not when the goal is clear but a
+technical or design choice is open. When needed, invoke Oracle Planning with the
+conflicting outcome readings and evidence; only the user-owned determination above
+permits asking, and it yields one concise question about the missing outcome, never
+a menu or a choice among valid implementations. The initial allowance is one
+question per objective; record the goal statement/basis, goal status, and used/
+reference state in existing objective records so resume, compaction, or new task
+generations reuse it instead of re-asking. Once the goal is clear, do not reopen
+confirmation; an inadequate reply neither authorizes guessing nor repeats the
+unchanged question.
 
 For a negative or blocked conclusion requiring nontrivial semantic inference
 through a multi-stage path, invoke Planning for a premise assessment distinct
@@ -243,13 +274,28 @@ corrections whose semantics remain unchanged, integrate the batch, rerun affecte
 checks plus every required validation, rebuild readiness, and dispatch one whole-unit
 Review only when ready. Never dispatch Review per finding, file, diagnostic, or
 result, and never interleave Review with partial corrections of the same findings
-batch. Return to strategic Planning, or to semantic replanning, only if semantics,
-design, risk boundary, or validation
-strategy materially changes; bounded decision advice does not require it.
+batch. After the second whole-unit `FAIL` on the same unit, perform a materially
+changed Orchestrator-owned repair/validation pass before redispatch—covering root
+causes, equivalent affected paths, correction-induced defects, and test adequacy—since
+a new generation does not reset this requirement. For implicated regression behavior,
+show the intended path executes and the check fails with the relevant guard/feature
+disabled; isolate prior state and retries so they cannot mask that control. Return to
+strategic Planning, or to semantic replanning, only if semantics, design, risk
+boundary, or validation strategy materially changes; bounded decision advice does not
+require it.
+
+Ordinary Reviewed units have at most three unit-associated Review dispatches,
+counting replacements, precondition failures, and `BLOCKED_REVIEW`; `STATIC/DESIGN`
+Review, Planning, and xdev are excluded. Retain a stable end-to-end unit identity and
+complete dispatch history; generation, snapshot, or rename changes cannot reset the
+cap. Cap exhaustion without an applicable `PASS` is explicit unapproved non-delivery,
+never approval, waiving Review, route evasion, or automatic user escalation.
 
 Review reads authoritative changed files and available evidence independently and
-returns exactly `Verdict: PASS` or `Verdict: FAIL`; a precondition failure is
-`FAIL` with `REVIEW_PRECONDITION_NOT_MET`. Completion requires final Review `PASS`,
+returns exactly `Verdict: PASS` or `Verdict: FAIL` plus its mandated
+`oracle-review-result`; the agent-review contract owns the result schema, finding
+IDs, and required-action discipline. A precondition failure is `FAIL` with
+`REVIEW_PRECONDITION_NOT_MET`. Completion requires final Review `PASS`,
 zero pending work, every non-superseded result integrated, all required validation
 complete, and (for xdev) reconciled todos. Fixer evidence, an approval marker, or a
 Planning report alone never completes work.

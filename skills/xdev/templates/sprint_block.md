@@ -42,12 +42,13 @@ Canonical state, todo, snapshot, evidence, and Review rules: `skills/xdev/SKILL.
 invariants, or validation into a single delivery unit and record one verdict spanning them;
 split into a separate verdict only for failure isolation, ordering, or materially different
 invariants. Never record one verdict per corrected finding, and never re-Review a single
-correction while other findings from the same Review remain outstanding.}
+correction while other findings from the same Review remain outstanding. The dispatch fills
+the agent-review contract's Review Assignment; findings use its stable IDs.}
 - **Reviewed sprint IDs:** {one or more sprint IDs covered by this verdict}
 - **Review revision:**
 - **Review owner:**
 - **Snapshot ID:** {same snapshot ID used by required validation; binding reference}
 - **Verdict:** PASS / FAIL
 - **Reason code (when precondition fails):** REVIEW_PRECONDITION_NOT_MET
-- **Review evidence reference:**
-- **Review findings:**
+- **`oracle-review-result` reference:**
+- **Review findings:** {stable finding IDs from `oracle-review-result`}

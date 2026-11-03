@@ -21,6 +21,10 @@
     "reserveTokens": 64000,
     "keepRecentTokens": 40000
   },
-  "lastChangelogVersion": "1.4.0",
-  "hideThinkingBlock": true
+  "lastChangelogVersion": "1.5.0",
+  "hideThinkingBlock": true,
+  "extensionChangelogVersions": {
+    "{\"source\":\"npm:pi-subagents\",\"scope\":\"user\"}": "0.84.0",
+    "{\"source\":\"npm:pi-web-access\",\"scope\":\"user\"}": "0.46.0"
+  }
 }

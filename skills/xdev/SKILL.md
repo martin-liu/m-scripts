@@ -130,7 +130,7 @@ A user-owned dependency blocks only dependent work; finish other feasible author
 
 For every baseline, sprint, or final-validation check or scenario, record state revision, snapshot ID under the binding rules above, execution owner, expected and actual results, status (`PASS`, `FAIL`, or `BLOCKED`), command exit status when applicable, and material raw-output/evidence references. A summary cannot replace evidence needed for inspection or reproduction.
 
-Review records additionally identify the Review revision and owner and contain the independent verdict and findings under the global Review protocol. Precondition failure is `Verdict: FAIL` with `REVIEW_PRECONDITION_NOT_MET`; `BLOCKED_REVIEW` is never approval.
+Review records additionally identify the Review revision and owner and contain the independent verdict and findings under the global Review protocol. Every Review dispatch fills the agent-review contract's Review Assignment and returns its `oracle-review-result`; that skill, not this one, owns the assignment fields, result schema, finding IDs, and anti-loop rules. Precondition failure is `Verdict: FAIL` with `REVIEW_PRECONDITION_NOT_MET`; `BLOCKED_REVIEW` is never approval.
 
 ## Completion and Review
 
@@ -138,7 +138,7 @@ Successful completion requires Outcome `delivered`, final-validation results for
 
 Each completed risk-boundary sprint receives independent delivery Review only after the global `REVIEW_READY` gate and xdev todo reconciliation. Scoped implementation, correction, integration, and validation todos must be discharged; the designated Review-action todo may remain open until its result is integrated. `BLOCKED_REVIEW` is non-delivery and cannot change closure requirements.
 
-Batch sprints before Review. A sprint's own completion is not by itself a reason to Review: consolidate consecutive sprints into one delivery Review whenever they share a contract, invariants, or validation, and hold a Review-receivable unit until its accepted scope and all already-identified corrections are complete. Split into a separate Review only for failure isolation, ordering, or materially different invariants—not merely because a sprint boundary was reached. The global prohibition on re-dispatching a full Review per finding or defect batch applies to xdev sprints: never Review one corrected finding while others from the same Review remain outstanding, and never fix-and-review sprint by sprint when the sprints form one delivery unit. Reuse the last-sprint verdict for the whole-state Review only when scope and evidence coincide.
+Batch sprints before Review. A sprint's own completion is not by itself a reason to Review: consolidate consecutive sprints into one delivery Review whenever they share a contract, invariants, or validation, and hold a Review-receivable unit until its accepted scope and all already-identified corrections are complete. Split into a separate Review only for failure isolation, ordering, or materially different invariants—not merely because a sprint boundary was reached. The agent-review contract owns the batch/no-partial-redispatch rules, the effort cap, and the second-FAIL stabilization requirement; follow it rather than restating its mechanics here. A batched Review's assignment names every covered sprint. Reuse the last-sprint verdict for the whole-state Review only when scope and evidence coincide.
 
 A last or only sprint Review may also serve as final whole-state Review when scope and evidence coincide. Terminal transitions follow **Parent-objective closure**; `conclusively blocked` is terminal non-delivery, never successful completion.
 
@@ -170,7 +170,7 @@ Missing, contradictory, stale, or unreconciled todo state prevents Review readin
 
 ## Lifecycle
 
-1. Author and accept the baseline under the authority rules above and applicable global source-corpus requirements. Invoke Planning only when its global triggers apply; there is no preimplementation Baseline Review. Record the final-validation execution owner in the baseline.
+1. Author and accept the baseline under the authority rules above and applicable global source-corpus requirements. Invoke Planning only when its global triggers apply; there is no preimplementation Baseline Review. Record the final-validation execution owner in the baseline, and carry the objective-level goal statement, goal status, and initial-clarification-used/reference state so a resumed or compacted root reuses it instead of re-asking.
 2. Execute approved bounded sprint contracts. Use review-worthy risk boundaries, not arbitrary files or checklist items: combine mechanical changes sharing a contract and validation; split for failure isolation, ordering, or materially different invariants. Prefer fewer, larger sprints so each Review covers a meaningfully larger completed body of work; do not split merely to produce more review boundaries.
 3. Reconcile evidence under **Baseline, sprint, and Review evidence**, then apply **Completion and Review** and the global whole-unit correction procedure.
 4. The designated owner runs the approved final checks; the Orchestrator integrates their evidence. Obtain final whole-state Review, reusing the last-sprint verdict only when scope and evidence coincide.

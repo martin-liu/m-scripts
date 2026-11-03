@@ -36,6 +36,12 @@ Settlement references distinguish satisfied work from evidence-backed unmet/bloc
 - **Final Review:** {pending or final Review reference}
 
 ## Coherent Baseline
+### Goal Understanding
+- **Goal statement / high-level outcome:** {short statement of the intended outcome}
+- **Basis:** {original request and material constraints establishing it}
+- **Goal status:** {clear | user-confirmed | pending-clarification}
+- **Initial clarification used:** {no | yes — dependency ID, assessment reference, reply reference}
+
 ### Requirements
 #### Initial Brief
 #### Scope
@@ -75,8 +81,7 @@ or validation may share one batched delivery Review and its single Evaluation Ve
 that verdict under the covering sprint block and reference the covered sprint IDs.}
 
 ## Review Coverage Log
-{Optional when batching: list each Review dispatch with its reviewed sprint IDs and verdict
-reference, so the batching of sprints into Reviews is auditable without a verdict per sprint.}
+{Optional when batching: list each Review dispatch with its reviewed sprint IDs, its Review revision/owner, its `oracle-review-result` reference, and verdict, so the batching of sprints into Reviews is auditable without a verdict per sprint. Findings use the agent-review contract's stable IDs.}
 
 ## Final Validation Evidence
 | Revision | Snapshot ID | Owner | Check/scenario or command | Expected | Actual | Status (PASS/FAIL/BLOCKED) | Exit status | Raw reference (when material) | Findings |

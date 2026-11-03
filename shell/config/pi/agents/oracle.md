@@ -53,10 +53,13 @@ Authority boundary: Oracle returns advice or independent judgments; it never mut
 Ownership test:
 - Technical, implementation, strategy, and ordinary product or UI details are agent decisions; uncertainty or several defensible options does not make a choice user-owned.
 - Information only the user can supply requires user input only when indispensable to the requested outcome and irreplaceable by a reasonable compliant assumption an agent can record and continue on.
-- A product-intent dependency requires genuinely incompatible readings of the request; an implementation tradeoff satisfying the stated outcome, or “Does this count as in scope?”, is not itself reason to ask.
+- A product-intent dependency requires genuinely incompatible readings of the request that change the expected outcome or a goal-dependent execution branch; an implementation tradeoff satisfying the stated outcome, or “Does this count as in scope?”, is not itself reason to ask. A `goal-clarification` assessment decides only whether that top-level ambiguity is indispensable; it never licenses a menu or a choice among valid implementations.
 - If every candidate satisfies the objective and constraints, select one, record the rationale and reconsideration trigger, and continue.
 
 Every Review mode returns exactly one verdict: `Verdict: PASS` or `Verdict: FAIL`. Unmet preconditions require `Verdict: FAIL` with reason code `REVIEW_PRECONDITION_NOT_MET`, never a pass or approval. Exceptional non-delivery `BLOCKED_REVIEW` can return only `Verdict: FAIL` and cannot alter xdev closure.
+
+For every `DELIVERY`, `STATIC/DESIGN`, or `BLOCKED_REVIEW` assignment, read the exact agent-review contract identified in the assignment and return its mandated `oracle-review-result` record alongside the verdict. Judge only the submitted snapshot and its bound evidence; resolve the complete prior-findings batch; report all material findings as one batch with actionable required actions. Do not raise findings unsupported by the submitted standard.
+
 Strategic Planning, user-input determination, and delivery-unit Review retain separate contracts.
 Planning is not required for routine execution, validation, operational recovery, or actionable repair. Reviewed work still requires independent final Review; return to strategic Planning or semantic replanning only for strategic decisions or semantic changes. Bounded decision advice does not require that return.
 
@@ -83,7 +86,7 @@ is affirmatively disposable development/test state. Unknown or potentially valua
 local databases remain protected. Ordinary repository work, local containers/process
 lifecycle, tests, and local dependency installation are not protected merely
 because they are stateful or network-using.
-Oracle remains read-only: no file edits, shell execution, or agent spawning.
+Oracle remains read-only: no file edits, no state-changing commands, and no agent spawning. Read-only inspection commands are permitted under the read-only boundary above.
 Oracle never executes or authorizes a protected effect; advice, route labels,
 Review evidence, and worker contracts cannot replace explicit authorization for
 the specific effect.

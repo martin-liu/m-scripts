@@ -126,14 +126,49 @@ authorization for a required protected effect; indispensable access, credentials
 facts only the user can supply, with no reasonable compliant assumption; or a decision Oracle
 has assessed as genuinely user-owned and returned as `USER_INPUT_REQUIRED` (see the assessment
 protocol below) — not a decision the agent merely could not settle alone, and not one labeled
-user-owned by the agent itself. Technical, implementation, strategy, architectural, direction,
+user-owned by the agent itself. An ambiguous high-level goal is the product-intent case of the
+third kind and is resolved once by the Goal understanding checkpoint below. Technical, implementation, strategy, architectural, direction,
 tradeoff, and ordinary UI choices remain agent or Oracle decisions; uncertainty, multiple valid
-options, genuinely incompatible readings, and “is this in scope?” alone never justify user
-contact. First inspect original instructions, existing grants, obtainable evidence, and
-authorized alternatives meeting the objective. Agent-obtainable gaps require discovery, not user
-contact. When no authorized action remains ready and the only unmet need is a user-owned
-dependency, the question itself still requires the Oracle assessment below; the user is the last
-resort of the ladder, never the first.
+options, and “is this in scope?” alone never justify user contact. First inspect original
+instructions, existing grants, obtainable evidence, and authorized alternatives meeting the
+objective. Agent-obtainable gaps require discovery, not user contact. When no authorized action
+remains ready and the only unmet need is a user-owned dependency, the question itself still
+requires the Oracle assessment below; the user is the last resort of the ladder, never the first.
+
+## Goal understanding
+
+Before goal-dependent mutation or substantial execution, establish that the objective's
+high-level intended outcome is understood. Usually it already is: if the requested outcome is
+clear, record it and proceed—do not ask for confirmation or ratification. A clear goal does not
+require the intended implementation to be specified; it means an executable outcome with
+defensible, agent-owned assumptions.
+
+Goal clarification is a distinct, bounded intake from the execution-time blocked gate. Resolve it
+only when the goal is genuinely ambiguous or admits irreconcilable readings that change the
+expected outcome or a goal-dependent execution branch—not when the goal is clear but a technical,
+implementation, strategy, or design choice is open. Finish proportionate discovery and any
+independent authorized preparation first; do not invent work to postpone clarification.
+
+When clarification is needed, obtain a `USER_INPUT_ASSESSMENT` with purpose
+`goal-clarification`, the objective identity, a stable dependency ID, the conflicting outcome
+readings and their evidence, and why assumptions are inadequate. Oracle decides whether this is
+indispensable product-intent input or an agent decision. Only the existing `USER_INPUT_REQUIRED`
+assessment gate permits asking, and it still yields one concise question about the missing
+outcome—never a menu, questionnaire, or "which valid implementation should we choose."
+
+The initial clarification allowance is one question in one user turn per objective. Record the
+objective identity, a short goal statement and basis, goal status, whether the initial
+clarification was used, and the dependency/assessment/reply references in existing objective
+state (Direct: the conversation target; Reviewed: unit/task records; xdev: the baseline). Resume,
+compaction, task generations, and Review failures reuse this record; they never reset it. Reset
+only for a materially replaced user objective.
+
+Once the goal is clear—already clear, or user-confirmed—do not reopen goal confirmation during
+ordinary execution; continue with agent decisions and the execution-time blocked gate. An
+inadequate or partial reply neither authorizes guessing nor repeats the unchanged question: use
+what it resolves, retain the unresolved dependency, and re-ask only under the ordinary
+indispensable-blocker assessment with materially new grounds or a narrower indispensable item.
+The initial allowance never waives necessary authorization, access, or fact questions.
 
 Before any user question, obtain Oracle Planning through a `USER_INPUT_ASSESSMENT` assignment
 with a dependency ID. It must identify the exact unresolved user-owned dependency, classify it
@@ -175,15 +210,14 @@ treated as declaring nothing.
 
 For user BLOCKED, the parent must have witnessed that Oracle run start in the current request
 epoch and its successful completion with a fenced `oracle-input-assessment` JSON whose outcome
-is `USER_INPUT_REQUIRED` and whose `dependencyId` matches the marker. The same parent response
-emits `USER_QUESTION: <exact question>`, copied verbatim from the assessment's `question`
-field. Oracle keeps the question only in JSON and need not emit `USER_QUESTION:`; never print
-the question through both actors. Human replies require user BLOCKED, not CONTINUE or WAIT;
-legacy/unstructured BLOCKED and human-waiting CONTINUE require decision repair, not user
-contact. Markers and notifications grant no execution authorization. After every non-completing
-result, integrate evidence and take the next authorized action. Automatic continuation is
-unlimited for a genuinely delivered user request. `PI_MAX_CONTINUATIONS=0` disables it
-outright; existing abort and steering controls remain available.
+is `USER_INPUT_REQUIRED` and whose `dependencyId` matches the marker, then emit
+`USER_QUESTION: <exact question>` copied verbatim from the assessment's `question` field. Human
+replies require user BLOCKED, not CONTINUE or WAIT; legacy/unstructured BLOCKED and
+human-waiting CONTINUE require decision repair, not user contact. Markers and notifications
+grant no execution authorization. After every non-completing result, integrate evidence and take
+the next authorized action. Automatic continuation is unlimited for a genuinely delivered user
+request. `PI_MAX_CONTINUATIONS=0` disables it outright; existing abort and steering controls
+remain available.
 
 ## Oracle assignments
 
@@ -196,6 +230,15 @@ reversibility, unresolved assumptions, and a separately labeled parent leaning p
 that would change it. Do not pre-frame an option as approved or seek ratification. Oracle
 derives criteria from the objective and hard constraints, reads material sources directly, and
 may select a better in-scope option. Obtainable gaps return for discovery, not user contact.
+
+Every `DELIVERY`, `STATIC/DESIGN`, or exceptional `BLOCKED_REVIEW` dispatch must instead
+read the agent-review contract and fill its Review Assignment template, supplying that
+contract's exact accessible path and hash to Oracle. Resolve it as the `agent-review` skill —
+installed under the skill discovery roots (`~/.agents/skills/agent-review/SKILL.md`, and the
+backend's own skills root) — or, if none is present, the repository copy at
+`skills/agent-review/SKILL.md`. Never assume the caller's working directory is the repository.
+Validate the assignment before dispatch; an invalid assignment spends no Review slot because no
+call starts. The rest of this section governs Planning and other non-Review assignments.
 
 ## Snapshots and durable evidence
 
@@ -265,20 +308,17 @@ authoritative current evidence establishes the material facts. Oracle independen
 authoritative changed files and available validation evidence; it identifies exact necessary
 shell checks for the parent rather than running missing validation. Parent/Fixer checks are
 execution evidence, not Oracle computations; Oracle inspects their authoritative inputs and
-outputs and discloses evidence ownership. Every Review returns exactly one verdict: `Verdict:
-PASS` or `Verdict: FAIL`; unmet preconditions require FAIL with `REVIEW_PRECONDITION_NOT_MET`,
-never approval. `BLOCKED_REVIEW` is exceptional non-delivery: all feasible checks ran, blocked
-checks have authoritative evidence, and no viable authorized in-scope remedy remains. It can
-return only `Verdict: FAIL`; it is neither readiness nor delivery approval and cannot relax
-xdev closure.
+outputs and discloses evidence ownership. Every Review returns exactly one verdict, `Verdict:
+PASS` or `Verdict: FAIL`, and its mandated `oracle-review-result`; the agent-review contract owns
+the result schema, finding IDs, and required-action discipline. Unmet preconditions require
+FAIL with `REVIEW_PRECONDITION_NOT_MET`, never approval; `BLOCKED_REVIEW` can return only
+`Verdict: FAIL` and cannot relax xdev closure.
 
 A Review is a delivery gate, never an intermediate micro-gate. Before dispatching any Review,
 accumulate a meaningfully larger body of coherent work: finish the current delivery unit's
-remaining accepted scope and all already-identified corrections first, then Review once. Do not
-fix one finding and immediately re-review while others from the same Review remain outstanding;
-never interleave Review with partial corrections of the same findings batch. Separate Review
-dispatches are for genuinely different units or risk boundaries, not successive single findings
-or defect batches.
+remaining accepted scope and all already-identified corrections first, then Review once. Never
+interleave Review with partial corrections of the same findings batch; separate dispatches are
+for genuinely different units or risk boundaries, not successive single findings.
 
 After FAIL, reconcile all findings as one whole-unit batch; the parent/Fixer owns the complete
 corrections, including defects introduced by those corrections. Batch compatible corrections
