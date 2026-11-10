@@ -188,39 +188,74 @@ execution authorization. After every non-completing result, integrate evidence a
 authorized action. Automatic continuation is unlimited for a genuinely delivered request;
 `PI_MAX_CONTINUATIONS=0` disables it outright, and existing abort and steering controls remain.
 
+### Diagrams
+
+When a drawing explains structure better than prose, emit Mermaid that renders as terminal box art:
+a **rendered** width under 80 columns, measured on the drawing your renderer produces rather than
+on the longest source line, and narrow enough for the pane in use when you know it. About 12 nodes,
+short single-line labels, no `<br/>`, no meaning carried by shape or colour, and no
+subgraph-to-subgraph arrows; split into several diagrams rather than growing one. Use only
+`flowchart`, `stateDiagram-v2`, `classDiagram`, `erDiagram`, `sequenceDiagram`, `pie`, `mindmap`,
+`timeline`, or `gitGraph` — anything else, or a drawing wider than the pane, renders as a bare
+source block instead of a drawing.
+
 ## Dispatching Oracle
 
 ```mermaid
 flowchart TD
-    A["Work ready, or a decision is needed"] --> B{"Defensible default?"}
-    B -- yes --> C["Decide it; record assumption + trigger"]
-    B -- no --> P["Oracle Planning<br/>assignment + bound evidence"]
+    A["Work ready or a decision needed"] --> B{"Defensible default? if so, decide now"}
+    B -- no --> P["Oracle Planning + bound evidence"]
     P --> PC{"Decision class"}
-    PC -- "agent-settled" --> C
-    PC -- "needs obtainable facts" --> DISC["Discover: read sources,<br/>records, runs"]
-    DISC --> PC
-    PC -- "possibly user-owned" --> IA["USER_INPUT_ASSESSMENT<br/>with dependency ID"]
-    IA -- "agent-settled" --> C
-    IA -- "authenticated USER_INPUT_REQUIRED" --> OW["Finish every other ready<br/>authorized action"]
-    OW --> G["STATUS:BLOCKED user<br/>+ exactly one USER_QUESTION"]
-    C --> H["Execute (parent / Fixer)"]
-    H --> D{"Route"}
-    D -- Direct --> DC{"Objective complete?"}
-    D -- "Reviewed / xdev" --> I["Integrate results + validate"]
-    I --> J{"Delivery unit complete?"}
-    J -- no --> H
-    J -- yes --> K["REVIEW_READY -> one whole-unit Review"]
-    K --> V{"Verdict<br/>(count dispatches already made)"}
-    V -- "PASS" --> DC
-    V -- "FAIL 1 of 2" --> R["Reconcile whole batch, repair,<br/>rerun affected validation"]
-    V -- "FAIL 2 of 2" --> R2["Changed-strategy repair: root cause,<br/>equivalent paths, correction-induced<br/>defects, test adequacy"]
-    V -- "FAIL 3: cap exhausted" --> ND["Record unapproved non-delivery;<br/>preserve the work"]
-    R --> K
-    R2 --> K
-    DC -- yes --> M["STATUS:DONE"]
-    DC -- no --> NX["STATUS:CONTINUE next authorized action"]
-    ND --> NX
+    PC -- agent-settled --> C["Decide it, record assumption"]
+    PC -- obtainable facts --> D["Discover sources and runs"]
+    D --> PC
 ```
+
+Only the third step can reach the user, and it does so through one question:
+
+```mermaid
+flowchart TD
+    PC["Decision class: maybe user-owned"] --> IA["USER_INPUT_ASSESSMENT"]
+    IA --> AQ{"Indispensable to the outcome?"}
+    AQ -- agent-settled --> C["Decide it, record assumption"]
+    AQ -- user-owned --> OW["Finish every other ready action"]
+    OW --> G["STATUS:BLOCKED user + one question"]
+```
+
+Deciding is not finishing. Once decided, execution runs to a review, and a review's FAIL is a
+loop of its own rather than a repeat of the cycle.
+
+```mermaid
+flowchart TD
+    C["Decided: execute"] --> H["Execute: parent or Fixer"]
+    H --> RT{"Route"}
+    RT -- Direct --> OC{"Objective complete?"}
+    RT -- Reviewed --> I["Integrate, validate"]
+    I --> J{"Unit complete?"}
+    J -- no --> H
+    J -- yes --> K["REVIEW_READY: one whole-unit review"]
+    OC -- yes --> M["STATUS:DONE"]
+    OC -- no --> NX["STATUS:CONTINUE next action"]
+```
+
+Every redispatch passes the repair tier below; no drawing offers a return to Review that skips it.
+
+```mermaid
+flowchart TD
+    K["REVIEW_READY: one whole-unit review"] --> V{"Verdict"}
+    V -- PASS --> M["STATUS:DONE or next action"]
+    V -- FAIL --> T{"Repair tier"}
+    T -- "3rd: cap" --> ND["Record the non-delivery"]
+    T -- "2nd" --> RC["Root cause first"]
+    T -- "1st" --> R["Repair the whole batch"]
+    RC --> R
+    R -- "redispatch" --> K
+    ND --> NX["Finish every other ready action"]
+```
+
+The tier counts every dispatch the unit has already spent — cancelled, replacement and
+precondition-failed dispatches included, not verdicts alone — and a second FAIL still owes the
+root-cause repair before its redispatch.
 
 The FAIL counts are the ordinary Reviewed cap `agent-review/references/review.md` owns; this
 contract owns exhaustion, and xdev batches sprints into one Review outside that cap.

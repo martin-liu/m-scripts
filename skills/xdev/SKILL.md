@@ -193,25 +193,32 @@ closure, and no terminal user-facing claim is permitted while Outcome remains `a
 
 ```mermaid
 stateDiagram-v2
-    state "delivered" as Delivered
-    state "conclusively blocked (non-delivery)" as BlockedOut
     [*] --> Baseline
     Baseline --> Sprint: accepted baseline
-    Sprint --> Sprint: next sprint
-    Sprint --> Ready: accepted scope complete
+    Sprint --> Ready: scope complete
     Ready --> Review: REVIEW_READY
-    Review --> Sprint: FAIL - correct batch, repair, revalidate
-    Review --> Sprint: PASS but other objective work pending
-    Review --> Delivered: PASS covering the whole final state
-    Sprint --> Candidate: blocked or uncovered premise
-    Candidate --> Assessment: revision-bound dispatch
-    Assessment --> Sprint: CONTINUE_REQUIRED
-    Assessment --> Sprint: USER_INPUT_REQUIRED - contact gate
-    Assessment --> Settled: TERMINAL_PREMISE_SUPPORTED
-    Settled --> Delivered: proposed Outcome = delivered
-    Settled --> BlockedOut: proposed Outcome = conclusively blocked
+    Review --> Sprint: FAIL or pending
+    Review --> Delivered: PASS, final
     Delivered --> [*]
-    BlockedOut --> [*]
+```
+
+The main line is deliberately short; the premise branch forks off it, and the next drawing
+carries that branch to its three outcomes. Between them an objective can only end at
+`Delivered`, or at a settled non-delivery.
+
+`Settled` records exactly one proposed Outcome — `proposed Outcome = delivered` or
+`proposed Outcome = conclusively blocked` — and the assessment that supports it.
+
+```mermaid
+flowchart TD
+    S["Sprint"] -- "blocked premise" --> C["Premise candidate"]
+    C --> A{"Assessment"}
+    A -- "CONTINUE" --> S
+    A -- "USER_INPUT" --> G["Contact gate: one question"]
+    G --> S
+    A -- "TERMINAL" --> T["Settled"]
+    T -- "delivered" --> D["Delivered"]
+    T -- "blocked" --> B["Blocked (non-delivery)"]
 ```
 
 1. **Baseline.** Author and accept it under the shared target/corpus rules. Invoke Planning only
