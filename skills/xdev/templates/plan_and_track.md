@@ -5,7 +5,7 @@
 ## State Locator
 - **Objective identity:** {objective identity}
 - **Resolved state file:** {exact resolved path}
-Canonical state, todo, snapshot, evidence, and closure rules: `skills/xdev/SKILL.md`.
+Canonical state, todo, snapshot, evidence, closure, and definition authority: `xdev/SKILL.md`.
 
 ## Task Ledger
 | Logical Task ID | Role / lane | Runtime ID (transport) | Generation | Scope | Status | Supersedes | Integration | Durable terminal result/evidence (class + reference) | Replacement reason |
@@ -13,34 +13,32 @@ Canonical state, todo, snapshot, evidence, and closure rules: `skills/xdev/SKILL
 
 ## Authoritative Todo List
 Todo row schema: `- [ ] TODO-{stable ID} — ...`; checked form: `- [x]`.
-Each row records **type:** implementation / correction / integration /
-required-validation / Review-action / closure-assessment; **owner:** {role};
-**scope/reference:** {bounded action and authoritative record};
-**evidence:** {pending or durable class + reference};
-**discharge revision/reference:** {pending or revision/reference}; **lineage:** {none or predecessor}.
-Settlement references distinguish satisfied work from evidence-backed unmet/blocked dispositions.
+Each row records **type:** implementation / correction / integration / required-validation /
+Review-action / closure-assessment; **owner:** {role}; **scope/reference:** {bounded action and
+authoritative record}; **evidence:** {pending or durable class + reference};
+**discharge revision/reference:** {pending or reference}; **lineage:** {none or predecessor}.
+Settlement references distinguish satisfied work from evidence-backed unmet or blocked dispositions.
 
 ## State
 - **State revision:** {revision}
 - **Lifecycle phase:** {baseline / sprint / final validation / complete}
 - **Outcome:** active / delivered / conclusively blocked
 - **Execution disposition:** continue / awaiting_user
-- **Closure candidate:** {reference to Terminal Decision Record or none}
-- **Current delivery-unit record:** {section/reference holding scope, readiness, validation and integration facts}
+- **Closure candidate:** {Terminal Decision Record reference or none}; **Current delivery-unit record:**
+  {reference holding scope, readiness, validation, integration}
 - **Snapshot ID:** {current unit/state snapshot ID; final ID shared by final validation and Review}
 - **Current sprint:** {sprint ID or none}
-- **Next action and owner:** {specific action; owner}
-- **Pending tasks:** {ledger references or none}
-- **Integration:** {current delivery-unit reference}
-- **Validation:** {current delivery-unit evidence reference}
+- **Next action and owner:** {action; owner}; **Pending tasks:** {ledger references or none}
+- **Integration:** {delivery-unit reference}
+- **Validation:** {evidence reference}
 - **Final Review:** {pending or final Review reference}
 
 ## Coherent Baseline
 ### Goal Understanding
 - **Goal statement / high-level outcome:** {short statement of the intended outcome}
 - **Basis:** {original request and material constraints establishing it}
-- **Goal status:** {clear | user-confirmed | pending-clarification}
-- **Initial clarification used:** {no | yes — dependency ID, assessment reference, reply reference}
+- **Goal status:** {clear | user-confirmed | pending-clarification}; **Initial clarification used:**
+  {no | yes — dependency ID, assessment reference, reply reference}
 
 ### Requirements
 #### Initial Brief
@@ -65,23 +63,23 @@ Settlement references distinguish satisfied work from evidence-backed unmet/bloc
 #### Deterministic tests/checks
 #### Behavioral/integration or other evidence
 #### Source-corpus validation (when applicable)
-- **Claimed source scope:**
+- **Claimed source scope:**; **Automation scope:**; **Mismatch status:**
 - **Semantic item-level ground-truth baseline:** {parent-recorded contextual expected results}
 - **Mechanically specified transformations:** {exact rules and expected-result basis}
 - **Population/statistical claim basis:** {population and independent sampling/estimation or exhaustive support}
-- **Automation scope:**
-- **Mismatch status:**
 #### Baseline Validation Evidence
 | Revision | Snapshot ID | Owner | Check/scenario or command | Expected | Actual | Status (PASS/FAIL/BLOCKED) | Exit status | Raw reference (when material) |
 |---|---|---|---|---|---|---|---|---|
 
 ## Sprint Records
-{Sprint blocks with their original snapshot bindings. Sprints sharing a contract, invariants,
-or validation may share one batched delivery Review and its single Evaluation Verdict; record
-that verdict under the covering sprint block and reference the covered sprint IDs.}
+{Sprint blocks with their original snapshot bindings. Record a batched Review's single verdict on
+the covering sprint block and reference the covered sprint IDs; the batching rule lives in
+`xdev/SKILL.md` **Completion and Review**.}
 
 ## Review Coverage Log
-{Optional when batching: list each Review dispatch with its reviewed sprint IDs, its Review revision/owner, its `oracle-review-result` reference, and verdict, so the batching of sprints into Reviews is auditable without a verdict per sprint. Findings use the agent-review contract's stable IDs.}
+{Optional when batching: each Review dispatch with its reviewed sprint IDs, Review revision and
+owner, `oracle-review-result` reference, and verdict, so batching stays auditable without a verdict
+per sprint. Findings use the agent-review contract's stable IDs.}
 
 ## Final Validation Evidence
 | Revision | Snapshot ID | Owner | Check/scenario or command | Expected | Actual | Status (PASS/FAIL/BLOCKED) | Exit status | Raw reference (when material) | Findings |
@@ -97,10 +95,13 @@ that verdict under the covering sprint block and reference the covered sprint ID
 - **Findings:**
 
 ## Final Review Readiness
-- **Exact delivery unit / contract / snapshot:** {references; canonical snapshot rules in SKILL.md}
-- **Pre-Review acceptance and required validation:** {satisfied or outstanding; evidence references}
+{Restate only facts that differ from the covering sprint block: when the final unit's scope equals
+the last sprint's, populate these fields by authoritative reference rather than repeating values,
+preserving independent facts where the scopes differ.}
+- **Exact delivery unit / contract / snapshot:** {references; snapshot rules in `xdev/SKILL.md`}
+- **Pre-Review acceptance and required validation:** {satisfied or outstanding; evidence refs}
 - **Readiness blockers:** {none or material blockers and evidence}
-- **Todo reconciliation:** {revision and settlement references; designated Review-action todo ID/status}
+- **Todo reconciliation:** {revision and settlement references; Review-action todo ID and status}
 - **Non-superseded results integrated:** {yes/no; ledger references}
 - **Pending tasks:** {none or ledger references}
 - **Every required validation ran against snapshot:** {all PASS or outstanding; evidence references}
@@ -113,14 +114,14 @@ that verdict under the covering sprint block and reference the covered sprint ID
 - **Closure candidate ID / candidate revision:** {ID / revision or none}
 - **Proposed Outcome:** {delivered / conclusively blocked or none}
 - **Oracle logical task ID / generation:** {ledger identity or none}
-- **Closure assessment:** {CONTINUE_REQUIRED / USER_INPUT_REQUIRED / TERMINAL_PREMISE_SUPPORTED or none; authoritative assessment reference}
-- **Closure basis:** {coincident final whole-state Review or bound assessment reference}
-- **Reconciliation:** {baseline/criteria, sprints, generations/supersession, integration, validation, findings, blockers/recovery, remaining actions, complete todo list}
-- **Authoritative evidence references:**
-- **Unmet criteria:** {none or criteria and evidence}
+- **Closure assessment:** {CONTINUE_REQUIRED / USER_INPUT_REQUIRED / TERMINAL_PREMISE_SUPPORTED or
+  none; authoritative assessment reference}; **Closure basis:** {coincident final Review or bound assessment}
+- **Reconciliation:** {baseline/criteria, sprints, generations/supersession, integration, validation, findings, blockers, remaining actions, complete todo list}
+- **Authoritative evidence references:** {references}
+- **Unmet criteria:** {none, or criteria with evidence}
 - **Recovery attempts:** {materially distinct attempts, results and evidence}
 - **Remaining authorized actions:** {none or actions}
-- **Todo settlement:** {satisfied references; explicit evidence-backed unmet/blocked dependencies; designated assessment todo settlement revision/reference}
+- **Todo settlement:** {satisfied references; evidence-backed unmet/blocked dependencies; designated assessment todo settlement revision/reference}
 - **Orchestrator decision:** {Outcome; execution disposition; rationale; atomic integration revision}
 
 ## History

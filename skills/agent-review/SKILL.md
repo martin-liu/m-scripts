@@ -1,240 +1,124 @@
 ---
 name: agent-review
-description: Shared Oracle Review contract — the fill-in Review Assignment template, the mandated oracle-review-result schema, and whole-unit anti-loop rules. Read before every DELIVERY, STATIC/DESIGN, or BLOCKED_REVIEW dispatch.
+description: Shared agent protocol — the home for Oracle lane contracts (Planning, input assessment, Review, xdev closure), the Review Assignment template, and the oracle-review-result schema. Loaded before any Oracle dispatch and at child bootstrap.
 license: MIT
 metadata:
   author: martinliu
-  version: "1.0.0"
+  version: "2.0.0"
 ---
 
-# agent-review
+# Agent protocol entry point
 
-This is the sole contract for Oracle **Review** dispatches: `DELIVERY`, `STATIC/DESIGN`,
-and exceptional `BLOCKED_REVIEW`. The parent reads it and fills the Review Assignment
-template before every Review dispatch; Oracle reads the exact identified contract before
-judging. Planning, `USER_INPUT_ASSESSMENT`, and xdev closure assessment keep their own
-separate contracts — this skill does not govern them.
+Read this file, then only the reference for the lane you are in.
 
-Its purpose is to reduce avoidable Review loops by fixing **both** loop causes at once: an
-under-specifying dispatch, and vague correction instructions. It does **not** weaken the
-existing gates; delivery readiness, the ordinary Reviewed three-dispatch cap, the
-second-whole-unit-FAIL stabilization, and xdev closure rules all still apply. Neither this
-template nor any check on it grants readiness, approval, user-contact permission, or closure.
+| File | Owns | Load when |
+|---|---|---|
+| `references/review.md` | Review modes and entry conditions, dispatch discipline, `REVIEW_ASSIGNMENT v1`, `oracle-review-result` schema, IDs, correction and anti-loop rules, effort limit | Any `DELIVERY`, `STATIC/DESIGN`, or `BLOCKED_REVIEW` dispatch |
+| `templates/reviewed_unit.md` | Durable carrier of a Reviewed unit's context | First Reviewed dispatch and every resume |
+| `xdev/SKILL.md` | xdev lifecycle, revisions, todos, closure | xdev route or closure assessment |
 
-## Parent dispatch discipline
+Write `<skill>/<path from its root>` (e.g. `agent-review/references/review.md`) in a skill, template,
+record, or assignment, resolved through the installed skill roots; bare `references/…` and
+`templates/…` mean this skill's directory, and repository files use `skills/<skill>/<path>`. Never
+write `../` traversal: a record's directory is unrelated to a skill, so it breaks on instantiation.
 
-- Review covers a complete coherent unit — not an isolated file, finding, or task generation.
-- Finish the unit's accepted scope **and** the complete existing corrections batch, integrate
-  results, and satisfy the mode's entry conditions before dispatching.
-- Supply original instructions, authoritative criteria, exact snapshot bindings, raw evidence
-  and execution ownership, contrary evidence, known gaps, reconciled state, and the **complete**
-  prior-findings batch.
-- Keep observations separate from interpretations. Never request PASS or present a preferred
-  verdict; an interpretation is an input to independent judgment, not authoritative truth.
-- Validate the filled assignment before dispatch. An invalid assignment spends no Review slot
-  because no call starts.
-- The BLOCKED_REVIEW mode is admissible only when **all feasible checks have already run**, the
-  blocked checks have authoritative evidence, and **no viable authorized in-scope remedy remains**.
-  Do not dispatch it to discover a remedy or to spend a capped slot prematurely; Oracle can return
-  it only as `Verdict: FAIL`, as non-delivery that never establishes readiness and never relaxes
-  xdev closure.
-- Reuse the existing unit identity and dispatch history. Completing the template neither resets
-  the dispatch count nor establishes readiness.
+Loading is mandatory: a missing or unreadable required file stops the work and is reported to the
+parent as a missing dependency, never a license to proceed on assumptions or to ask the user.
+Frontmatter or dispatch naming is discovery metadata only; it delivers no rules.
 
-## REVIEW_ASSIGNMENT v1 — required input
+## Common assignment contract
 
-Fill every field. Tables/arrays may reference existing durable records rather than duplicate
-large evidence bodies, but referenced content must be independently readable by Oracle.
+Every assignment supplies lane and identity (lane, objective ID and goal revision, unit, decision,
+dependency, or candidate identity, logical task ID and generation, route), original intent with exact
+authorizations, bound context with hashes and base, evidence with sources, contrary evidence, gaps,
+and access limits, current state, and the lane contract — never a requested answer, verdict, or
+approval. Planning also gets options with exclusion reasons, costs, and reversibility, unresolved
+assumptions, and a labeled parent leaning with the evidence that would change it: never pre-frame an
+option as approved or seek ratification, and Oracle may reject an artificially narrow set. A bounded
+Direct consultation needs no Reviewed context record.
 
-```text
-REVIEW_ASSIGNMENT v1
+## Lanes
 
-Mode: DELIVERY | STATIC/DESIGN | BLOCKED_REVIEW
-Review contract: <exact accessible path + hash of this skill>
-Objective ID / goal revision: <stable identity>
-Unit ID / complete accepted outcome: <identity + end-to-end boundary>
-Review dispatch ordinal / prior dispatches: <history references>
-Review ID: <this dispatch's exact identity string, echoed verbatim in the result>
-Route: <route>
-xdev state path / revision / covered sprint and todo IDs: <values or N/A>
+Route and lane selection are separate: bounded advice never raises Direct to Reviewed, and a
+`STATIC/DESIGN` PASS never lowers a Reviewed unit's delivery Review. Review lanes load
+`references/review.md`; the xdev closure lane loads `xdev/SKILL.md`, sole authority for xdev
+mechanics. `BLOCKED_REVIEW` is a Review mode, not a sixth lane, and returns only `Verdict: FAIL`.
 
-SNAPSHOT BINDING
-<Repository root/base; exact commit/tree or manifest reference + hash; Snapshot ID echoed
-verbatim in the result; relevant paths/status/modes/byte hashes, deletions and explicit
-exclusions.>
-<Product inputs and supporting integration context covered by the binding.>
-<Changed scope since the previous Review; previous/current snapshot references.>
-<Output evidence references separately from product identity.>
+| Lane | Parent supplies | Oracle returns | Never |
+|---|---|---|---|
+| **Planning** | Common contract, decision evidence | Target or selected authorized option; rationale; assumptions; acceptance, evidence, validation owner; reconsideration trigger; discovery actions | Route change, authorization, delivery approval, repair gating |
+| **Input assessment** (`USER_INPUT_ASSESSMENT`) | Dependency ID, purpose, missing item, discovery tried, grants, alternatives, why assumptions are inadequate | One `oracle-input-assessment` record | A question outside the JSON, a menu, authorization, closure |
+| **`STATIC/DESIGN` Review** | Sources, criteria, own evidence, full assignment | One verdict plus `oracle-review-result` | Delivery Review, consuming the ordinary cap |
+| **`DELIVERY` Review** | Integrated unit, `REVIEW_READY`, full assignment | One verdict plus `oracle-review-result` | Running missing validation, approving future corrections, piecemeal review |
+| **xdev closure assessment** | Revision-bound candidate: ID, revision, outcome, task, generation, evidence | `CONTINUE_REQUIRED`, `USER_INPUT_REQUIRED`, or `TERMINAL_PREMISE_SUPPORTED`, advisory | Delivery verdict, state edit, contact permission |
 
-ORIGINAL INSTRUCTIONS
-<Original task verbatim; material later constraints and exact authorizations.
-References are acceptable only when Oracle can read their exact contents.>
+## Decisions and user contact
 
-CONTRACT AND CRITERIA
-<Exact contract reference + hash>
-<Criterion IDs, observable expected outcomes, authoritative basis,
-material invariants, allowed scope, exclusions, required validation.>
-
-OBSERVATIONS AND RAW EVIDENCE
-<Observation | source/owner | exact reference | coverage/limitations>
-<Include check commands, input bindings, execution owner, exit status,
-expected/actual results, and material raw outputs.>
-
-CONTRARY EVIDENCE AND KNOWN GAPS
-<Contrary fact or gap | source | affected criterion | material consequence>
-<Access/modality limits and parent-owned media/corpus evidence where applicable.>
-
-PARENT INTERPRETATIONS — NOT AUTHORITATIVE EXPECTED RESULTS
-<Labeled interpretations with supporting/contrary references, or none.
-No requested verdict, approval framing, or unstated preference.>
-
-RECONCILED STATE
-<Acceptance claims per criterion with evidence and claim owner;
-integration and non-superseded results;
-pending implementation/correction/integration/validation work;
-known defects; required-validation applicability;
-readiness gate and evidence.>
-<DELIVERY: REVIEW_READY.
-STATIC/DESIGN: sources, criteria, and assessment evidence.
-BLOCKED_REVIEW: feasible checks, blocked-check evidence, and exhausted remedies.>
-
-COMPLETE PRIOR-FINDINGS BATCH
-<Every prior raw Review result reference.>
-<Every finding ID/key, original requirement and required action;
-parent disposition: corrected | rebutted | superseded | outstanding;
-correction/rebuttal evidence, affected paths/checks, and supersession mapping.>
-<After second whole-unit FAIL: changed repair/validation strategy and evidence,
-including intended-path/disabled-feature controls when implicated.>
-
-REQUEST
-Independently assess this exact current unit against the authoritative criteria.
-Return the mandated Review result. Report all material findings as one batch.
-Do not approve future corrections or treat summaries as inspected evidence.
+```mermaid
+flowchart TD
+    A["Unresolved dependency"] --> D{"Defensible default"}
+    D -->|"Yes"| E["Select and record trigger"]
+    D -->|"No"| O["Oracle Planning"]
+    O --> G{"Agent can resolve"}
+    G -->|"Yes"| E
+    G -->|"Needs facts"| F["Discover"]
+    F --> D
+    G -->|"User owned"| U["USER_INPUT_ASSESSMENT"]
+    U --> R{"USER_INPUT_REQUIRED"}
+    R -->|"No"| E
+    R -->|"Yes"| W["Finish ready authorized work"]
+    W --> Q["Parent asks the exact question"]
 ```
 
-## Mandated Oracle result
+Agent-owned: technical, implementation, strategy, architecture, and ordinary product choices,
+including defensible uncertainty and "is this in scope". Exactly three dependencies are user-owned:
+**authorization** for a required protected effect; **access/fact** — indispensable access,
+credentials, secrets, or facts only the user can supply, where no reasonable compliant assumption
+can be recorded and continued on, making them irreplaceable; **product-intent** — genuinely
+incompatible readings of the request that change the expected outcome, where an implementation
+tradeoff satisfying the stated outcome is not ambiguity.
 
-Return one textual `Verdict: PASS` or `Verdict: FAIL` line, followed by exactly one
-`oracle-review-result` JSON block. The JSON `verdict` must match the line; they are two
-representations of the same judgment, not separate approvals. In the shape below,
-`a | b` denotes **allowed alternatives**, not a literal value to emit.
+Choosing among valid options is an Oracle decision, never a user decision, and a menu is a ladder
+violation: select one within authorization, record the rationale and reconsideration trigger, and
+treat obtainable gaps as discovery, not contact. Emit exactly one structured
+`oracle-input-assessment` record for a labeled `USER_INPUT_ASSESSMENT`:
 
 ```json
 {
   "version": 1,
-  "mode": "DELIVERY",
-  "reviewId": "<dispatch identity>",
-  "unitId": "<stable unit identity>",
-  "snapshotId": "<submitted binding>",
-  "verdict": "FAIL",
-  "reasonCodes": [],
-  "preconditions": { "status": "MET", "evidenceRefs": [] },
-  "criteria": [
-    { "id": "<criterion ID>", "status": "satisfied | not-satisfied | not-assessed", "evidenceRefs": [], "findingIds": [] }
-  ],
-  "findings": [
-    {
-      "id": "<unitId>-F001",
-      "blocking": true,
-      "criterionIds": [],
-      "locations": [{ "path": "<exact path>", "lineStart": 1, "lineEnd": 1 }],
-      "defect": "<specific current-state failure>",
-      "evidenceRefs": ["<reproduction evidence: command/scenario/static proof and expected vs observed>"],
-      "requiredAction": {
-        "instruction": "<bounded remediation outcome>",
-        "acceptancePredicate": "<observable condition resolving the defect>"
-      }
-    }
-  ],
-  "priorFindingResolutions": [
-    { "id": "<prior finding ID>", "status": "resolved | unresolved | withdrawn | superseded", "evidenceRefs": [] }
-  ],
-  "coverage": { "inspectedRefs": [], "executionOwners": [], "limitations": [] },
-  "residualRisks": []
+  "dependencyId": "<id from the assignment>",
+  "outcome": "AGENT_DECISION | USER_INPUT_REQUIRED",
+  "selectedOption": "<AGENT_DECISION only>",
+  "rationale": "<AGENT_DECISION only>",
+  "assumptions": ["<AGENT_DECISION only>"],
+  "reconsiderationTrigger": "<AGENT_DECISION only>",
+  "kind": "authorization | access | fact | product-intent",
+  "dependency": "<USER_INPUT_REQUIRED only: the exact missing item>",
+  "question": "<USER_INPUT_REQUIRED only: the exact question the parent should ask>",
+  "whyAgentCannotResolve": "<USER_INPUT_REQUIRED only>"
 }
 ```
 
-### Field types, alternatives, and binding agreement
+Carry the question only in the JSON `question` field; never print a `USER_QUESTION:` line, which the
+parent owns. A completed call is not permission to ask, and the record grants no authorization,
+continuation decision, verdict, or closure.
 
-- `version` is the number `1`. `mode` is exactly one of `DELIVERY`, `STATIC/DESIGN`,
-  `BLOCKED_REVIEW` and must equal the assignment's `Mode`.
-- `reviewId`, `unitId`, `snapshotId` must reproduce the assignment's `Review ID`, `Unit ID`, and
-  `Snapshot ID` verbatim. An xdev unit must carry a `stateRevision` reproducing its assigned xdev
-  state revision verbatim; a result that omits it or gives a disagreeing revision is
-  contract-invalid. Non-xdev results omit the field. Snapshot identity is not a substitute: xdev
-  semantic state can change while product bytes stay identical.
-- `verdict` is exactly `PASS` or `FAIL` and must equal the textual verdict line.
-- `preconditions.status` is exactly `MET` or unmet, and on unmet must be represented as
-  `REVIEW_PRECONDITION_NOT_MET`; any unmet material precondition forces `FAIL`.
-- Each `criteria[].status` is exactly one of `satisfied`, `not-satisfied`, `not-assessed`.
-- Each `priorFindingResolutions[].status` is exactly one of `resolved`, `unresolved`,
-  `withdrawn`, `superseded`.
-- `reasonCodes`, `criteria`, `findings`, `priorFindingResolutions`, and `residualRisks` are
-  arrays; they are empty arrays rather than omitted when unused. `locations` is an array of
-  `{path, lineStart, lineEnd}`; `lineStart`/`lineEnd` are integers.
-- A `requiredAction.type` of `implementation`, `validation`, `evidence`, or `decision` is
-  permitted but not mandatory; the instruction and its acceptance predicate carry the obligation.
-- Unmet preconditions and `STATIC/DESIGN`/xdev results follow the same shape; only the
-  applicable fields are populated and non-applicable ones are empty, never fabricated.
+## Context handoff
 
-### Result invariants
+```mermaid
+sequenceDiagram
+    participant P as Parent
+    participant C as Unit context
+    participant O as Oracle
+    P->>C: Reconcile state, bind submission
+    P->>O: Lane, identities, refs and hashes
+    O->>C: Read bound context and sources
+    O-->>P: Bound advice or one Review batch
+    P->>C: Reconcile and integrate result
+```
 
-- Exactly one verdict line; exactly one result block; the two verdicts agree.
-- Missing material preconditions require FAIL with `REVIEW_PRECONDITION_NOT_MET`.
-- `BLOCKED_REVIEW` can return only FAIL; it is never readiness or approval.
-- PASS requires met preconditions, satisfied material criteria, and no blocking findings.
-- Every blocking issue — including missing material evidence — has a finding ID and a required
-  action. No anonymous blockers outside the batch.
-- Every prior finding receives a resolution entry; none silently disappears.
-- Required actions specify the **observable condition that resolves the defect** — never
-  "improve", "be more careful", or "ask Oracle again".
-- Oracle may suggest an implementation, but cannot make a preferred implementation mandatory
-  when an equivalent remedy satisfies the requirement.
-- Evidence may be a direct static proof. Oracle must not execute forbidden validation to
-  manufacture a command result.
-- Cosmetic record defects remain non-blocking when current authoritative evidence establishes
-  the material facts.
-
-### Deterministic IDs
-
-Give each finding a stable ID of the form `<unitId>-F001`, `F002`, … Reuse the prior ID for the
-same root-cause finding, including after line movement; never renumber, reuse, or reset IDs after
-snapshot or generation changes. Allocate new IDs sequentially after the highest historical
-suffix. Recognizing semantic equivalence of findings still requires judgment; a hash of changing
-prose does not solve it.
-
-### Anti-loop rules
-
-- Inspect and report the complete submitted unit in the first Review, not only likely problems.
-- After FAIL, correct or evidence-rebut the entire batch — including correction-induced defects —
-  before redispatch. Never interleave Review with partial corrections of the same findings batch.
-- Re-review independently checks the current submitted snapshot and resolves the complete prior
-  batch; do not re-review one finding at a time.
-- Every new finding must demonstrate a defect in that current snapshot or its bound required
-  evidence. Do not fail for hypothetical future changes, stale defects absent from the current
-  state, unrelated scope, or an unstated reviewer preference.
-- A finding that fixes a changed path is identified by its location; a previously overlooked
-  defect in the current state is reported with its evidence and the earlier coverage gap.
-- Do not freeze re-review to old findings only: that would hide genuine defects and weaken
-  independent final Review. The restriction is against findings unsupported by the reviewed
-  state, never against newly discovered material findings.
-
-### Composition with existing gates
-
-- Preserve the ordinary Reviewed three-dispatch cap, counting replacements, precondition
-  failures, and `BLOCKED_REVIEW`.
-- Preserve the materially changed repair/validation pass after the second whole-unit FAIL.
-- Completing the template neither resets the count nor establishes readiness.
-- `STATIC/DESIGN` Review, Planning, and xdev remain outside the ordinary cap.
-- xdev may batch several sprints into one Review; the assignment names the covered sprints, and
-  a matching last-sprint/final whole-state Review remains reusable.
-- Cap exhaustion remains explicit unapproved non-delivery — not approval, impossibility, route
-  evasion, or automatic user escalation.
-
-## Scope and limitations
-
-A shared input/output contract attacks both likely loop causes: inadequate dispatch context and
-vague correction instructions, while making prior-finding reconciliation inspectable without
-adding another approval gate. It cannot guarantee exhaustive first-pass discovery or compensate
-for weak validation; persistent loops with complete assignments and actionable findings point to
-validation adequacy and correction strategy, not to adding more template fields.
+The parent binds each dispatch to the context record's exact path and byte hash, the unit and goal
+identity, the task generation, and the product snapshot; `references/review.md` owns snapshot and
+evidence rules. "Oracle never loses context" means the context is reconstructible or its inadequacy
+detected: on resume read the recorded locator, check pending generations, reload the contracts, and
+reconcile every non-superseded result; conflicting material context fails closed.

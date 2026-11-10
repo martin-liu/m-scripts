@@ -1,7 +1,7 @@
 ### Sprint N: {Title}
 
 **schema_version:** 2.0
-Canonical state, todo, snapshot, evidence, and Review rules: `skills/xdev/SKILL.md`.
+Canonical state, todo, snapshot, evidence, and Review rules: `xdev/SKILL.md`.
 
 #### Contract
 - **Task ledger reference:** {logical task ID + generation entry}
@@ -38,12 +38,11 @@ Canonical state, todo, snapshot, evidence, and Review rules: `skills/xdev/SKILL.
 - **Remaining authorized actions:** {actions or none; blocker evidence}
 
 #### Evaluation Verdict
-{One verdict per Review-covered unit. Batch consecutive sprints that share a contract,
-invariants, or validation into a single delivery unit and record one verdict spanning them;
-split into a separate verdict only for failure isolation, ordering, or materially different
-invariants. Never record one verdict per corrected finding, and never re-Review a single
-correction while other findings from the same Review remain outstanding. The dispatch fills
-the agent-review contract's Review Assignment; findings use its stable IDs.}
+{One verdict per Review-covered unit. Batching, split conditions, and the no-partial-redispatch
+rule live in `xdev/SKILL.md` **Completion and Review**; record the outcome here, not the policy.
+Populate readiness fields by reference to the covering sprint block when scopes coincide.
+The dispatch fills the Review Assignment from `agent-review/references/review.md`; findings
+use its stable IDs.}
 - **Reviewed sprint IDs:** {one or more sprint IDs covered by this verdict}
 - **Review revision:**
 - **Review owner:**
