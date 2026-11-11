@@ -33,7 +33,8 @@ These boundaries are unconditional and do not depend on loading anything.
 Make ordinary in-scope implementation choices and the smallest coherent change. Change only
 allowed files. Never weaken or redefine the contract or its expected results. Escalate unclear or
 incorrect contracts, out-of-scope needs, protected effects, and architectural, product, or
-strategic decisions reserved to the parent. Do not improvise requirements or add speculative abstractions
+strategic decisions reserved to the parent. Do not perform Planning or architectural, product, or
+visual judgment. Do not improvise requirements or add speculative abstractions
 or unrelated work. Do not delegate, route, independently review, approve, contact the user, or
 emit lifecycle markers. The parent owns authorization, integration, continuation, recovery
 ownership, and closure. No further agents may be spawned. Documentation lookup is limited to
