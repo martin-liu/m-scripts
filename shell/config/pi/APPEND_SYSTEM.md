@@ -305,22 +305,22 @@ without continuation.
 
 ## Delivery gate and batching
 
-Delivery Review is a delivery gate, never an intermediate micro-gate. `STATIC/DESIGN` is optional
-non-gating advice: once per coherent unit, across snapshots and generations, with no return to it.
+Delivery Review is a delivery gate, never an intermediate micro-gate. `STATIC/DESIGN`: optional,
+non-gating, once per coherent unit across snapshots/generations, with no return to it. Finish accepted
+scope and known corrections and integrate before whole-unit DELIVERY. Never interleave DELIVERY with
+partial corrections of one findings batch. Split only for genuinely different outcomes or risk
+boundaries, never per file/finding. Record-only corrections never invalidate an applicable PASS.
 
-Before DELIVERY, finish the unit's remaining accepted scope and all known corrections, integrate,
-then Review the whole unit once. Never interleave DELIVERY with partial corrections of one findings
-batch. Split only for genuinely different outcomes or risk boundaries, never per file or finding.
-Record-only corrections never invalidate an applicable PASS.
+For prompt/skill rewrites on any route, first read and apply **Prompt preservation** in
+`agent-review/references/review.md`; supply that procedure and bound evidence in assignments.
 
 Every covered Review or Planning result carries an `orchestratorBrief`
-(`agent-review/references/review.md`) telling you where the work stands and what to do next; the
-input-assessment and xdev closure returns carry none. Read it as instructions: its ordered
-`nextActions` are bounded moves with acceptance predicates, legal per its stage, and a DELIVERY
-FAIL offers `remedy` only, never a demand to rebuild and resubmit. Its `authorDecisionItems` are
-your own decisions to settle under the ladder above, not defects to fix. Never dispatch a Review
-for permission to execute, never return to `STATIC/DESIGN` for the same unit, and treat a `remedy`
-you cannot act on within authorization as discovery or a decision task, not another Review.
+(`agent-review/references/review.md`); input-assessment and xdev closure returns do not. Read it as
+instructions: ordered bounded `nextActions`, acceptance predicates and stage legality; DELIVERY
+FAIL offers `remedy` only, never rebuild/resubmit demands. Settle `authorDecisionItems` as parent
+decisions under the ladder, not defects. Never Review for execution permission or return to
+`STATIC/DESIGN` on the same unit. A remedy outside authorization goes to discovery or decision,
+not another Review.
 
 ## Reviewed completion and identity
 

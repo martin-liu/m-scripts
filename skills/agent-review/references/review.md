@@ -1,7 +1,7 @@
 # Review reference
 
-Review modes, entry conditions, the assignment template, the result schema, and the anti-loop rules;
-loaded from `SKILL.md`. A Review is a delivery gate, never an intermediate micro-gate.
+Modes, entry conditions, assignment, result schema and anti-loop rules; loaded from `SKILL.md`.
+Review is a delivery gate, never an intermediate micro-gate.
 
 ## Modes and entry conditions
 
@@ -32,17 +32,14 @@ plus a reconciled disposition per prior finding. It is a parent check, not an ar
 
 ## Parent dispatch discipline
 
-Parent-owned and stated in the orchestrator contract: Review covers a complete coherent unit, never
-an isolated file, finding, or task generation, so finish the accepted scope **and** the existing
-corrections batch and integrate results first; the full evidence set is supplied; PASS is never
-requested or preferred; the filled assignment is validated before dispatch, because an invalid one
-spends no slot, and reusing unit identity or dispatch history neither resets the count nor
-establishes readiness.
+The parent supplies all evidence, never requests or prefers PASS, and validates the assignment
+before dispatch. Review covers a complete coherent unit, not a file, finding or task generation:
+finish accepted scope and the full corrections batch and integrate first. Preflight rejection before
+call start spends no slot; reused identity/history resets neither count nor readiness.
 
 ## REVIEW_ASSIGNMENT v1 — required input
 
-Fill every field; arrays may reference durable records instead of duplicating evidence bodies, but
-Oracle must be able to read what is referenced.
+Fill every field; arrays may replace evidence bodies with durable references Oracle can read.
 
 ```text
 REVIEW_ASSIGNMENT v1
@@ -112,12 +109,10 @@ block whose `verdict` matches it. `a | b` marks **allowed alternatives**, not te
 
 ### `orchestratorBrief` — the orchestrator-facing instruction
 
-Mandatory in every Review result; it removes and relaxes no field, enum, binding, finding, or verdict
-invariant.
+Required in every Review result; relaxes no contract invariant.
 
-Planning returns no Review verdict. It adds one `oracle-advisory-result` block (`version`,
-`dependencyId`, and an `ADVISORY` brief with `NOT_ASSESSED` quality) beside its decision explanation,
-and neither supplements nor relaxes the input-assessment or xdev closure contracts.
+Planning returns its decision and one `oracle-advisory-result`, no Review verdict. Its full contract
+is in `agent-review/SKILL.md`; input-assessment and xdev closure contracts are unchanged.
 An `acceptancePredicate` is an executable check, a faithful scenario, or a static proof; commands
 name bound inputs, expected result, and owner, and architectural or product-level judgment gets no
 invented one.
@@ -154,14 +149,13 @@ than an invented anonymous blocker.
 
 Kinds are stage-gated: ADVISORY takes `execute | discover | validate`, QUALITY takes
 `remedy | validate | discover`, DELIVERY PASS takes `reconcile`, and **DELIVERY FAIL takes `remedy`
-only**. A delivery remedy may cover implementation, validation, evidence repair, or decision
-settlement, but names a bounded outcome and acceptance predicate; it never says "rebuild and come
-back" or "ask Oracle again", and never approves future corrected bytes. Per-finding `requiredAction`
-stays authoritative — the brief groups and orders those actions and cannot make a preferred
-implementation mandatory where an equivalent remedy satisfies the finding. An empty `instruction` or
-`acceptancePredicate`, a stage-illegal `kind`, a missing brief, or an entry referencing no real finding
-or decision is contract-invalid exactly as a malformed pre-existing field is; adding a brief never
-repairs a malformed result.
+only**. Delivery remedies may cover implementation, validation, evidence repair or decision settlement;
+require bounded outcomes and acceptance predicates; never say "rebuild and come back" or "ask Oracle
+again", or approve future corrected bytes. Per-finding `requiredAction` governs: the brief groups and
+orders actions, never mandates a preferred implementation over an equivalent remedy satisfying the
+finding. Empty `instruction` or `acceptancePredicate`, stage-illegal `kind`, missing brief or an action
+referencing no real finding or decision is contract-invalid; adding a brief cannot repair a malformed
+result.
 
 ### Result invariants
 
@@ -183,42 +177,55 @@ identity, finding IDs, or the clarification allowance.
 
 ## Correction after FAIL
 
-The orchestrator contract owns the correction workflow: one whole-unit batch, compatible corrections
-batched, affected checks rerun, unchanged-input evidence preserved, and a materially changed pass
-over root causes, equivalent affected paths, correction-induced defects, and test adequacy after a
-second whole-unit FAIL, with implicated regression behaviour shown to execute the intended path and
-fail with the guard or feature disabled, and prior state or retries isolated so they cannot mask
-that control. Oracle's part: a recurring finding states **why the earlier
-correction failed** and how the new repair differs, and the stable finding ID carries that history.
+The parent owns whole-unit batched correction, affected-check reruns and unchanged-input evidence.
+After a second whole-unit FAIL, materially recheck root causes, equivalent affected paths, induced
+defects and test adequacy. Show implicated regression behaviour executes the intended path and fails
+with guard/feature disabled, prior state or retries isolated so they cannot mask that control.
+Recurring findings retain their ID/history and explain why the earlier correction failed and how
+the new repair differs.
 
 ## Effort limit
 
 Ordinary Reviewed units have at most three DELIVERY/`BLOCKED_REVIEW` dispatches; `STATIC/DESIGN`,
 Planning, and xdev are excluded. Expenditure is decided **before the call starts**, never inferred
 from findings: preflight rejection spends no slot; **every started DELIVERY/`BLOCKED_REVIEW` call
-spends one, including replacements, malformed assignments, and precondition failures**. Because malformed-ness is only discoverable by parsing, preflight is the
-parent's structural and internal-consistency check — required fields, bound evidence, identity,
-history, pending work — not a promise of semantic admissibility. Generation, snapshot, or rename
-cannot reset the count, and the third dispatch still requires `REVIEW_READY` plus any second-FAIL
-stabilization. Exhaustion, non-delivery, and xdev batching belong to the parent contract.
+spends one, including replacements, malformed assignments, and precondition failures**.
+Preflight checks required fields, bound evidence, identity, history and pending work for structure
+and internal consistency, not semantic admissibility; malformed-ness requires parsing. No generation,
+snapshot or rename resets the count. The third dispatch still needs `REVIEW_READY` and second-FAIL
+stabilization. The parent owns exhaustion, non-delivery and xdev batching.
 
 ## Anti-loop rules
 
-Report the complete submitted unit in the first Review, not likely problems only, and re-review the
-whole batch; never freeze re-review to old findings only, which hides genuine defects. Every new
-finding must demonstrate a defect in this snapshot or its bound evidence, so the restriction is
-against findings unsupported by the reviewed state, never against newly discovered material
-findings: never fail for hypothetical future change, a stale defect absent from the current state,
-unrelated scope, or an unstated preference, and report a previously overlooked current defect with
-its evidence and the earlier coverage gap. Defect classification (mechanical versus judgment) is
-optional diagnostic annotation in correction notes, never part of the result schema or bookkeeping. A
-replacement dispatch after transport failure, cancellation, or regeneration reviews the current
-snapshot on its own terms: evidence for unchanged inputs survives, and findings the parent rebutted
-with evidence the earlier Review lacked are not re-litigated.
+Inspect and report the complete unit on first Review and the whole batch on re-review, not just
+likely or old findings. Each finding demonstrates a current snapshot/bound-evidence defect;
+previously overlooked defects include evidence and the earlier coverage gap. Never fail for
+hypothetical future changes, absent stale defects, unrelated scope or unstated preferences;
+genuine new material findings remain required. Mechanical/judgment classification is optional
+correction-note diagnostics, not schema or bookkeeping. Transport-failed, cancelled or regenerated
+replacements judge the current snapshot independently: unchanged-input evidence survives; do not
+re-litigate rebuttals supported by evidence the earlier Review lacked.
+
+## Prompt preservation
+
+For prompt/skill rewrites, bind baseline and shipping scope. The parent contextually reads every
+affected source block, including lists, tables, schemas and subordinate clauses. Record complete
+range coverage and grouped duty-family dispositions, destination quotes, owner/load applicability,
+rationale and reader; give explicit no-duty dispositions for other affected text. Unchanged bytes
+and applicability need no re-audit. Extraction/counts establish integrity, not completeness.
+
+Compare actors, conditions, prohibitions and exceptions. Scale evidence by consequence: adverse
+scenarios or static proofs for each affected safety, user-contact, role, evidence/validation,
+identity, lifecycle or Review-limit invariant. Investigate mismatches; restore losses unless actual
+instructions authorize the change. Disclosure authorizes nothing.
+
+Accept supported coverage/dispositions, risk evidence and all known-loss resolutions, not an
+exhaustive-equivalence certificate. Missing evidence or demonstrated unauthorized loss fails
+preservation. Report bounded assurance and residual uncertainty, never unqualified completeness.
+Use existing routes/gates, not extra completeness Reviews.
 
 ## Scope and limitations
 
-A shared contract fixes thin dispatch context and vague correction instructions but cannot offset
-weak validation or guarantee exhaustive first-pass discovery; a persistent loop with complete
-assignments and actionable findings points at validation adequacy and correction strategy, not at
-adding more template fields.
+Shared contracts fix thin context and vague remedies, not weak validation or exhaustive discovery.
+Persistent loops with complete assignments and actionable findings require better validation and
+correction strategy, not more fields.
