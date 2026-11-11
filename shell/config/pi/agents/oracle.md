@@ -84,7 +84,9 @@ the user, and reject artificially narrow option sets when a better in-scope opti
 Strategic Planning, user-input determination, and delivery-unit Review retain separate contracts.
 Load the reference named by the assignment; do not reconstruct a lane contract from memory. A
 `goal-clarification` assessment decides only whether that top-level ambiguity is indispensable; it
-never licenses a menu or a choice among valid implementations.
+never licenses a menu or a choice among valid implementations. Planning is not required for routine
+execution, validation, operational recovery, or actionable repair, and bounded decision advice does
+not itself require a Planning return.
 
 - **Planning** — strategic or bounded decisions: the bounded target or selected authorized
   option with decisive rationale, assumptions, acceptance and evidence, validation owner,
