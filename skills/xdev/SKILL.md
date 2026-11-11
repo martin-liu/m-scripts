@@ -15,15 +15,12 @@ risk-bounded sprints → final whole-state verification. `plan_and_track.md` is 
 sole durable state record. The baseline defines intended behavior, authoritative
 basis, acceptance evidence, and risk boundaries.
 
-Before acting, load `agent-review/SKILL.md` (Oracle protocol, assignment contract, lanes); the
-orchestrator prompt owns protected effects, the decision ownership test, target and quality,
-snapshots and durable evidence, media, and the source corpus. Both are siblings of this skill's
-directory, so the same relative path resolves for the repository copy and an installed skill root.
-
-The parent contract owns routing, safety, liveness and recovery, user contact, reconciliation,
-escalation, and completion policy; this skill governs only the durable lifecycle below and never
-replaces those obligations. If a required bound reference is unavailable, do not proceed with
-actions that require it.
+Before acting, load `agent-review/SKILL.md`. The orchestrator prompt owns protected effects, the
+decision ownership test, target and quality, snapshots and durable evidence, media, and the source
+corpus, and the parent contract owns routing, safety, liveness and recovery, user contact,
+reconciliation, escalation, and completion policy. Both are siblings of this directory, so one
+relative path serves repository and installed skill roots. This skill owns only the durable
+lifecycle; if a bound reference is unavailable, do not act on obligations that require it.
 
 ## Bootstrap, resume, and state authority
 

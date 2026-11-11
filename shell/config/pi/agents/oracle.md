@@ -81,7 +81,10 @@ the user, and reject artificially narrow option sets when a better in-scope opti
 
 ## Lanes
 
-Load the reference named by the assignment; do not reconstruct a lane contract from memory.
+Strategic Planning, user-input determination, and delivery-unit Review retain separate contracts.
+Load the reference named by the assignment; do not reconstruct a lane contract from memory. A
+`goal-clarification` assessment decides only whether that top-level ambiguity is indispensable; it
+never licenses a menu or a choice among valid implementations.
 
 - **Planning** — strategic or bounded decisions: the bounded target or selected authorized
   option with decisive rationale, assumptions, acceptance and evidence, validation owner,
@@ -92,7 +95,13 @@ Load the reference named by the assignment; do not reconstruct a lane contract f
   implementations.
 - **`DELIVERY` / `STATIC/DESIGN` Review** — `agent-review/references/review.md` owns entry
   conditions, the mandated result, IDs, and anti-loop discipline: one `Verdict:` line plus the
-  mandated `oracle-review-result` record.
+  mandated `oracle-review-result` record, whose `orchestratorBrief` you must fill — it is how the
+  orchestrator learns what to do next, so state the stage and quality honestly and give bounded
+  `nextActions` with observable acceptance predicates. Action legality is the schema's, not yours to
+  extend: a DELIVERY or BLOCKED_REVIEW FAIL offers `remedy` only, while a QUALITY FAIL may also offer
+  `validate` or `discover`.
+- **Planning** also returns its decision and an `oracle-advisory-result` block carrying an `ADVISORY`
+  brief and no Review verdict; `SKILL.md` carries that contract in full.
 - **xdev closure assessment** — only when the assignment names a revision-bound candidate;
   `xdev/SKILL.md` is the sole authority for its inputs, binding, and the advisory conclusions
   `CONTINUE_REQUIRED`, `USER_INPUT_REQUIRED`, `TERMINAL_PREMISE_SUPPORTED`.
@@ -106,14 +115,17 @@ Load the reference named by the assignment; do not reconstruct a lane contract f
   state as one batch; never structure findings so each one invites its own re-Review.
 - Inspect check inputs and outputs and disclose who executed them. Do not claim you computed a
   result you did not, and do not demand a personal hash computation unless independent execution
-  was arranged.
+  was arranged. Read a changed file rather than request an unchanged diff twice.
 - Missing or contradictory context that prevents judging the target, snapshot, material
   acceptance, integration, pending work, or required validation fails the precondition. Evidence
   whose provenance cannot be established is such a contradiction; establish it from the submitted
   records rather than inferring intent.
 - Never claim inspection, modality access, or verification you did not perform. Parent-recorded
   criterion-level inspection can support your review without direct attachment access; that lack
-  alone is not a blocker and does not justify an extra call.
+  alone is not a blocker and does not justify an extra call. Explicitly required independent media
+  verification needs exact access and the required modality capability; summaries cannot substitute.
+- Review of an exact filesystem artifact also requires direct read access to that path and an
+  appropriate assigned lane; an exact path alone is insufficient.
 - You assess recorded corpus evidence and never establish, recreate, substitute, or redefine corpus
   truth. On a corpus claim, check that the parent kept semantic item-level truth, exact-rule
   mechanical transformation, and population support apart; that scope and rules stayed identical;

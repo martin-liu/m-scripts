@@ -43,21 +43,26 @@ or potentially valuable local databases stay protected. Ordinary repository work
 process lifecycle, tests, and local dependency installation are not protected merely for being
 stateful or network-using. Require sufficient explicit authorization per protected effect; an
 existing grant covering the exact effect, target, and limits suffices, so never request fresh
-confirmation solely because a later turn reaches the action. A route label, Planning advice, Review
-evidence, or a worker contract never authorizes it, and missing authorization blocks that effect
-only, not authorized inspection or preparation. Only the parent executes a protected effect; worker
-prompts are policy, not an OS sandbox, so use OS-level isolation for untrusted work.
+confirmation solely because a later turn reaches the action. A broad objective is not authorization
+for every effect it could entail, and no route label, Planning advice, Review evidence, or worker
+contract authorizes one either. Oracle may select an authorized alternative satisfying the objective
+but cannot grant authorization or remove protection. Missing authorization blocks that effect only,
+not authorized inspection or preparation. Only the parent executes a protected effect; worker prompts
+are policy, not an OS sandbox, so use OS-level isolation for untrusted work.
 
 ## Routing
 
 Before mutation, consequential external action, or worker dispatch, establish a bounded target and
 choose one route; non-mutating discovery may precede both. The target names intended behavior,
 authoritative basis, allowed scope, acceptance criteria and evidence, validation owner and commands,
-and material edge cases and invariants; a concise parent-authored target suffices. Satisfy the
+and material edge cases and invariants; a concise parent-authored target suffices, and none
+inherently requires Planning, a durable artifact, or user approval. Satisfy the
 objective and hard constraints with the smallest coherent, evidence-backed solution: smallest is not
-smallest diff. Add abstraction, optimization, refactoring, or hardening only for requirements or
-evidence, never for invented requirements or bookkeeping-only artifacts. Parallelize only
-independent, non-overlapping lanes, one writer per worktree or state record.
+smallest diff. Preserve correctness, security, integrity, operational invariants, and manageable
+maintenance. Add abstraction, optimization, refactoring, or hardening only for requirements or
+evidence, never for invented requirements or bookkeeping-only artifacts. Select by consequences and
+coupling, not file count. Parallelize only independent, non-overlapping lanes, one writer per worktree
+or state record.
 
 | Route | Use | Lifecycle |
 |---|---|---|
@@ -85,9 +90,11 @@ the parent, and failed prerequisites block only dependents. After each non-compl
 integrate every non-superseded result and take the next authorized action, using reversible defaults
 and narrow diagnostics before costly unchanged retries.
 
-Negative or blocked conclusions resting on retrieval, selection, filtering, ranking, or result
-counts require the separate Planning premise assessment; routine bounded blockers need none, and a
-sample supports only discovery or a sample-scoped claim. Different-path controls do not prove normal
+Negative or blocked conclusions requiring material semantic inference through retrieval, selection,
+materialization, filtering, ranking, or result counts require the separate Planning premise
+assessment; routine bounded blockers need none, and a sample supports only discovery or a
+sample-scoped claim. This includes conclusions from absence, failed normal runs, substitutes or
+controls, or scope and authorization boundaries. Different-path controls do not prove normal
 outcomes, so reconcile the normal path's count-relevant stage outcomes and earliest loss classes
 over the configured bounded window and state what each control actually demonstrates; full-population
 tracing is required only for population-exhaustion claims, and a
@@ -112,7 +119,10 @@ proceed; no option menu, confirmation, "unless you object", or waiting for a pic
 assumptions and a reconsideration trigger when useful. Otherwise route the decision by one fixed
 ladder — yourself, then Oracle Planning, then the user (flow in **Dispatching Oracle**), the user
 being the last resort, never the first. **Choosing among options is an Oracle decision, not a user
-decision**; presenting a menu violates this ladder rather than neutrally requesting input. The
+decision**; presenting a menu violates this ladder rather than neutrally requesting input. Technical,
+implementation, strategy, architectural, direction, tradeoff, and ordinary UI choices remain agent or
+Oracle decisions, so uncertainty, multiple valid options, and "is this in scope?" alone never justify
+user contact; inspect original instructions, existing grants, and authorized alternatives first. The
 ownership test admits only three user-owned kinds: authorization for a required protected effect,
 indispensable user-only access or facts, and genuinely incompatible product-intent readings. Adopt
 supported advice within authorization unless constraints, contrary evidence, or changed context
@@ -163,7 +173,8 @@ actors. The assessment permits asking, not protected execution or closure.
 Block only dependents: complete every other feasible authorized action first, prepare blocked
 effects only as allowed, and deduplicate the dependency and question; ask only when nothing
 authorized remains ready. Targets, baselines, test plans, failed checks, `NOT_REVIEW_READY`, agent
-uncertainty, disabled continuation, and Review-limit exhaustion alone authorize no contact.
+uncertainty, disabled continuation, and Review-limit exhaustion alone authorize no contact. This is
+the execution-time blocked gate; otherwise continue with agent decisions.
 
 ## Response transport
 
@@ -279,15 +290,38 @@ the objective and hard constraints, reads sources directly, and may select a bet
 obtainable gaps return for discovery.
 
 Every `DELIVERY`, `STATIC/DESIGN`, or `BLOCKED_REVIEW` dispatch instead fills the Review Assignment
-in `agent-review/references/review.md` with that contract's exact path and hash; validate it before
-dispatch, since an invalid assignment spends no slot, and settle admissibility — safety, source
-corpus, evidence provenance — first. Failure classes reach their owner without loading anything.
+in `agent-review/references/review.md` with that contract's exact path and hash. Run the parent
+preflight that reference defines before starting the call, and settle admissibility — safety, source
+corpus, evidence provenance — first. Preflight validates structure, identity, and internal
+consistency; it cannot promise that Oracle will find every semantic admissible, and no extra intake
+call is spent trying. Slot expenditure is fixed before dispatch by that reference's rule: a call
+rejected before it starts spends nothing, every started call spends one, and Oracle cannot refund a
+slot after the fact. Failure classes reach their owner without loading anything.
 
 Route each failure signal by these rules, which are complete for the parent. Agent-owned execution
 failure means replace and report. An xdev `CONTINUE_REQUIRED` means execute the next authorized todo
 rather than contact. `GOAL_INPUT_REQUIRED` is not a worker outcome and belongs to the user-contact
 gate. A Review or readiness-record defect means refresh the record and fix it before relaunching,
 without continuation.
+
+## Delivery gate and batching
+
+Delivery Review is a delivery gate, never an intermediate micro-gate. `STATIC/DESIGN` is optional
+non-gating advice: once per coherent unit, across snapshots and generations, with no return to it.
+
+Before DELIVERY, finish the unit's remaining accepted scope and all known corrections, integrate,
+then Review the whole unit once. Never interleave DELIVERY with partial corrections of one findings
+batch. Split only for genuinely different outcomes or risk boundaries, never per file or finding.
+Record-only corrections never invalidate an applicable PASS.
+
+Every covered Review or Planning result carries an `orchestratorBrief`
+(`agent-review/references/review.md`) telling you where the work stands and what to do next; the
+input-assessment and xdev closure returns carry none. Read it as instructions: its ordered
+`nextActions` are bounded moves with acceptance predicates, legal per its stage, and a DELIVERY
+FAIL offers `remedy` only, never a demand to rebuild and resubmit. Its `authorDecisionItems` are
+your own decisions to settle under the ladder above, not defects to fix. Never dispatch a Review
+for permission to execute, never return to `STATIC/DESIGN` for the same unit, and treat a `remedy`
+you cannot act on within authorization as discovery or a decision task, not another Review.
 
 ## Reviewed completion and identity
 

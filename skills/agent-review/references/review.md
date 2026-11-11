@@ -101,16 +101,31 @@ block whose `verdict` matches it. `a | b` marks **allowed alternatives**, not te
  "priorFindingResolutions": [{"id": "<prior id>",
    "status": "resolved | unresolved | withdrawn | superseded", "evidenceRefs": []}],
  "coverage": {"inspectedRefs": [], "executionOwners": [], "limitations": []},
- "residualRisks": []}
+ "residualRisks": [],
+ "orchestratorBrief": {"stage": "DELIVERY",
+   "judgment": {"qualityLevel": "DEFICIENT", "authorDecisionItems": []},
+   "nextActions": [{"kind": "remedy", "owner": "parent",
+     "instruction": "<bounded next action covering one coherent findings batch>",
+     "acceptancePredicate": "<observable resolution condition>",
+     "findingIds": [], "decisionIds": []}]}}
 ```
 
+### `orchestratorBrief` — the orchestrator-facing instruction
+
+Mandatory in every Review result; it removes and relaxes no field, enum, binding, finding, or verdict
+invariant.
+
+Planning returns no Review verdict. It adds one `oracle-advisory-result` block (`version`,
+`dependencyId`, and an `ADVISORY` brief with `NOT_ASSESSED` quality) beside its decision explanation,
+and neither supplements nor relaxes the input-assessment or xdev closure contracts.
 An `acceptancePredicate` is an executable check, a faithful scenario, or a static proof; commands
 name bound inputs, expected result, and owner, and architectural or product-level judgment gets no
 invented one.
 
 ### Field types, alternatives, and binding agreement
 
-`version` is `1`; `mode` equals the assignment `Mode`; `verdict` equals the verdict line; every enum
+`version` is `1`; `mode` equals the assignment `Mode`; `verdict` is exactly `PASS` or `FAIL` and must
+equal the textual verdict line; every enum
 takes exactly one alternative shown, else contract-invalid. `reviewId`, `unitId`, and `snapshotId`
 reproduce the assignment `Review ID`, `Unit ID`, and `Snapshot ID` verbatim; an xdev unit also
 carries `stateRevision`, its assigned revision verbatim, because product bytes cannot show state
@@ -122,23 +137,48 @@ holds integer `lineStart`/`lineEnd`. `requiredAction.type` (`implementation`, `v
 results use one shape: only the applicable fields are populated, non-applicable ones stay empty,
 and nothing is fabricated.
 
+`orchestratorBrief` is always present with its three properties `stage`, `judgment`
+(`qualityLevel`, `authorDecisionItems`), and `nextActions`. `stage` is `ADVISORY | QUALITY | DELIVERY`;
+`STATIC/DESIGN` maps to `QUALITY`, `DELIVERY` and `BLOCKED_REVIEW` to `DELIVERY`. `qualityLevel` is
+`ACCEPTABLE | DEFICIENT | NOT_ASSESSED`:
+PASS gives `ACCEPTABLE`, FAIL `DEFICIENT`, unmet material preconditions `NOT_ASSESSED` while retaining
+mandatory FAIL and `REVIEW_PRECONDITION_NOT_MET`, and Planning `NOT_ASSESSED`. `authorDecisionItems`
+separates a justified author-owned contract or strategy decision — `id`, `owner`, `decision`,
+`selectedOption`, `rationale`, `assumptions`, `reconsiderationTrigger`, `evidenceRefs` — from a defect
+in the submitted sources; they are recommendations, not acceptance criteria, and a user-owned
+dependency still needs the unchanged input-assessment protocol.
+`nextActions` is ordered, nonempty on Review FAIL, and empty only when no advice applies; each entry
+has `kind`, `owner` (`parent | fixer`, a proposed owner, not delegation or authorization),
+`instruction`, `acceptancePredicate`, `findingIds`, `decisionIds`, referencing real entries rather
+than an invented anonymous blocker.
+
+Kinds are stage-gated: ADVISORY takes `execute | discover | validate`, QUALITY takes
+`remedy | validate | discover`, DELIVERY PASS takes `reconcile`, and **DELIVERY FAIL takes `remedy`
+only**. A delivery remedy may cover implementation, validation, evidence repair, or decision
+settlement, but names a bounded outcome and acceptance predicate; it never says "rebuild and come
+back" or "ask Oracle again", and never approves future corrected bytes. Per-finding `requiredAction`
+stays authoritative — the brief groups and orders those actions and cannot make a preferred
+implementation mandatory where an equivalent remedy satisfies the finding. An empty `instruction` or
+`acceptancePredicate`, a stage-illegal `kind`, a missing brief, or an entry referencing no real finding
+or decision is contract-invalid exactly as a malformed pre-existing field is; adding a brief never
+repairs a malformed result.
+
 ### Result invariants
 
 PASS requires met preconditions, satisfied material criteria, and no blocking finding. Every
 blocking issue, including missing material evidence, has a finding ID and a required action, never
 an anonymous blocker outside the batch, and every prior finding gets a resolution entry. Required
 actions specify the **observable condition that resolves the defect**, never "improve", "be more
-careful", or "ask Oracle again"; Oracle may suggest an implementation but cannot make a preferred
-one mandatory where an equivalent remedy satisfies it. Evidence may be a direct static proof, and
-Oracle must not run forbidden validation to manufacture a command result. Do not raise a finding
-unsupported by the submitted standard.
+careful", or "ask Oracle again". Evidence may be a direct static proof, and Oracle must not run
+forbidden validation to manufacture a command result: do not raise a finding unsupported by the
+submitted standard.
 
 ### Deterministic IDs
 
 Each finding gets a stable `<unitId>-F001`, `F002`, … Reuse the prior ID for the same root cause
 after line movement; never renumber, reuse, or reset IDs after snapshot or generation changes, and
 allocate new IDs after the highest historical suffix. Semantic equivalence still needs judgment; a
-hash of changing prose does not decide it. Generation, rename, or snapshot changes never reset unit
+hash of changing prose does not decide it. No generation, rename, or snapshot change resets unit
 identity, finding IDs, or the clarification allowance.
 
 ## Correction after FAIL
@@ -154,10 +194,14 @@ correction failed** and how the new repair differs, and the stable finding ID ca
 ## Effort limit
 
 Ordinary Reviewed units have at most three unit-associated Review dispatches, counting replacements,
-precondition failures, and `BLOCKED_REVIEW`; an assignment rejected before the call starts spends no
-slot. Generation, snapshot, or rename cannot reset the count, and the third dispatch still requires
-`REVIEW_READY` plus any second-FAIL stabilization. Exhaustion, non-delivery, and xdev batching
-belong to the parent contract.
+precondition failures, and `BLOCKED_REVIEW`. Expenditure is decided **before the call starts** and is
+never inferred afterwards from Oracle's findings: a call the parent rejects during preflight spends no
+slot, and **every started call spends one, including a malformed assignment and a
+precondition-failed call**. Because malformed-ness is only discoverable by parsing, preflight is the
+parent's structural and internal-consistency check — required fields, bound evidence, identity,
+history, pending work — not a promise of semantic admissibility. Generation, snapshot, or rename
+cannot reset the count, and the third dispatch still requires `REVIEW_READY` plus any second-FAIL
+stabilization. Exhaustion, non-delivery, and xdev batching belong to the parent contract.
 
 ## Anti-loop rules
 
@@ -176,4 +220,6 @@ with evidence the earlier Review lacked are not re-litigated.
 ## Scope and limitations
 
 A shared contract fixes thin dispatch context and vague correction instructions but cannot offset
-weak validation.
+weak validation or guarantee exhaustive first-pass discovery; a persistent loop with complete
+assignments and actionable findings points at validation adequacy and correction strategy, not at
+adding more template fields.

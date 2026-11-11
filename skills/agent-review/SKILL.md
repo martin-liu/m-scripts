@@ -46,11 +46,43 @@ mechanics. `BLOCKED_REVIEW` is a Review mode, not a sixth lane, and returns only
 
 | Lane | Parent supplies | Oracle returns | Never |
 |---|---|---|---|
-| **Planning** | Common contract, decision evidence | Target or selected authorized option; rationale; assumptions; acceptance, evidence, validation owner; reconsideration trigger; discovery actions | Route change, authorization, delivery approval, repair gating |
+| **Planning** | Common contract, decision evidence | Target or selected authorized option; rationale; assumptions; acceptance, evidence, validation owner; reconsideration trigger; discovery actions; an `oracle-advisory-result` with its `ADVISORY` brief | Route change, authorization, delivery approval, repair gating |
 | **Input assessment** (`USER_INPUT_ASSESSMENT`) | Dependency ID, purpose, missing item, discovery tried, grants, alternatives, why assumptions are inadequate | One `oracle-input-assessment` record | A question outside the JSON, a menu, authorization, closure |
-| **`STATIC/DESIGN` Review** | Sources, criteria, own evidence, full assignment | One verdict plus `oracle-review-result` | Delivery Review, consuming the ordinary cap |
-| **`DELIVERY` Review** | Integrated unit, `REVIEW_READY`, full assignment | One verdict plus `oracle-review-result` | Running missing validation, approving future corrections, piecemeal review |
+| **`STATIC/DESIGN` Review** | Sources, criteria, own evidence, full assignment | One verdict plus `oracle-review-result` and its `orchestratorBrief` at stage `QUALITY` | Delivery Review, consuming the ordinary cap, repeated use on one unit |
+| **`DELIVERY` Review** | Integrated unit, `REVIEW_READY`, full assignment | One verdict plus `oracle-review-result` and its `orchestratorBrief` at stage `DELIVERY`, whose post-FAIL actions are `remedy` only | Running missing validation, approving future corrections, piecemeal review |
 | **xdev closure assessment** | Revision-bound candidate: ID, revision, outcome, task, generation, evidence | `CONTINUE_REQUIRED`, `USER_INPUT_REQUIRED`, or `TERMINAL_PREMISE_SUPPORTED`, advisory | Delivery verdict, state edit, contact permission |
+
+### The advisory result (Planning — defined here, not only in `review.md`)
+
+Planning's lane reference is not `references/review.md`, so its return contract must be complete in
+this file. Beside its required decision explanation, Planning returns exactly one fenced
+`oracle-advisory-result` block and no Review verdict:
+
+```json
+{"version": 1, "dependencyId": "<assigned stable decision/dependency ID>",
+ "orchestratorBrief": {"stage": "ADVISORY",
+   "judgment": {"qualityLevel": "NOT_ASSESSED", "authorDecisionItems": [
+     {"id": "<decision ID>", "owner": "parent", "decision": "<the decision>",
+      "selectedOption": "<selected option>", "rationale": "<basis>", "assumptions": [],
+      "reconsiderationTrigger": "<evidence that would change it>", "evidenceRefs": []}]},
+   "nextActions": [{"kind": "execute", "owner": "parent",
+     "instruction": "<bounded next action>", "acceptancePredicate": "<observable condition>",
+     "findingIds": [], "decisionIds": ["<decision ID>"]}]}}
+```
+
+- `stage` is always `ADVISORY`; `qualityLevel` is always `NOT_ASSESSED`, since Planning assesses no
+  delivered quality.
+- `nextActions[].kind` is one of `execute | discover | validate`, each with a proposed `owner`
+  (`parent | fixer`, never delegation or authorization), and nonempty `instruction` and
+  `acceptancePredicate`.
+- `authorDecisionItems` carries the same fields as everywhere else — `id`, `owner`, `decision`,
+  `selectedOption`, `rationale`, `assumptions`, `reconsiderationTrigger`, `evidenceRefs` — and is where
+  a justified decision belongs, as distinct from a defect in submitted sources.
+- References must be real: every `findingIds` and `decisionIds` entry must resolve to an actual
+  finding or decision item, and **each action must reference at least one real finding or decision**;
+  an anonymous action is contract-invalid.
+- This block neither supplements nor relaxes the exact `oracle-input-assessment` or xdev closure
+  contracts.
 
 ## Decisions and user contact
 
@@ -80,8 +112,9 @@ tradeoff satisfying the stated outcome is not ambiguity.
 
 Choosing among valid options is an Oracle decision, never a user decision, and a menu is a ladder
 violation: select one within authorization, record the rationale and reconsideration trigger, and
-treat obtainable gaps as discovery, not contact. Emit exactly one structured
-`oracle-input-assessment` record for a labeled `USER_INPUT_ASSESSMENT`:
+treat obtainable gaps as discovery, not contact. Oracle may select an authorized alternative
+satisfying the objective, but cannot grant authorization or remove protection. Emit exactly one
+structured `oracle-input-assessment` record for a labeled `USER_INPUT_ASSESSMENT`:
 
 ```json
 {
