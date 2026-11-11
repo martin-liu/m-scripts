@@ -48,7 +48,7 @@ mechanics. `BLOCKED_REVIEW` is a Review mode, not a sixth lane, and returns only
 |---|---|---|---|
 | **Planning** | Common contract, decision evidence | Target or selected authorized option; rationale; assumptions; acceptance, evidence, validation owner; reconsideration trigger; discovery actions; an `oracle-advisory-result` with its `ADVISORY` brief | Route change, authorization, delivery approval, repair gating |
 | **Input assessment** (`USER_INPUT_ASSESSMENT`) | Dependency ID, purpose, missing item, discovery tried, grants, alternatives, why assumptions are inadequate | One `oracle-input-assessment` record | A question outside the JSON, a menu, authorization, closure |
-| **`STATIC/DESIGN` Review** | Sources, criteria, own evidence, full assignment | One verdict plus `oracle-review-result` and its `orchestratorBrief` at stage `QUALITY` | Delivery Review, consuming the ordinary cap, repeated use on one unit |
+| **`STATIC/DESIGN` Review** | Sources, criteria, own evidence, full assignment | One verdict plus `oracle-review-result` and its `orchestratorBrief` at stage `QUALITY` | Delivery Review, repeated use on one unit; excluded from the ordinary cap |
 | **`DELIVERY` Review** | Integrated unit, `REVIEW_READY`, full assignment | One verdict plus `oracle-review-result` and its `orchestratorBrief` at stage `DELIVERY`, whose post-FAIL actions are `remedy` only | Running missing validation, approving future corrections, piecemeal review |
 | **xdev closure assessment** | Revision-bound candidate: ID, revision, outcome, task, generation, evidence | `CONTINUE_REQUIRED`, `USER_INPUT_REQUIRED`, or `TERMINAL_PREMISE_SUPPORTED`, advisory | Delivery verdict, state edit, contact permission |
 

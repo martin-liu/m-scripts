@@ -294,9 +294,8 @@ in `agent-review/references/review.md` with that contract's exact path and hash.
 preflight that reference defines before starting the call, and settle admissibility — safety, source
 corpus, evidence provenance — first. Preflight validates structure, identity, and internal
 consistency; it cannot promise that Oracle will find every semantic admissible, and no extra intake
-call is spent trying. Slot expenditure is fixed before dispatch by that reference's rule: a call
-rejected before it starts spends nothing, every started call spends one, and Oracle cannot refund a
-slot after the fact. Failure classes reach their owner without loading anything.
+call is spent trying. That reference fixes cap applicability and expenditure before dispatch; Oracle cannot refund a slot
+after the fact. Failure classes reach their owner without loading anything.
 
 Route each failure signal by these rules, which are complete for the parent. Agent-owned execution
 failure means replace and report. An xdev `CONTINUE_REQUIRED` means execute the next authorized todo

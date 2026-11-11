@@ -127,9 +127,9 @@ invented one.
 `version` is `1`; `mode` equals the assignment `Mode`; `verdict` is exactly `PASS` or `FAIL` and must
 equal the textual verdict line; every enum
 takes exactly one alternative shown, else contract-invalid. `reviewId`, `unitId`, and `snapshotId`
-reproduce the assignment `Review ID`, `Unit ID`, and `Snapshot ID` verbatim; an xdev unit also
-carries `stateRevision`, its assigned revision verbatim, because product bytes cannot show state
-change. `preconditions.status` is `MET` or unmet, unmet must be represented as
+reproduce the assignment `Review ID`, `Unit ID`, and `Snapshot ID` verbatim. xdev results must carry
+the assigned `stateRevision` verbatim; non-xdev results omit it. Product bytes cannot identify
+semantic state. `preconditions.status` is `MET` or unmet, unmet must be represented as
 `REVIEW_PRECONDITION_NOT_MET`, and that forces `FAIL`. `reasonCodes`, `criteria`, `findings`,
 `priorFindingResolutions`, and `residualRisks` are arrays, empty rather than omitted; `locations`
 holds integer `lineStart`/`lineEnd`. `requiredAction.type` (`implementation`, `validation`,
@@ -193,11 +193,10 @@ correction failed** and how the new repair differs, and the stable finding ID ca
 
 ## Effort limit
 
-Ordinary Reviewed units have at most three unit-associated Review dispatches, counting replacements,
-precondition failures, and `BLOCKED_REVIEW`. Expenditure is decided **before the call starts** and is
-never inferred afterwards from Oracle's findings: a call the parent rejects during preflight spends no
-slot, and **every started call spends one, including a malformed assignment and a
-precondition-failed call**. Because malformed-ness is only discoverable by parsing, preflight is the
+Ordinary Reviewed units have at most three DELIVERY/`BLOCKED_REVIEW` dispatches; `STATIC/DESIGN`,
+Planning, and xdev are excluded. Expenditure is decided **before the call starts**, never inferred
+from findings: preflight rejection spends no slot; **every started DELIVERY/`BLOCKED_REVIEW` call
+spends one, including replacements, malformed assignments, and precondition failures**. Because malformed-ness is only discoverable by parsing, preflight is the
 parent's structural and internal-consistency check — required fields, bound evidence, identity,
 history, pending work — not a promise of semantic admissibility. Generation, snapshot, or rename
 cannot reset the count, and the third dispatch still requires `REVIEW_READY` plus any second-FAIL
