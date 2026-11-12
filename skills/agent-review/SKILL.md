@@ -54,9 +54,8 @@ mechanics. `BLOCKED_REVIEW` is a Review mode, not a sixth lane, and returns only
 
 ### The advisory result (Planning — defined here, not only in `review.md`)
 
-Planning's lane reference is not `references/review.md`, so its return contract must be complete in
-this file. Beside its required decision explanation, Planning returns exactly one fenced
-`oracle-advisory-result` block and no Review verdict:
+Planning returns a clear bounded plan or decision with rationale and ordered actions, plus exactly one
+fenced `oracle-advisory-result` block and no Review verdict. Its complete return contract lives here:
 
 ```json
 {"version": 1, "dependencyId": "<assigned stable decision/dependency ID>",

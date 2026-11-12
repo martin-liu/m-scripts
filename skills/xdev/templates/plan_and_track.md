@@ -16,7 +16,7 @@ Todo row schema: `- [ ] TODO-{stable ID} — ...`; checked form: `- [x]`.
 Each row records **type:** implementation / correction / integration / required-validation /
 Review-action / closure-assessment; **owner:** {role}; **scope/reference:** {bounded action and
 authoritative record}; **evidence:** {pending or durable class + reference};
-**discharge revision/reference:** {pending or reference}; **lineage:** {none or predecessor}.
+**discharge revision/reference:** {pending or revision/reference}; **lineage:** {none or predecessor}.
 Settlement references distinguish satisfied work from evidence-backed unmet or blocked dispositions.
 
 ## State

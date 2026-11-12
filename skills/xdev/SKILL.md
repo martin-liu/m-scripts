@@ -15,12 +15,11 @@ risk-bounded sprints → final whole-state verification. `plan_and_track.md` is 
 sole durable state record. The baseline defines intended behavior, authoritative
 basis, acceptance evidence, and risk boundaries.
 
-Before acting, load `agent-review/SKILL.md`. The orchestrator prompt owns protected effects, the
-decision ownership test, target and quality, snapshots and durable evidence, media, and the source
-corpus, and the parent contract owns routing, safety, liveness and recovery, user contact,
-reconciliation, escalation, and completion policy. Both are siblings of this directory, so one
-relative path serves repository and installed skill roots. This skill owns only the durable
-lifecycle; if a bound reference is unavailable, do not act on obligations that require it.
+Before acting, load `agent-review/SKILL.md`. The bound parent contract owns target and quality,
+routing, safety/protected effects, decision ownership and user contact, liveness/recovery,
+snapshots/evidence, media/corpus, reconciliation, escalation and completion. This skill owns only
+the durable lifecycle: never replace missing global policy or act on obligations whose bound
+reference is unavailable.
 
 ## Bootstrap, resume, and state authority
 
@@ -108,7 +107,7 @@ remediation, means terminal non-delivery, and satisfies no delivery criterion.
 
 Keep Status current before dispatch and after integrated results. Resume uses explicit revision,
 phase, current sprint, next owner and action, pending tasks, integration, validation, final Review,
-and outcome fields — not a vague `Latest`. History retains only recovery-significant baseline and
+and outcome fields — not a vague `Latest`. History retains only semantic/recovery-significant baseline and
 Review acceptance, completed or reviewed sprints, revisions, material blockers and replacements,
 final validation, and completion; routine dispatches, diagnostics, and failures update Status or
 their sprint or task entry.

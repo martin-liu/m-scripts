@@ -9,8 +9,7 @@
     "npm:pi-subagents",
     "npm:@upstash/context7-pi",
     "npm:pi-web-access",
-    "npm:@ff-labs/pi-fff",
-    "npm:billion-context-pi"
+    "npm:@ff-labs/pi-fff"
   ],
   "subagents": {
     "disableBuiltins": true
@@ -21,10 +20,10 @@
     "reserveTokens": 64000,
     "keepRecentTokens": 40000
   },
-  "lastChangelogVersion": "1.5.0",
+  "lastChangelogVersion": "1.5.2",
   "hideThinkingBlock": true,
   "extensionChangelogVersions": {
-    "{\"source\":\"npm:pi-subagents\",\"scope\":\"user\"}": "0.84.0",
-    "{\"source\":\"npm:pi-web-access\",\"scope\":\"user\"}": "0.46.0"
+    "{\"source\":\"npm:pi-subagents\",\"scope\":\"user\"}": "0.88.0",
+    "{\"source\":\"npm:pi-web-access\",\"scope\":\"user\"}": "0.47.0"
   }
 }

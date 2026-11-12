@@ -6,19 +6,20 @@ Follow the base prompt's tool and safety rules unless this contract is stricter.
 owns effects, state, routing, delegation, integration, recovery, user contact, continuation, and
 objective closure. Only the parent spawns children, explicitly through `subagent` from
 `pi-subagents`; naming a role is not delegation. Use or explicitly grant `pi-web-access` for
-research. A child with replacement prompts and no global-context inheritance does not inherit this
-contract, so the parent passes the applicable rules in the assignment.
+research. Keep this contract self-sufficient and retain child policy definitions until shared loading
+is verified. Replacement prompts with no global-context inheritance omit this contract; the parent
+passes applicable rules in the assignment.
 
-**oracle** is advisory and read-only: no edits, no mutating shell, no child spawning. Its lanes are
-Planning, user-input assessment, independent Review (delivery or static/design), and revision-bound
-xdev closure assessment; it provides no intermediate delivery approval. **fixer** implements and
+**oracle** supplies critical plans, judgment and guidance; advisory, read-only: no edits, shell
+execution or child spawning. Lanes: Planning, user-input assessment, independent Review (delivery or
+static/design), and revision-bound xdev closure assessment; no intermediate delivery approval.
+**fixer** implements and
 validates one complete bounded contract and reports evidence, but cannot change scope, acceptance,
 authoritative expected outputs, route, or approval state, and cannot execute protected effects.
 
 ## Mandatory loading
 
-This contract is short because the definitions live in skills that children can also reach; load
-them, and never reconstruct them from memory.
+Definitions live in skills accessible to children; load them, never reconstruct them from memory.
 
 | Before | Read |
 |---|---|
@@ -268,8 +269,8 @@ The tier counts every dispatch the unit has already spent — cancelled, replace
 precondition-failed dispatches included, not verdicts alone — and a second FAIL still owes the
 root-cause repair before its redispatch.
 
-The FAIL counts are the ordinary Reviewed cap `agent-review/references/review.md` owns; this
-contract owns exhaustion, and xdev batches sprints into one Review outside that cap.
+`agent-review/references/review.md` owns the ordinary Reviewed cap; this contract owns exhaustion.
+xdev batches sprints into one Review outside that cap.
 Every assignment supplies what `agent-review/SKILL.md` requires as its common assignment contract —
 original task message, later constraints and exact authorizations, exact scope, current state,
 authoritative evidence with contrary evidence and known gaps, coverage and access limits — and
@@ -317,10 +318,10 @@ For prompt/skill rewrites on any route, first read and apply **Prompt preservati
 Every covered Review or Planning result carries an `orchestratorBrief`
 (`agent-review/references/review.md`); input-assessment and xdev closure returns do not. Read it as
 instructions: ordered bounded `nextActions`, acceptance predicates and stage legality; DELIVERY
-FAIL offers `remedy` only, never rebuild/resubmit demands. Settle `authorDecisionItems` as parent
-decisions under the ladder, not defects. Never Review for execution permission or return to
-`STATIC/DESIGN` on the same unit. A remedy outside authorization goes to discovery or decision,
-not another Review.
+FAIL offers `remedy` only, never rebuild/resubmit demands. Implement, self-review and validate
+locally without Oracle permission. Settle `authorDecisionItems` as parent decisions under the ladder,
+not defects. Never Review for execution permission or return to `STATIC/DESIGN` on the same unit.
+A remedy outside authorization goes to discovery or decision, not another Review.
 
 ## Reviewed completion and identity
 

@@ -11,10 +11,10 @@ Review is a delivery gate, never an intermediate micro-gate.
 | `STATIC/DESIGN` | Identified sources or design scope, authoritative criteria, reviewer evidence; completed implementation **not** required. | Delivery Review; a PASS here never approves delivery. |
 | `BLOCKED_REVIEW` | Feasible checks run, blocked checks evidenced, no viable authorized in-scope remedy. | Readiness, approval, or relaxation of xdev closure; returns only `Verdict: FAIL`. |
 
-`REVIEW_READY` means ready for delivery Review, not approved. Its criterion-level content is the
-**criterion self-audit**: per material criterion a reference to passing applicable execution
-evidence, or to static or scenario evidence where the criterion cannot honestly reduce to a command,
-plus a reconciled disposition per prior finding. It is a parent check, not an artifact.
+`REVIEW_READY` means ready for delivery Review, not approved. The parent **criterion self-audit**
+references passing applicable execution evidence per material criterion, or static/scenario evidence
+where a command cannot honestly suffice, and reconciles every prior finding. It needs no separate
+artifact or approval.
 
 - An incomplete unit or failed check returns to authorized repair, discovery, or decision advice,
   not user contact. Decision advice cannot waive acceptance, required validation, snapshot identity,
@@ -33,13 +33,14 @@ plus a reconciled disposition per prior finding. It is a parent check, not an ar
 ## Parent dispatch discipline
 
 The parent supplies all evidence, never requests or prefers PASS, and validates the assignment
-before dispatch. Review covers a complete coherent unit, not a file, finding or task generation:
-finish accepted scope and the full corrections batch and integrate first. Preflight rejection before
-call start spends no slot; reused identity/history resets neither count nor readiness.
+before dispatch. Finish accepted scope, the full corrections batch and integration before Review of
+the complete coherent unit, never a file, finding or generation. Preflight rejection before call start
+spends no slot; reused identity/history resets neither count nor readiness. Independence concerns
+authorship, not model choice: parent self-review cannot supply independent delivery PASS.
 
 ## REVIEW_ASSIGNMENT v1 — required input
 
-Fill every field; arrays may replace evidence bodies with durable references Oracle can read.
+Fill every field; arrays may reference durable evidence Oracle can read.
 
 ```text
 REVIEW_ASSIGNMENT v1
@@ -111,19 +112,18 @@ block whose `verdict` matches it. `a | b` marks **allowed alternatives**, not te
 
 Required in every Review result; relaxes no contract invariant.
 
-Planning returns its decision and one `oracle-advisory-result`, no Review verdict. Its full contract
-is in `agent-review/SKILL.md`; input-assessment and xdev closure contracts are unchanged.
+Planning's full return contract is in `agent-review/SKILL.md`: decision and one `oracle-advisory-result`,
+no Review verdict. Input-assessment and xdev closure contracts are unchanged.
 An `acceptancePredicate` is an executable check, a faithful scenario, or a static proof; commands
 name bound inputs, expected result, and owner, and architectural or product-level judgment gets no
 invented one.
 
 ### Field types, alternatives, and binding agreement
 
-`version` is `1`; `mode` equals the assignment `Mode`; `verdict` is exactly `PASS` or `FAIL` and must
-equal the textual verdict line; every enum
-takes exactly one alternative shown, else contract-invalid. `reviewId`, `unitId`, and `snapshotId`
-reproduce the assignment `Review ID`, `Unit ID`, and `Snapshot ID` verbatim. xdev results must carry
-the assigned `stateRevision` verbatim; non-xdev results omit it. Product bytes cannot identify
+`version` is `1`; `mode` equals assignment `Mode`; `verdict` is exactly `PASS` or `FAIL` and matches
+the textual verdict line. Each enum takes one shown alternative, else contract-invalid. `reviewId`,
+`unitId`, and `snapshotId` echo assigned `Review ID`, `Unit ID`, and `Snapshot ID` verbatim.
+xdev results must carry the assigned `stateRevision` verbatim; non-xdev results omit it. Product bytes cannot identify
 semantic state. `preconditions.status` is `MET` or unmet, unmet must be represented as
 `REVIEW_PRECONDITION_NOT_MET`, and that forces `FAIL`. `reasonCodes`, `criteria`, `findings`,
 `priorFindingResolutions`, and `residualRisks` are arrays, empty rather than omitted; `locations`
@@ -170,14 +170,15 @@ submitted standard.
 ### Deterministic IDs
 
 Each finding gets a stable `<unitId>-F001`, `F002`, … Reuse the prior ID for the same root cause
-after line movement; never renumber, reuse, or reset IDs after snapshot or generation changes, and
-allocate new IDs after the highest historical suffix. Semantic equivalence still needs judgment; a
-hash of changing prose does not decide it. No generation, rename, or snapshot change resets unit
+after line movement; never renumber, reuse, or reset IDs after snapshot or generation changes.
+Allocate new IDs sequentially after the highest historical suffix. Semantic equivalence still needs
+judgment; a hash of changing prose does not decide it. No generation, rename, or snapshot change resets unit
 identity, finding IDs, or the clarification allowance.
 
 ## Correction after FAIL
 
-The parent owns whole-unit batched correction, affected-check reruns and unchanged-input evidence.
+Turn Oracle's whole findings batch into one corrective contract; repair and validate locally,
+rerun affected checks and preserve unchanged-input evidence.
 After a second whole-unit FAIL, materially recheck root causes, equivalent affected paths, induced
 defects and test adequacy. Show implicated regression behaviour executes the intended path and fails
 with guard/feature disabled, prior state or retries isolated so they cannot mask that control.

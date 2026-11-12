@@ -19,6 +19,7 @@ const OC_PARENT = "shell/config/opencode-agents/orchestrator.md";
 const OC_ORACLE = "shell/config/opencode-agents/oracle.md";
 const OC_FIXER = "shell/config/opencode-agents/fixer.md";
 const REVIEW_SKILL = "skills/agent-review/SKILL.md";
+const REVIEW_REFERENCE = "skills/agent-review/references/review.md";
 const XDEV_SKILL = "skills/xdev/SKILL.md";
 
 const PRESERVED_ANCHORS = [
@@ -30,9 +31,10 @@ const PRESERVED_ANCHORS = [
   "PI_MAX_CONTINUATIONS",
 ];
 
-test("review skill exists and defines the assignment template and result schema", () => {
-  assert.ok(existsSync(new URL(`../${REVIEW_SKILL}`, import.meta.url)));
-  const s = read(REVIEW_SKILL);
+test("review entry loads the canonical assignment and result reference", () => {
+  assert.ok(existsSync(new URL(`../${REVIEW_REFERENCE}`, import.meta.url)));
+  assert.match(read(REVIEW_SKILL), /references\/review\.md/);
+  const s = read(REVIEW_REFERENCE);
   assert.match(s, /REVIEW_ASSIGNMENT v1/);
   assert.match(s, /COMPLETE PRIOR-FINDINGS BATCH/);
   assert.match(s, /"oracle-review-result"|oracle-review-result/);
@@ -46,8 +48,8 @@ test("review skill exists and defines the assignment template and result schema"
   assert.match(s, /allowed alternatives/i);
 });
 
-test("review skill JSON example parses and is internally consistent", () => {
-  const s = read(REVIEW_SKILL);
+test("canonical Review JSON example parses and carries the Review shape", () => {
+  const s = read(REVIEW_REFERENCE);
   const m = s.match(/```json\n([\s\S]*?)\n```/);
   assert.ok(m, "review skill has a fenced json example");
   const obj = JSON.parse(m[1]);
@@ -62,16 +64,91 @@ test("review skill JSON example parses and is internally consistent", () => {
   assert.ok(Array.isArray(f.evidenceRefs));
 });
 
-test("pi parent carries the goal-understanding checkpoint and review dispatch hook", () => {
+test("Planning has its own reachable advisory example, not a Review envelope", () => {
+  const s = read(REVIEW_SKILL);
+  const match = s.match(/```json\n([\s\S]*?)\n```/);
+  assert.ok(match, "Planning entry contains its advisory example");
+  const result = JSON.parse(match[1]);
+  assert.equal(result.version, 1);
+  assert.ok(result.dependencyId);
+  assert.ok(!Object.hasOwn(result, "verdict"));
+  const brief = result.orchestratorBrief;
+  assert.equal(brief.stage, "ADVISORY");
+  assert.equal(brief.judgment.qualityLevel, "NOT_ASSESSED");
+  const decisionIds = new Set(brief.judgment.authorDecisionItems.map((item) => item.id));
+  assert.ok(decisionIds.size > 0);
+  for (const action of brief.nextActions) {
+    assert.ok(["execute", "discover", "validate"].includes(action.kind));
+    assert.ok(action.instruction && action.acceptancePredicate);
+    assert.equal(action.findingIds.length, 0);
+    assert.ok(action.decisionIds.length > 0);
+    for (const id of action.decisionIds) assert.ok(decisionIds.has(id));
+  }
+});
+
+test("pi parent carries the goal-understanding checkpoint and canonical dispatch hook", () => {
   const s = read(PI_PARENT);
-  assert.match(s, /## Goal understanding/);
+  assert.match(s, /### Goal understanding/);
   assert.match(s, /goal-clarification/);
-  assert.match(s, /one concise question/);
-  assert.match(s, /agent-review contract/);
+  assert.match(s, /one necessary concise question/);
+  assert.match(s, /agent-review\/SKILL\.md/);
+  assert.match(s, /agent-review\/references\/review\.md/);
   assert.match(s, /USER_INPUT_ASSESSMENT/);
   for (const a of PRESERVED_ANCHORS) assert.ok(s.includes(a), `pi parent missing ${a}`);
-  assert.match(s, /three unit-associated Review dispatches/);
-  assert.match(s, /second whole-unit FAIL/);
+  const reference = read(REVIEW_REFERENCE).replace(/\s+/g, " ");
+  assert.match(reference, /at most three DELIVERY\/`BLOCKED_REVIEW` dispatches/);
+  assert.match(reference, /every started DELIVERY\/`BLOCKED_REVIEW` call spends one/);
+  assert.match(reference, /After a second whole-unit FAIL/);
+});
+
+test("local self-review needs no Oracle permission and cannot supply independent PASS", () => {
+  const parent = read(PI_PARENT).replace(/\s+/g, " ");
+  const local = /Implement, self-review and validate locally without Oracle permission/;
+  assertObligation(parent, local, /Implement, self-review/i, "local execution");
+  assert.throws(() => assertObligation(`Do not ${local.source}.`, local,
+    /Implement, self-review/i, "negated local execution"));
+  const reference = read(REVIEW_REFERENCE).replace(/\s+/g, " ");
+  assert.match(reference, /Independence concerns authorship, not model choice: parent self-review cannot supply independent delivery PASS/);
+  assert.match(parent, /Reviewed\/xdev completion requires final delivery Review PASS/);
+});
+
+test("Oracle supplies clear plans while the parent repairs one whole corrective batch locally", () => {
+  const parent = read(PI_PARENT).replace(/\s+/g, " ");
+  const skill = read(REVIEW_SKILL).replace(/\s+/g, " ");
+  const reference = read(REVIEW_REFERENCE).replace(/\s+/g, " ");
+  const primary = /\*\*oracle\*\* supplies critical plans, judgment and guidance/;
+  const planning = /Planning returns a clear bounded plan or decision with rationale and ordered actions/;
+  const batch = /Turn Oracle's whole findings batch into one corrective contract; repair and validate locally/;
+  assertObligation(parent, primary, /\*\*oracle\*\*/, "primary intelligence");
+  assertObligation(skill, planning, /Planning returns/, "actionable plan");
+  assertObligation(reference, batch, /Turn Oracle's whole findings batch/, "batched local correction");
+  assert.throws(() => assertObligation(`Do not ${parent.match(primary)[0]}.`, primary,
+    /\*\*oracle\*\*/, "negated primary intelligence"));
+  assert.throws(() => assertObligation(reference.replace("repair and validate locally",
+    "request Oracle approval for each fix"), batch, /Turn Oracle's whole findings batch/,
+    "per-fix approval is not local correction"));
+});
+
+test("child protection stays inline and Fixer retains the sufficient media fallback", () => {
+  const parent = read(PI_PARENT).replace(/\s+/g, " ");
+  assert.match(parent, /retain child policy definitions until shared loading is verified/);
+  for (const file of [PI_ORACLE, PI_FIXER]) {
+    const s = read(file).replace(/\s+/g, " ");
+    for (const pattern of [/identified staging\/production actions/, /privileged actions/,
+      /deploy\/publish/, /machine-wide changes/, /destructive local database operations/,
+      /affirmatively disposable development\/test state/,
+      /unknown or potentially valuable local databases (?:stay|remain) protected/,
+      /not protected merely for state or network use/]) {
+      assert.match(s, pattern, `${file}: inline protected-effect definition`);
+    }
+  }
+  const fixer = read(PI_FIXER).replace(/\s+/g, " ");
+  const sufficient = /Otherwise use independently sufficient textual\/structured requirements only/;
+  assert.match(fixer, sufficient);
+  assert.match(fixer, /Contract-supported artifact-independent deterministic implementation remains allowed/);
+  assert.throws(() => assert.match(fixer.replace("independently sufficient", "available"), sufficient));
+  assert.match(read(PI_ORACLE).replace(/\s+/g, " "),
+    /Use `bash` only if the bound parent contract permits shell inspection; the READ-ONLY whitelist is a limit, not a grant/);
 });
 
 test("goal clarification: clear proceeds silently, ambiguous resolves once, then closed", () => {
@@ -80,11 +157,13 @@ test("goal clarification: clear proceeds silently, ambiguous resolves once, then
   // a nearby negator must be absent, so a sign-reversed sentence cannot satisfy it.
   const cases = [
     { f: PI_PARENT,
-      clear: /clear, record it and proceed[^-]*do not ask for confirmation/i,
-      ambiguous: /only when the goal is genuinely ambiguous or admits irreconcilable readings/i,
+      clear: /a clear requested outcome is recorded and acted on without ratification/i,
+      clearSubject: /a clear requested outcome/i,
+      allowanceSubject: /The allowance/i,
+      ambiguous: /resolve it only when the goal admits irreconcilable readings/i,
       menu: /never a menu, questionnaire, or "which valid implementation/i,
       allowance: /allowance is one question in one user turn per objective\./i,
-      durable: /Resume,.*never reset it\./i,
+      durable: /Resume, compaction, task generations, and Review failures reuse this record and never reset it/i,
       noGuess: /neither authorizes guessing nor repeats the unchanged question/i },
     { f: OC_PARENT,
       clear: /clear, record it and proceed[^-]*never ask for confirmation/i,
@@ -103,9 +182,10 @@ test("goal clarification: clear proceeds silently, ambiguous resolves once, then
     assert.match(s, c.durable, `${c.f}: the allowance must survive resume/compaction/generations and never reset`);
     assert.match(s, c.noGuess, `${c.f}: an inadequate reply must neither authorize guessing nor repeat the unchanged question`);
     // Polarity guards: obligations must not be sign-reversed (prefix or suffix).
-    assertObligation(s, c.allowance, /(?:initial|clarification) allowance/i, `${c.f}: allowance obligation`);
+    assertObligation(s, c.allowance, c.allowanceSubject ?? /(?:initial|clarification) allowance/i,
+      `${c.f}: allowance obligation`);
     assertObligation(s, c.noGuess, /inadequate(?: or partial)? reply/i, `${c.f}: no-guess/no-repeat prohibition`);
-    assertObligation(s, c.clear, /clear/i, `${c.f}: clear-goal proceed obligation`);
+    assertObligation(s, c.clear, c.clearSubject ?? /clear/i, `${c.f}: clear-goal proceed obligation`);
   }
 });
 
@@ -196,10 +276,12 @@ test("xdev state-revision guard is falsifiable (negative control)", () => {
 test("pi oracle requires the review result contract and bounded product-intent predicate", () => {
   const s = read(PI_ORACLE);
   assert.match(s, /oracle-review-result/);
-  assert.match(s, /agent-review contract/);
+  assert.match(s, /agent-review\/SKILL\.md/);
+  assert.match(s, /agent-review\/references\/review\.md/);
   assert.match(s, /goal-clarification/);
-  assert.match(s, /goal-dependent execution branch/);
-  assert.match(s, /REVIEW_PRECONDITION_NOT_MET/);
+  assert.match(s, /top-level ambiguity is indispensable/);
+  assert.match(s, /for any Review\s+lane `agent-review\/references\/review\.md`/);
+  assert.match(read(REVIEW_REFERENCE), /REVIEW_PRECONDITION_NOT_MET/);
 });
 
 test("pi fixer keeps implementation/validation and protected-effect boundaries", () => {
@@ -233,7 +315,7 @@ test("opencode fixer permits ordinary in-scope implementation choices", () => {
 
 test("both fixers permit only assigned implementation documentation lookup", () => {
   for (const f of [PI_FIXER, OC_FIXER]) {
-    const s = read(f);
+    const s = read(f).replace(/\s+/g, " ");
     assert.match(s, /[Dd]ocumentation lookup is limited to assigned implementation needs/, `${f} must scope documentation lookup`);
     assert.match(s, /no open-ended\s+research/, `${f} must forbid open-ended research`);
   }
@@ -253,35 +335,35 @@ test("opencode fixer carries self-contained protected-effect classification", ()
 
 test("xdev skill and templates route Review through the shared contract", () => {
   const s = read(XDEV_SKILL);
-  assert.match(s, /agent-review contract/);
+  assert.match(s, /agent-review\/references\/review\.md/);
   assert.match(s, /oracle-review-result/);
   assert.match(s, /initial-clarification-used/);
   const t = read("skills/xdev/templates/plan_and_track.md");
   assert.match(t, /### Goal Understanding/);
   assert.match(t, /Initial clarification used/);
   const b = read("skills/xdev/templates/sprint_block.md");
-  assert.match(b, /agent-review contract/);
+  assert.match(b, /agent-review\/references\/review\.md/);
   assert.match(b, /oracle-review-result/);
 });
 
-test("review skill defines binding agreement and the complete prior-findings batch", () => {
-  const s = read(REVIEW_SKILL);
+test("canonical reference defines binding agreement and the complete prior-findings batch", () => {
+  const s = read(REVIEW_REFERENCE).replace(/\s+/g, " ");
   assert.match(s, /### Field types, alternatives, and binding agreement/);
-  assert.match(s, /must reproduce the assignment's/);
+  assert.match(s, /echo assigned `Review ID`, `Unit ID`, and `Snapshot ID` verbatim/);
   assert.match(s, /Review dispatch ordinal/);
   assert.match(s, /### Deterministic IDs/);
   assert.match(s, /COMPLETE PRIOR-FINDINGS BATCH/);
 });
 
 test("review contract keeps stable IDs while dropping redundant bookkeeping", () => {
-  const s = read(REVIEW_SKILL).replace(/\s+/g, " ");
+  const s = read(REVIEW_REFERENCE).replace(/\s+/g, " ");
   // Stable identity is the mechanism: the ID form AND the reuse/non-reset/allocation rules.
   assert.match(s, /`<unitId>-F001`/, "stable ID form present");
-  assert.match(s, /Reuse the prior ID for the same root-cause finding/i, "same root cause reuses its prior ID");
+  assert.match(s, /Reuse the prior ID for the same root cause/i, "same root cause reuses its prior ID");
   assert.match(s, /never renumber, reuse, or reset IDs after snapshot or generation changes/i, "IDs are not reset across snapshots/generations");
   assert.match(s, /Allocate new IDs sequentially after the highest historical suffix/i, "new IDs allocate after the highest historical suffix");
   // Polarity guards: the reuse/allocation obligations must not be sign-reversed (prefix or suffix).
-  assertObligation(s, /Reuse the prior ID for the same root-cause finding/i,
+  assertObligation(s, /Reuse the prior ID for the same root cause/i,
     /Reuse the prior ID/i, "stable-ID reuse obligation");
   assertObligation(s, /Allocate new IDs sequentially after the highest historical suffix/i,
     /Allocate new IDs/i, "ID-allocation obligation");
@@ -301,9 +383,9 @@ test("review contract keeps stable IDs while dropping redundant bookkeeping", ()
 test("both parents bind clarification permission to the assessment gate", () => {
   const cases = [
     { f: PI_PARENT,
-      binding: /Only the existing `USER_INPUT_REQUIRED` assessment gate permits asking/i,
-      bindingText: "only the existing `USER_INPUT_REQUIRED` assessment gate permits asking",
-      subject: /Only the existing `USER_INPUT_REQUIRED` assessment gate/i },
+      binding: /Only `USER_INPUT_REQUIRED` permits asking/i,
+      bindingText: "Only `USER_INPUT_REQUIRED` permits asking",
+      subject: /Only `USER_INPUT_REQUIRED`/i },
     { f: OC_PARENT,
       binding: /Only that explicit determination permits the Orchestrator to ask/i,
       bindingText: "only that explicit determination permits the Orchestrator to ask",
@@ -312,6 +394,10 @@ test("both parents bind clarification permission to the assessment gate", () => 
   for (const c of cases) {
     const s = read(c.f).replace(/\s+/g, " ");
     assert.match(s, c.binding, `${c.f}: clarification permission must be bound to the assessment gate`);
+    if (c.f === PI_PARENT) {
+      assert.match(s, /Require the actual fenced `oracle-input-assessment` record with outcome `USER_INPUT_REQUIRED` and matching `dependencyId`/);
+      assert.match(s, /from a completed run the parent witnessed starting in the current request epoch/);
+    }
     assertObligation(s, c.binding, c.subject, `${c.f}: the assessment binding`);
     // A blanket permission-to-ask sentence must fail this binding.
     const bypass = "Any unresolved question permits asking the user directly, bypassing the assessment gate";
@@ -325,35 +411,34 @@ test("both parents bind clarification permission to the assessment gate", () => 
 });
 
 test("xdev results must bind the assigned state revision; others omit it", () => {
-  const s = read(REVIEW_SKILL).replace(/\s+/g, " ");
-  assert.match(s, /An xdev unit must carry a `stateRevision` reproducing its assigned xdev state revision verbatim/i, "xdev results must carry the assigned revision");
-  assertObligation(s, /An xdev unit must carry a `stateRevision` reproducing its assigned xdev state revision verbatim/i,
-    /An xdev unit must carry/i, "xdev revision must-carry obligation");
-  assert.match(s, /omits it or gives a disagreeing revision is contract-invalid/i, "omitted/mismatched revision is invalid");
-  assert.match(s, /Non-xdev results omit the field/i, "non-xdev results omit the field");
-  assert.match(s, /Snapshot identity is not a substitute/i, "snapshot bytes cannot stand in for state revision");
+  const s = read(REVIEW_REFERENCE).replace(/\s+/g, " ");
+  const binding = /xdev results must carry the assigned `stateRevision` verbatim/i;
+  assertObligation(s, binding, /xdev results must carry/i, "xdev revision must-carry obligation");
+  assert.match(s, /non-xdev results omit it/i, "non-xdev results omit the field");
+  assert.match(s, /Product bytes cannot identify semantic state/i, "snapshot bytes cannot stand in for state revision");
   // Demotion and prefix-negation counterexamples must fail the binding guard.
   const demoted = "xdev units may add a `stateRevision` string; it is otherwise omitted.";
-  assert.ok(!/An xdev unit must carry a `stateRevision` reproducing its assigned xdev state revision verbatim/i.test(demoted),
-    "revision guard must bite when the binding is demoted");
-  const prefixed = "It is not true that an xdev unit must carry a `stateRevision` reproducing its assigned xdev state revision verbatim.";
-  assert.throws(() => assertObligation(prefixed, /An xdev unit must carry a `stateRevision` reproducing its assigned xdev state revision verbatim/i,
-    /An xdev unit must carry/i, "revision"),
+  assert.ok(!binding.test(demoted), "revision guard must bite when the binding is demoted");
+  const prefixed = "It is not true that xdev results must carry the assigned `stateRevision` verbatim.";
+  assert.throws(() => assertObligation(prefixed, binding, /xdev results must carry/i, "revision"),
     "revision guard must bite on a prefix-negated must-carry obligation");
 });
 
 test("shared contract states the full BLOCKED_REVIEW admission predicate", () => {
-  const s = read(REVIEW_SKILL);
-  assert.match(s, /all feasible checks have already run/);
-  assert.match(s, /no viable authorized in-scope remedy remains/);
-  assert.match(s, /non-delivery that never establishes readiness/);
+  const s = read(REVIEW_REFERENCE).replace(/\s+/g, " ");
+  assert.match(s, /`BLOCKED_REVIEW` \| Feasible checks run, blocked checks evidenced, no viable authorized in-scope remedy\./);
+  assert.match(s, /Readiness, approval, or relaxation of xdev closure; returns only `Verdict: FAIL`/);
+  assert.match(s, /Never dispatch `BLOCKED_REVIEW` to find a remedy or spend a capped slot early/);
 });
 
 test("both parents resolve the contract path independently of working directory", () => {
   for (const f of [PI_PARENT, OC_PARENT]) {
     const s = read(f);
     assert.match(s, /agent-review\/SKILL\.md/, `${f} must name the exact contract path`);
-    assert.match(s, /never assume the caller[\s\S]{1,3}s[\s\S]{1,3}s?working directory/i, `${f} must warn against cwd assumptions`);
+    const cwdGuard = f === PI_PARENT
+      ? /never assuming the working directory is the repository/i
+      : /never assume the caller[\s\S]{1,3}s[\s\S]{1,3}s?working directory/i;
+    assert.match(s, cwdGuard, `${f} must warn against cwd assumptions`);
   }
 });
 
@@ -397,7 +482,7 @@ test("backend frontmatter is preserved (no accidental mode/tools drift)", () => 
 });
 
 test("root sanity: paths resolve", () => {
-  for (const rel of [PI_PARENT, PI_ORACLE, PI_FIXER, OC_PARENT, OC_ORACLE, OC_FIXER, REVIEW_SKILL, XDEV_SKILL]) {
+  for (const rel of [PI_PARENT, PI_ORACLE, PI_FIXER, OC_PARENT, OC_ORACLE, OC_FIXER, REVIEW_SKILL, REVIEW_REFERENCE, XDEV_SKILL]) {
     assert.ok(existsSync(new URL(`../${rel}`, import.meta.url)), `missing ${rel}`);
   }
   assert.ok(root.length > 0);
