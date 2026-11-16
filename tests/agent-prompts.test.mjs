@@ -1,489 +1,580 @@
-// Non-writing policy checks for the agent prompt surface.
-//
-// These guard structure and selected drift signals only: role-applicable policy
-// anchors, the mandatory Review hooks, removed stale semantics, unchanged
-// backend frontmatter, and schema-example consistency. They cannot prove semantic
-// equivalence or agent compliance.
+// Non-writing drift guards: parsed protocol examples, adverse-record scenarios,
+// selected canonical obligations, backend adapters and exact frontmatter.
+// These do not prove semantic equivalence, runtime loading or agent compliance.
 import assert from "node:assert/strict";
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { fileURLToPath } from "node:url";
 
-const root = fileURLToPath(new URL("..", import.meta.url));
-const read = (rel) => readFileSync(new URL(rel, new URL("..", import.meta.url)), "utf8");
+const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+const paths = {
+  pp: "shell/config/pi/APPEND_SYSTEM.md",
+  po: "shell/config/pi/agents/oracle.md",
+  pf: "shell/config/pi/agents/fixer.md",
+  op: "shell/config/opencode-agents/orchestrator.md",
+  oo: "shell/config/opencode-agents/oracle.md",
+  of: "shell/config/opencode-agents/fixer.md",
+  skill: "skills/agent-review/SKILL.md",
+  review: "skills/agent-review/references/review.md",
+  unit: "skills/agent-review/templates/reviewed_unit.md",
+  xdev: "skills/xdev/SKILL.md",
+  plan: "skills/xdev/templates/plan_and_track.md",
+  sprint: "skills/xdev/templates/sprint_block.md",
+};
+const files = Object.fromEntries(Object.entries(paths).map(([k, p]) => [k, read(p)]));
+const flat = (s) => s.replace(/\s+/g, " ").trim();
+const examples = (s) => [...s.matchAll(/```json\n([\s\S]*?)\n```/g)].map((m) => JSON.parse(m[1]));
+const clone = (v) => JSON.parse(JSON.stringify(v));
+const nonempty = (s) => assert.ok(typeof s === "string" && s.trim().length > 0);
+const keys = (o, required, optional = []) => {
+  assert.ok(o && typeof o === "object" && !Array.isArray(o));
+  for (const k of required) assert.ok(Object.hasOwn(o, k), `missing ${k}`);
+  for (const k of Object.keys(o)) assert.ok([...required, ...optional].includes(k), `unknown ${k}`);
+};
+const array = (v) => assert.ok(Array.isArray(v));
+const positive = (v) => assert.ok(Number.isInteger(v) && v > 0);
+const enumValue = (v, allowed) => assert.ok(allowed.includes(v), `invalid enum ${v}`);
 
-const PI_PARENT = "shell/config/pi/APPEND_SYSTEM.md";
-const PI_ORACLE = "shell/config/pi/agents/oracle.md";
-const PI_FIXER = "shell/config/pi/agents/fixer.md";
-const OC_PARENT = "shell/config/opencode-agents/orchestrator.md";
-const OC_ORACLE = "shell/config/opencode-agents/oracle.md";
-const OC_FIXER = "shell/config/opencode-agents/fixer.md";
-const REVIEW_SKILL = "skills/agent-review/SKILL.md";
-const REVIEW_REFERENCE = "skills/agent-review/references/review.md";
-const XDEV_SKILL = "skills/xdev/SKILL.md";
-
-const PRESERVED_ANCHORS = [
-  "STATUS:CONTINUE",
-  "STATUS:WAIT",
-  "STATUS:DONE",
-  "STATUS:BLOCKED user",
-  "STATUS:FAILED",
-  "PI_MAX_CONTINUATIONS",
-];
-
-test("review entry loads the canonical assignment and result reference", () => {
-  assert.ok(existsSync(new URL(`../${REVIEW_REFERENCE}`, import.meta.url)));
-  assert.match(read(REVIEW_SKILL), /references\/review\.md/);
-  const s = read(REVIEW_REFERENCE);
-  assert.match(s, /REVIEW_ASSIGNMENT v1/);
-  assert.match(s, /COMPLETE PRIOR-FINDINGS BATCH/);
-  assert.match(s, /"oracle-review-result"|oracle-review-result/);
-  assert.match(s, /REVIEW_PRECONDITION_NOT_MET/);
-  assert.match(s, /BLOCKED_REVIEW/);
-  // Result enum fields present.
-  for (const f of ["\"findings\"", "\"priorFindingResolutions\"", "\"requiredAction\"", "\"acceptancePredicate\""]) {
-    assert.ok(s.includes(f), `review skill missing result field ${f}`);
-  }
-  // Allowed-alternatives note must be explicit so pipe strings are not read literally.
-  assert.match(s, /allowed alternatives/i);
-});
-
-test("canonical Review JSON example parses and carries the Review shape", () => {
-  const s = read(REVIEW_REFERENCE);
-  const m = s.match(/```json\n([\s\S]*?)\n```/);
-  assert.ok(m, "review skill has a fenced json example");
-  const obj = JSON.parse(m[1]);
-  assert.equal(obj.version, 1);
-  assert.ok(["PASS", "FAIL"].includes(obj.verdict));
-  assert.ok(Array.isArray(obj.criteria));
-  assert.ok(Array.isArray(obj.findings));
-  assert.ok(Array.isArray(obj.priorFindingResolutions));
-  const f = obj.findings[0];
-  assert.ok(f.id && f.requiredAction && f.requiredAction.acceptancePredicate);
-  assert.ok(Array.isArray(f.locations));
-  assert.ok(Array.isArray(f.evidenceRefs));
-});
-
-test("Planning has its own reachable advisory example, not a Review envelope", () => {
-  const s = read(REVIEW_SKILL);
-  const match = s.match(/```json\n([\s\S]*?)\n```/);
-  assert.ok(match, "Planning entry contains its advisory example");
-  const result = JSON.parse(match[1]);
-  assert.equal(result.version, 1);
-  assert.ok(result.dependencyId);
-  assert.ok(!Object.hasOwn(result, "verdict"));
-  const brief = result.orchestratorBrief;
-  assert.equal(brief.stage, "ADVISORY");
-  assert.equal(brief.judgment.qualityLevel, "NOT_ASSESSED");
-  const decisionIds = new Set(brief.judgment.authorDecisionItems.map((item) => item.id));
-  assert.ok(decisionIds.size > 0);
-  for (const action of brief.nextActions) {
-    assert.ok(["execute", "discover", "validate"].includes(action.kind));
-    assert.ok(action.instruction && action.acceptancePredicate);
-    assert.equal(action.findingIds.length, 0);
-    assert.ok(action.decisionIds.length > 0);
-    for (const id of action.decisionIds) assert.ok(decisionIds.has(id));
-  }
-});
-
-test("pi parent carries the goal-understanding checkpoint and canonical dispatch hook", () => {
-  const s = read(PI_PARENT);
-  assert.match(s, /### Goal understanding/);
-  assert.match(s, /goal-clarification/);
-  assert.match(s, /one necessary concise question/);
-  assert.match(s, /agent-review\/SKILL\.md/);
-  assert.match(s, /agent-review\/references\/review\.md/);
-  assert.match(s, /USER_INPUT_ASSESSMENT/);
-  for (const a of PRESERVED_ANCHORS) assert.ok(s.includes(a), `pi parent missing ${a}`);
-  const reference = read(REVIEW_REFERENCE).replace(/\s+/g, " ");
-  assert.match(reference, /at most three DELIVERY\/`BLOCKED_REVIEW` dispatches/);
-  assert.match(reference, /every started DELIVERY\/`BLOCKED_REVIEW` call spends one/);
-  assert.match(reference, /After a second whole-unit FAIL/);
-});
-
-test("local self-review needs no Oracle permission and cannot supply independent PASS", () => {
-  const parent = read(PI_PARENT).replace(/\s+/g, " ");
-  const local = /Implement, self-review and validate locally without Oracle permission/;
-  assertObligation(parent, local, /Implement, self-review/i, "local execution");
-  assert.throws(() => assertObligation(`Do not ${local.source}.`, local,
-    /Implement, self-review/i, "negated local execution"));
-  const reference = read(REVIEW_REFERENCE).replace(/\s+/g, " ");
-  assert.match(reference, /Independence concerns authorship, not model choice: parent self-review cannot supply independent delivery PASS/);
-  assert.match(parent, /Reviewed\/xdev completion requires final delivery Review PASS/);
-});
-
-test("Oracle supplies clear plans while the parent repairs one whole corrective batch locally", () => {
-  const parent = read(PI_PARENT).replace(/\s+/g, " ");
-  const skill = read(REVIEW_SKILL).replace(/\s+/g, " ");
-  const reference = read(REVIEW_REFERENCE).replace(/\s+/g, " ");
-  const primary = /\*\*oracle\*\* supplies critical plans, judgment and guidance/;
-  const planning = /Planning returns a clear bounded plan or decision with rationale and ordered actions/;
-  const batch = /Turn Oracle's whole findings batch into one corrective contract; repair and validate locally/;
-  assertObligation(parent, primary, /\*\*oracle\*\*/, "primary intelligence");
-  assertObligation(skill, planning, /Planning returns/, "actionable plan");
-  assertObligation(reference, batch, /Turn Oracle's whole findings batch/, "batched local correction");
-  assert.throws(() => assertObligation(`Do not ${parent.match(primary)[0]}.`, primary,
-    /\*\*oracle\*\*/, "negated primary intelligence"));
-  assert.throws(() => assertObligation(reference.replace("repair and validate locally",
-    "request Oracle approval for each fix"), batch, /Turn Oracle's whole findings batch/,
-    "per-fix approval is not local correction"));
-});
-
-test("child protection stays inline and Fixer retains the sufficient media fallback", () => {
-  const parent = read(PI_PARENT).replace(/\s+/g, " ");
-  assert.match(parent, /retain child policy definitions until shared loading is verified/);
-  for (const file of [PI_ORACLE, PI_FIXER]) {
-    const s = read(file).replace(/\s+/g, " ");
-    for (const pattern of [/identified staging\/production actions/, /privileged actions/,
-      /deploy\/publish/, /machine-wide changes/, /destructive local database operations/,
-      /affirmatively disposable development\/test state/,
-      /unknown or potentially valuable local databases (?:stay|remain) protected/,
-      /not protected merely for state or network use/]) {
-      assert.match(s, pattern, `${file}: inline protected-effect definition`);
-    }
-  }
-  const fixer = read(PI_FIXER).replace(/\s+/g, " ");
-  const sufficient = /Otherwise use independently sufficient textual\/structured requirements only/;
-  assert.match(fixer, sufficient);
-  assert.match(fixer, /Contract-supported artifact-independent deterministic implementation remains allowed/);
-  assert.throws(() => assert.match(fixer.replace("independently sufficient", "available"), sufficient));
-  assert.match(read(PI_ORACLE).replace(/\s+/g, " "),
-    /Use `bash` only if the bound parent contract permits shell inspection; the READ-ONLY whitelist is a limit, not a grant/);
-});
-
-test("goal clarification: clear proceeds silently, ambiguous resolves once, then closed", () => {
-  // Behavioral guards for the required outcomes of problem 1.
-  // Each guard asserts a PROHIBITION or an OBLIGATION together with its polarity:
-  // a nearby negator must be absent, so a sign-reversed sentence cannot satisfy it.
-  const cases = [
-    { f: PI_PARENT,
-      clear: /a clear requested outcome is recorded and acted on without ratification/i,
-      clearSubject: /a clear requested outcome/i,
-      allowanceSubject: /The allowance/i,
-      ambiguous: /resolve it only when the goal admits irreconcilable readings/i,
-      menu: /never a menu, questionnaire, or "which valid implementation/i,
-      allowance: /allowance is one question in one user turn per objective\./i,
-      durable: /Resume, compaction, task generations, and Review failures reuse this record and never reset it/i,
-      noGuess: /neither authorizes guessing nor repeats the unchanged question/i },
-    { f: OC_PARENT,
-      clear: /clear, record it and proceed[^-]*never ask for confirmation/i,
-      ambiguous: /only when the goal is genuinely ambiguous or admits irreconcilable readings/i,
-      menu: /never a menu or a choice among valid implementations/i,
-      allowance: /initial allowance is one question per objective/i,
-      durable: /resume, compaction, or new task generations reuse it instead of re-asking/i,
-      noGuess: /neither authorizes guessing nor repeats the unchanged question/i },
-  ];
-  for (const c of cases) {
-    const s = read(c.f).replace(/\s+/g, " ");
-    assert.match(s, c.clear, `${c.f}: a clear goal must proceed without asking for confirmation`);
-    assert.match(s, c.ambiguous, `${c.f}: only genuine ambiguity/irreconcilable readings may trigger clarification`);
-    assert.match(s, c.menu, `${c.f}: clarification must yield a question, never a menu`);
-    assert.match(s, c.allowance, `${c.f}: initial allowance is one question per objective`);
-    assert.match(s, c.durable, `${c.f}: the allowance must survive resume/compaction/generations and never reset`);
-    assert.match(s, c.noGuess, `${c.f}: an inadequate reply must neither authorize guessing nor repeat the unchanged question`);
-    // Polarity guards: obligations must not be sign-reversed (prefix or suffix).
-    assertObligation(s, c.allowance, c.allowanceSubject ?? /(?:initial|clarification) allowance/i,
-      `${c.f}: allowance obligation`);
-    assertObligation(s, c.noGuess, /inadequate(?: or partial)? reply/i, `${c.f}: no-guess/no-repeat prohibition`);
-    assertObligation(s, c.clear, c.clearSubject ?? /clear/i, `${c.f}: clear-goal proceed obligation`);
-  }
-});
-
-// Assert an OBLIGATION is genuinely asserted, not sign-reversed. `obligation` must match the
-// full positive obligation text. `subject` must match that obligation's clause subject, so a
-// negator placed EITHER before the clause ("It is not true that ...", "Do not ...") OR between
-// the subject and the rest of the obligation ("... allowance is not ...") is rejected.
-// This closes both the suffix gap and the prefix gap that a suffix-only check leaves open.
-//
-// Negation scope is the SENTENCE, not the comma-delimited clause: a parenthetical comma must
-// not hide a leading negator ("Do not, under any circumstances, reuse the prior ID ..."). The
-// lead therefore runs from the last sentence-terminator (`.` `;` `!` `?`) before the
-// obligation to the obligation match, and EVERY negator in that span is rejected.
-const NEG = /\b(?:not|never|cannot|may\s+not|must\s+not|does\s+not|do\s+not|isn't|aren't|won't|no\s+longer|prohibited|optional)\b/i;
-function assertObligation(haystack, obligation, subject, message) {
-  const m = haystack.match(obligation);
-  assert.ok(m, `${message}: obligation text absent`);
-  // Suffix: text immediately following the clause subject (e.g. "allowance is NOT one ...").
-  const sm = haystack.match(subject);
-  assert.ok(sm, `${message}: clause subject absent`);
-  const after = haystack.slice(sm.index + sm[0].length, sm.index + sm[0].length + 16);
-  const suffixNeg = new RegExp('^\\s*(?:is|are|was|were|shall|should|will|would|may|must|can|could|does|do|did|be)?\\s*' + NEG.source.slice(2, -2), 'i');
-  assert.ok(!suffixNeg.test(after), `${message}: obligation negated after subject ("${after.trim()}")`);
-  // Prefix: any negator from the sentence start up to the obligation. Sentence terminals only,
-  // so an intervening parenthetical comma never truncates the inspected lead.
-  let leadStart = 0;
-  for (const ch of ['.', ';', '!', '?']) {
-    const i = haystack.lastIndexOf(ch, m.index);
-    if (i > leadStart) leadStart = i;
-  }
-  leadStart += 1;
-  const lead = haystack.slice(leadStart, m.index);
-  assert.ok(!NEG.test(lead), `${message}: obligation negated in lead-in ("${lead.trim()}")`);
+function assignment(v) {
+  keys(v, ["version", "lane", "identity", "policyRefs", "basis", "state", "request"]);
+  assert.equal(v.version, 2);
+  const requests = { Planning: "originate", Input: "assess-ownership", Review: "assess-current", Closure: "assess-candidate" };
+  assert.ok(Object.hasOwn(requests, v.lane));
+  keys(v.request, ["kind"]);
+  assert.equal(v.request.kind, requests[v.lane]);
+  keys(v.identity, ["objectiveId", "goalRevision", "subjectId", "taskId", "generation", "route"]);
+  for (const k of ["objectiveId", "subjectId", "taskId"]) nonempty(v.identity[k]);
+  positive(v.identity.goalRevision); positive(v.identity.generation);
+  enumValue(v.identity.route, ["Direct", "Reviewed", "xdev"]);
+  array(v.policyRefs); assert.ok(v.policyRefs.length); v.policyRefs.forEach(nonempty);
+  keys(v.basis, ["originalInstructions", "intendedOutcome", "userConstraints", "authorizations",
+    "sources", "observations", "contraryEvidence", "gaps", "openQuestions", "priorChoices"]);
+  nonempty(v.basis.intendedOutcome);
+  for (const [k, value] of Object.entries(v.basis)) if (k !== "intendedOutcome") array(value);
+  assert.ok(v.basis.originalInstructions.length); assert.ok(v.basis.sources.length);
+  keys(v.state, ["contextRef", "root", "base", "snapshotRef", "integration", "pendingWork", "historyRefs"]);
+  for (const k of ["contextRef", "root", "base", "snapshotRef", "integration"]) nonempty(v.state[k]);
+  array(v.state.pendingWork); array(v.state.historyRefs);
 }
 
-test("goal-clarification guards are falsifiable (negative controls)", () => {
-  // In-memory sign-reversed sentences must FAIL their guard. These exercise the
-  // same predicates the file guards use, so the guards cannot be vacuous.
-  const allowance = /allowance is one question in one user turn per objective\./i;
-  const clear = /clear, record it and proceed[^-]*do not ask for confirmation/i;
-  const noGuess = /neither authorizes guessing nor repeats the unchanged question/i;
-  const menu = /never a menu/i;
-  const reversedAllowance =
-    "The initial clarification allowance is not one question in one user turn per objective.";
-  const prefixedAllowance =
-    "It is not true that the initial clarification allowance is one question in one user turn per objective.";
-  const obligation = /allowance is one question in one user turn per objective\./i;
-  // The naive substring guard is satisfied by the reversed sentence (the words after "allowance"
-  // still contain the obligation text), which is exactly why the polarity helper is required.
-  assert.match(reversedAllowance, /one question in one user turn per objective\./i,
-    "precondition: naive substring guard would match the reversed sentence");
-  assert.throws(() => assertObligation(reversedAllowance, obligation, /initial clarification allowance/i, "allowance"),
-    "helper must reject a subject-adjacent sign-reversed allowance sentence");
-  assert.throws(() => assertObligation(prefixedAllowance, obligation, /initial clarification allowance/i, "allowance"),
-    "helper must reject a PREFIX-negated allowance sentence");
-  // Negation scope must span an intervening parenthetical comma: the comma-clause negated forms
-  // of the shared-helper obligations must also be rejected (dispatch-8 F010 residual).
-  const commaPrefixedReuse = "Do not, under any circumstances, reuse the prior ID for the same root-cause finding";
-  const commaPrefixedClear = "Do not, when the requested outcome is clear, record it and proceed";
-  assert.throws(() => assertObligation(commaPrefixedReuse, /Reuse the prior ID for the same root-cause finding/i,
-      /Reuse the prior ID/i, "comma-scope reuse"),
-    "helper must reject a comma-clause prefix-negated reuse obligation");
-  assert.throws(() => assertObligation(commaPrefixedClear, /clear, record it and proceed/i,
-      /clear/i, "comma-scope clear-goal"),
-    "helper must reject a comma-clause prefix-negated clear-goal obligation");
-  assert.throws(() => assertObligation("It is not true that, under this policy, only the existing `USER_INPUT_REQUIRED` assessment gate permits asking",
-      /Only the existing `USER_INPUT_REQUIRED` assessment gate permits asking/i,
-      /assessment gate/i, "comma-scope gate"),
-    "helper must reject a comma-clause prefix-negated assessment-gate binding");
-  // Sanity: the helper accepts the genuine obligation.
-  assertObligation("The initial clarification allowance is one question in one user turn per objective.",
-    obligation, /initial clarification allowance/i, "allowance (genuine)");
-  assert.ok(!clear.test("clear, pause and proceed; do ask for confirmation"), "clear guard must bite when reversed");
-  assert.ok(!noGuess.test("it authorizes guessing and may repeat the unchanged question"), "noGuess guard must bite when reversed");
-  assert.ok(!menu.test("offer the user a menu of valid implementations"), "menu guard must bite when reversed");
-});
-
-test("xdev state-revision guard is falsifiable (negative control)", () => {
-  const mustCarry = /An xdev unit must carry a `stateRevision` reproducing its assigned xdev state revision verbatim/i;
-  const demoted = "xdev units may add a `stateRevision` string; it is otherwise omitted.";
-  const prefixed = "It is not required that an xdev unit must carry a `stateRevision` reproducing its assigned xdev state revision verbatim.";
-  assert.throws(() => assertObligation(prefixed, mustCarry, /An xdev unit must carry/i, "revision"),
-    "revision guard must bite on a prefix-negated must-carry obligation");
-  assert.ok(!mustCarry.test(demoted), "revision guard must bite when the binding is demoted");
-  assertObligation(mustCarry.source.replace(/^\//, '').replace(/\/i$/, ''), mustCarry, /An xdev unit must carry/i, "revision (genuine)");
-});
-
-test("pi oracle requires the review result contract and bounded product-intent predicate", () => {
-  const s = read(PI_ORACLE);
-  assert.match(s, /oracle-review-result/);
-  assert.match(s, /agent-review\/SKILL\.md/);
-  assert.match(s, /agent-review\/references\/review\.md/);
-  assert.match(s, /goal-clarification/);
-  assert.match(s, /top-level ambiguity is indispensable/);
-  assert.match(s, /for any Review\s+lane `agent-review\/references\/review\.md`/);
-  assert.match(read(REVIEW_REFERENCE), /REVIEW_PRECONDITION_NOT_MET/);
-});
-
-test("pi fixer keeps implementation/validation and protected-effect boundaries", () => {
-  const s = read(PI_FIXER);
-  assert.match(s, /ordinary in-scope implementation choices/);
-  assert.match(s, /never execute protected effects/i);
-});
-
-test("opencode parent mirrors goal understanding, review dispatch, and existing gates", () => {
-  const s = read(OC_PARENT);
-  assert.match(s, /goal understanding is a distinct, bounded intake/i);
-  assert.match(s, /agent-review contract/);
-  assert.match(s, /three unit-associated Review dispatches/);
-  assert.match(s, /second whole-unit `FAIL`/);
-  assert.match(s, /user-owned dependency/);
-});
-
-test("opencode oracle drops the APPROVED alias and requires the review contract", () => {
-  const s = read(OC_ORACLE);
-  assert.ok(!/\bAPPROVED\b/.test(s), "opencode oracle must not mention APPROVED");
-  assert.match(s, /oracle-review-result/);
-  assert.match(s, /agent-review contract/);
-  assert.match(s, /does not itself\s+authorize contact/);
-});
-
-test("opencode fixer permits ordinary in-scope implementation choices", () => {
-  const s = read(OC_FIXER);
-  assert.match(s, /ordinary in-scope implementation choices/);
-  assert.match(s, /protected effect/i);
-});
-
-test("both fixers permit only assigned implementation documentation lookup", () => {
-  for (const f of [PI_FIXER, OC_FIXER]) {
-    const s = read(f).replace(/\s+/g, " ");
-    assert.match(s, /[Dd]ocumentation lookup is limited to assigned implementation needs/, `${f} must scope documentation lookup`);
-    assert.match(s, /no open-ended\s+research/, `${f} must forbid open-ended research`);
-  }
-});
-
-test("opencode fixer carries self-contained protected-effect classification", () => {
-  const s = read(OC_FIXER);
-  assert.match(s, /staging\/production mutations/);
-  assert.match(s, /consequential\s+external or shared-resource mutations/);
-  assert.match(s, /privileged or machine-wide actions/);
-  assert.match(s, /deploy\/publish/);
-  assert.match(s, /Unknown or potentially valuable\s+local databases remain protected/);
-  assert.match(s, /affirmatively disposable development\/test state/);
-  assert.match(s, /requires missing information, escalate before execution/);
-  assert.match(s, /restrict diagnostics and\s+build output to authorized repository or affirmatively disposable test scope/);
-});
-
-test("xdev skill and templates route Review through the shared contract", () => {
-  const s = read(XDEV_SKILL);
-  assert.match(s, /agent-review\/references\/review\.md/);
-  assert.match(s, /oracle-review-result/);
-  assert.match(s, /initial-clarification-used/);
-  const t = read("skills/xdev/templates/plan_and_track.md");
-  assert.match(t, /### Goal Understanding/);
-  assert.match(t, /Initial clarification used/);
-  const b = read("skills/xdev/templates/sprint_block.md");
-  assert.match(b, /agent-review\/references\/review\.md/);
-  assert.match(b, /oracle-review-result/);
-});
-
-test("canonical reference defines binding agreement and the complete prior-findings batch", () => {
-  const s = read(REVIEW_REFERENCE).replace(/\s+/g, " ");
-  assert.match(s, /### Field types, alternatives, and binding agreement/);
-  assert.match(s, /echo assigned `Review ID`, `Unit ID`, and `Snapshot ID` verbatim/);
-  assert.match(s, /Review dispatch ordinal/);
-  assert.match(s, /### Deterministic IDs/);
-  assert.match(s, /COMPLETE PRIOR-FINDINGS BATCH/);
-});
-
-test("review contract keeps stable IDs while dropping redundant bookkeeping", () => {
-  const s = read(REVIEW_REFERENCE).replace(/\s+/g, " ");
-  // Stable identity is the mechanism: the ID form AND the reuse/non-reset/allocation rules.
-  assert.match(s, /`<unitId>-F001`/, "stable ID form present");
-  assert.match(s, /Reuse the prior ID for the same root cause/i, "same root cause reuses its prior ID");
-  assert.match(s, /never renumber, reuse, or reset IDs after snapshot or generation changes/i, "IDs are not reset across snapshots/generations");
-  assert.match(s, /Allocate new IDs sequentially after the highest historical suffix/i, "new IDs allocate after the highest historical suffix");
-  // Polarity guards: the reuse/allocation obligations must not be sign-reversed (prefix or suffix).
-  assertObligation(s, /Reuse the prior ID for the same root cause/i,
-    /Reuse the prior ID/i, "stable-ID reuse obligation");
-  assertObligation(s, /Allocate new IDs sequentially after the highest historical suffix/i,
-    /Allocate new IDs/i, "ID-allocation obligation");
-  // Counterexample: the rules must forbid the harmful behavior, not merely say 'stable'.
-  assert.ok(!/may reset (?:IDS|finding IDs)/i.test(s), "resetting IDs must not be permitted");
-  assert.ok(!/never renumber, reuse, or reset IDs/i.test("findings may reset IDs when a snapshot changes"), "non-reset guard must bite when reversed");
-  // Optional classifications must not be mandatory schema.
-  assert.ok(!/"origin":\s*"/.test(s), "mandatory origin taxonomy should be removed");
-  assert.ok(!/"key":\s*"/.test(s), "mandatory root-cause key should be removed");
-  assert.ok(!/\bmappedFindingIds\b/.test(s), "mappedFindingIds bookkeeping should be removed");
-});
-
-// The clarification-permission gate must be bound to the assessment in BOTH parents, and
-// must not be replaceable by a blanket permission-to-ask. `assertUnnegated` alone is not
-// enough here: the risk is a SUBSTITUTED sentence that drops the assessment binding while
-// still containing the words, so we assert the binding phrase itself and its polarity.
-test("both parents bind clarification permission to the assessment gate", () => {
-  const cases = [
-    { f: PI_PARENT,
-      binding: /Only `USER_INPUT_REQUIRED` permits asking/i,
-      bindingText: "Only `USER_INPUT_REQUIRED` permits asking",
-      subject: /Only `USER_INPUT_REQUIRED`/i },
-    { f: OC_PARENT,
-      binding: /Only that explicit determination permits the Orchestrator to ask/i,
-      bindingText: "only that explicit determination permits the Orchestrator to ask",
-      subject: /Only that explicit determination/i },
-  ];
-  for (const c of cases) {
-    const s = read(c.f).replace(/\s+/g, " ");
-    assert.match(s, c.binding, `${c.f}: clarification permission must be bound to the assessment gate`);
-    if (c.f === PI_PARENT) {
-      assert.match(s, /Require the actual fenced `oracle-input-assessment` record with outcome `USER_INPUT_REQUIRED` and matching `dependencyId`/);
-      assert.match(s, /from a completed run the parent witnessed starting in the current request epoch/);
+function decision(v) {
+  keys(v, ["id", "owner", "state", "decision", "selectedOption", "rationale",
+    "assumptions", "reconsiderationTrigger", "evidenceRefs"]);
+  for (const k of ["id", "decision", "selectedOption", "reconsiderationTrigger"]) nonempty(v[k]);
+  assert.equal(v.owner, "parent");
+  array(v.assumptions); array(v.evidenceRefs);
+  enumValue(v.state, ["unresolved", "settled"]);
+  if (v.state === "settled") {
+    keys(v.rationale, ["basis", "boundedAction"]);
+    nonempty(v.rationale.basis); nonempty(v.rationale.boundedAction);
+  } else {
+    keys(v.rationale, ["levers", "courses", "frameCheck", "selectionBasis"]);
+    array(v.rationale.levers); assert.ok(v.rationale.levers.length);
+    v.rationale.levers.forEach(nonempty);
+    array(v.rationale.courses); assert.ok(v.rationale.courses.length);
+    let selected = 0;
+    for (const course of v.rationale.courses) {
+      keys(course, ["course", "disposition", "basis"]);
+      nonempty(course.course); nonempty(course.basis);
+      enumValue(course.disposition, ["selected", "rejected"]);
+      if (course.disposition === "selected") selected += 1;
     }
-    assertObligation(s, c.binding, c.subject, `${c.f}: the assessment binding`);
-    // A blanket permission-to-ask sentence must fail this binding.
-    const bypass = "Any unresolved question permits asking the user directly, bypassing the assessment gate";
-    assert.ok(!c.binding.test(bypass), `${c.f}: bypass sentence must not satisfy the binding guard`);
-    // A prefix-negated restriction retaining the binding substring must be rejected.
-    const prefixNegated = "It is not true that " + c.bindingText + ".";
-    assert.ok(c.binding.test(prefixNegated), `${c.f}: precondition: prefix-negated form retains the substring`);
-    assert.throws(() => assertObligation(prefixNegated, c.binding, c.subject, `${c.f}: prefix-negated binding`),
-      `${c.f}: prefix-negated gate restriction must be rejected`);
+    assert.equal(selected, 1);
+    nonempty(v.rationale.frameCheck); nonempty(v.rationale.selectionBasis);
+  }
+}
+
+function actions(v, allowed) {
+  const decisions = new Set(v.authorDecisionItems.map((d) => d.id));
+  const findings = new Set((v.findings ?? []).map((f) => f.id));
+  assert.equal(decisions.size, v.authorDecisionItems.length);
+  assert.equal(findings.size, (v.findings ?? []).length);
+  array(v.nextActions);
+  for (const action of v.nextActions) {
+    keys(action, ["kind", "owner", "instruction", "acceptancePredicate", "findingIds", "decisionIds"]);
+    enumValue(action.kind, allowed); enumValue(action.owner, ["parent", "fixer"]);
+    nonempty(action.instruction); nonempty(action.acceptancePredicate);
+    array(action.findingIds); array(action.decisionIds);
+    assert.ok(action.findingIds.length + action.decisionIds.length > 0);
+    action.findingIds.forEach((id) => assert.ok(findings.has(id)));
+    action.decisionIds.forEach((id) => assert.ok(decisions.has(id)));
+  }
+}
+
+function advisory(v) {
+  keys(v, ["version", "dependencyId", "authorDecisionItems", "nextActions"]);
+  assert.equal(v.version, 2); nonempty(v.dependencyId);
+  array(v.authorDecisionItems); assert.ok(v.authorDecisionItems.length);
+  v.authorDecisionItems.forEach(decision);
+  actions(v, ["execute", "discover", "validate"]);
+}
+
+function input(v) {
+  assert.equal(v.version, 1); nonempty(v.dependencyId);
+  if (v.outcome === "AGENT_DECISION") {
+    keys(v, ["version", "dependencyId", "outcome", "selectedOption", "rationale",
+      "assumptions", "reconsiderationTrigger"]);
+    for (const k of ["selectedOption", "rationale", "reconsiderationTrigger"]) nonempty(v[k]);
+    array(v.assumptions);
+  } else {
+    assert.equal(v.outcome, "USER_INPUT_REQUIRED");
+    keys(v, ["version", "dependencyId", "outcome", "kind", "dependency", "question", "whyAgentCannotResolve"]);
+    enumValue(v.kind, ["authorization", "access", "fact", "product-intent"]);
+    for (const k of ["dependency", "question", "whyAgentCannotResolve"]) nonempty(v[k]);
+  }
+}
+
+const clear = (v, materialIds) => v.mode === "DELIVERY" &&
+  v.preconditions.status === "MET" &&
+  materialIds.every((id) => v.criteria.some((c) => c.id === id && c.status === "satisfied")) &&
+  !v.findings.some((f) => f.blocking);
+
+function review(v, assigned, materialIds, priorIds = []) {
+  keys(v, ["version", "mode", "reviewId", "unitId", "snapshotId", "reasonCodes", "preconditions",
+    "criteria", "findings", "priorFindingResolutions", "coverage", "residualRisks",
+    "authorDecisionItems", "nextActions"], assigned.stateRevision === undefined ? [] : ["stateRevision"]);
+  assert.equal(v.version, 2);
+  enumValue(v.mode, ["DELIVERY", "STATIC/DESIGN", "BLOCKED_REVIEW"]);
+  for (const k of ["mode", "reviewId", "unitId", "snapshotId"]) assert.equal(v[k], assigned[k]);
+  if (assigned.stateRevision !== undefined) assert.equal(v.stateRevision, assigned.stateRevision);
+  for (const k of ["reasonCodes", "criteria", "findings", "priorFindingResolutions",
+    "residualRisks", "authorDecisionItems"]) array(v[k]);
+  keys(v.preconditions, ["status", "evidenceRefs"]); array(v.preconditions.evidenceRefs);
+  enumValue(v.preconditions.status, ["MET", "REVIEW_PRECONDITION_NOT_MET"]);
+  keys(v.coverage, ["inspectedRefs", "executionOwners", "limitations"]);
+  Object.values(v.coverage).forEach(array);
+  const ids = new Set(v.findings.map((f) => f.id));
+  assert.equal(ids.size, v.findings.length);
+  for (const f of v.findings) {
+    keys(f, ["id", "blocking", "criterionIds", "locations", "defect", "evidenceRefs", "requiredAction"]);
+    nonempty(f.id); assert.equal(typeof f.blocking, "boolean"); nonempty(f.defect);
+    array(f.criterionIds); array(f.locations); array(f.evidenceRefs);
+    if (f.blocking) assert.ok(f.evidenceRefs.length);
+    for (const loc of f.locations) {
+      keys(loc, ["path", "lineStart", "lineEnd"]); nonempty(loc.path);
+      positive(loc.lineStart); positive(loc.lineEnd); assert.ok(loc.lineEnd >= loc.lineStart);
+    }
+    keys(f.requiredAction, ["instruction", "acceptancePredicate"], ["type"]);
+    nonempty(f.requiredAction.instruction); nonempty(f.requiredAction.acceptancePredicate);
+    if (f.requiredAction.type !== undefined)
+      enumValue(f.requiredAction.type, ["implementation", "validation", "evidence", "decision"]);
+  }
+  const criteria = new Set(v.criteria.map((c) => c.id));
+  assert.equal(criteria.size, v.criteria.length);
+  for (const c of v.criteria) {
+    keys(c, ["id", "status", "evidenceRefs", "findingIds"]);
+    nonempty(c.id); enumValue(c.status, ["satisfied", "not-satisfied", "not-assessed"]);
+    array(c.evidenceRefs); array(c.findingIds);
+    c.findingIds.forEach((id) => assert.ok(ids.has(id)));
+    if (materialIds.includes(c.id) && c.status !== "satisfied")
+      assert.ok(c.findingIds.some((id) => v.findings.some((f) => f.id === id && f.blocking)));
+  }
+  materialIds.forEach((id) => assert.ok(criteria.has(id)));
+  for (const p of v.priorFindingResolutions) {
+    keys(p, ["id", "status", "evidenceRefs"]);
+    nonempty(p.id); enumValue(p.status, ["resolved", "unresolved", "withdrawn", "superseded"]);
+    array(p.evidenceRefs);
+  }
+  priorIds.forEach((id) => assert.ok(v.priorFindingResolutions.some((p) => p.id === id)));
+  if (v.preconditions.status !== "MET") {
+    assert.ok(v.reasonCodes.includes("REVIEW_PRECONDITION_NOT_MET"));
+    assert.ok(v.findings.some((f) => f.blocking));
+  }
+  if (v.mode === "BLOCKED_REVIEW") assert.ok(v.findings.some((f) => f.blocking));
+  v.authorDecisionItems.forEach(decision);
+  const allowed = v.mode === "STATIC/DESIGN" ? ["remedy", "validate", "discover"] :
+    clear(v, materialIds) ? ["reconcile"] : ["remedy"];
+  actions(v, allowed);
+  if (v.mode !== "STATIC/DESIGN" && !clear(v, materialIds)) assert.ok(v.nextActions.length);
+}
+
+test("v2 examples parse and satisfy their distinct contracts", () => {
+  const [a, p, i] = examples(files.skill);
+  assignment(a); advisory(p); input(i);
+  const [r] = examples(files.review);
+  review(r, r, ["C1"]);
+  assert.equal(clear(r, ["C1"]), false);
+});
+
+test("assignments reject ballot, shortlist, missing basis and lane mismatch", () => {
+  const [a] = examples(files.skill);
+  for (const mutate of [
+    (v) => { v.request.verdict = "PASS"; },
+    (v) => { v.basis.shortlist = ["A", "B"]; },
+    (v) => { v.basis.preferredSolution = "A"; },
+    (v) => { delete v.basis.contraryEvidence; },
+    (v) => { v.request.kind = "assess-current"; },
+    (v) => { v.identity.generation = 0; },
+  ]) { const v = clone(a); mutate(v); assert.throws(() => assignment(v)); }
+});
+
+test("intelligence rationale rejects ratification-only and anonymous advice", () => {
+  const [, p] = examples(files.skill);
+  for (const mutate of [
+    (v) => { v.authorDecisionItems[0].rationale = "Pick the parent option"; },
+    (v) => { delete v.authorDecisionItems[0].rationale.frameCheck; },
+    (v) => { v.authorDecisionItems[0].rationale.levers = []; },
+    (v) => { v.nextActions[0].decisionIds = ["missing"]; },
+    (v) => { v.nextActions[0].decisionIds = []; },
+    (v) => { v.nextActions[0].acceptancePredicate = ""; },
+    (v) => { v.verdict = "PASS"; },
+  ]) { const v = clone(p); mutate(v); assert.throws(() => advisory(v)); }
+  const settled = clone(p);
+  settled.authorDecisionItems[0].state = "settled";
+  settled.authorDecisionItems[0].rationale = { basis: "Recorded requirement", boundedAction: "Implement it" };
+  advisory(settled);
+});
+
+test("input ownership keeps user and agent fields disjoint", () => {
+  const [, , i] = examples(files.skill);
+  const mixed = clone(i); mixed.selectedOption = "A";
+  assert.throws(() => input(mixed));
+  const missing = clone(i); delete missing.whyAgentCannotResolve;
+  assert.throws(() => input(missing));
+  input({ version: 1, dependencyId: "D", outcome: "AGENT_DECISION",
+    selectedOption: "Reversible default", rationale: "Evidence-backed",
+    assumptions: [], reconsiderationTrigger: "Changed requirement" });
+});
+
+test("delivery condition is derived, including stale evidence and non-delivery", () => {
+  const [r] = examples(files.review);
+  const good = clone(r);
+  good.criteria[0].status = "satisfied"; good.criteria[0].findingIds = [];
+  good.findings = []; good.nextActions = [];
+  review(good, good, ["C1"]); assert.equal(clear(good, ["C1"]), true);
+  const unassessed = clone(good); unassessed.criteria[0].status = "not-assessed";
+  assert.throws(() => review(unassessed, unassessed, ["C1"]));
+  const stale = clone(r); stale.preconditions.status = "REVIEW_PRECONDITION_NOT_MET";
+  stale.reasonCodes = ["REVIEW_PRECONDITION_NOT_MET"];
+  review(stale, stale, ["C1"]); assert.equal(clear(stale, ["C1"]), false);
+  const blocked = clone(r); blocked.mode = "BLOCKED_REVIEW";
+  review(blocked, blocked, ["C1"]); assert.equal(clear(blocked, ["C1"]), false);
+  const noBlock = clone(good); noBlock.mode = "BLOCKED_REVIEW";
+  assert.throws(() => review(noBlock, noBlock, ["C1"]));
+});
+
+test("review binding, batch references and conditional action legality bite", () => {
+  const [r] = examples(files.review);
+  for (const mutate of [
+    (v) => { v.snapshotId = "other"; },
+    (v) => { v.findings[0].evidenceRefs = []; },
+    (v) => { v.nextActions[0].kind = "validate"; },
+    (v) => { v.nextActions[0].findingIds = []; },
+    (v) => { v.findings[0].requiredAction.acceptancePredicate = ""; },
+    (v) => { v.stateRevision = 4; },
+  ]) { const v = clone(r); mutate(v); assert.throws(() => review(v, r, ["C1"])); }
+  assert.throws(() => review(r, r, ["C1"], ["old-F001"]));
+  const x = clone(r); x.stateRevision = 4;
+  review(x, x, ["C1"]);
+  const wrong = clone(x); wrong.stateRevision = 5;
+  assert.throws(() => review(wrong, x, ["C1"]));
+});
+
+// Stable canonical rules, not duplicated backend sentences.
+// Each guard starts at the normative clause, so prefix negation cannot satisfy it.
+const guards = {
+  skill: {
+    P1: /^The parent alone owns effects, state, routing, delegation, integration, recovery, user contact, continuation and closure/,
+    P2: /^Protected effects include identified staging\/production actions, consequential external\/shared mutations, privileged actions, deploy\/publish, machine-wide changes and destructive local database operations unless affirmatively disposable development\/test state; unknown or potentially valuable local databases remain protected\./,
+    P3: /^Ordinary repository work, local containers\/processes, tests and local dependency installation are not protected merely for state or network use\./,
+    P4: /^Only the parent executes protected effects with sufficient explicit authorization covering the exact effect, target and limits; reuse a still-valid grant/,
+    P5: /^Broad goals, routes, advice, assessment evidence and worker contracts grant no protected authorization; missing authorization blocks only that effect/,
+    P6: /^A bounded target names output\/behavior, authoritative basis, allowed scope, criterion IDs and observable expectations, evidence, validation owner\/commands, material cases and invariants/,
+    P8: /^Required deterministic behavior uses faithful input\/output, boundary, error and regression checks;.*never weaken authoritative expected results\./,
+    P9: /^Durable evidence is repository path plus content hash, immutable artifact\/URL or inline material evidence; runtime IDs, notifications, temporary paths and task reports alone establish nothing\./,
+    P10: /^Bind validation and assessment to root\/base.*tracked\/staged\/untracked.*material modes.*deletions.*manifest-lines hash/,
+    P11: /^Exclude mutable plans.*Product mutation stales evidence; bookkeeping-only edits do not/,
+    P12: /^Disclose inspection\/execution owners.*never claim computations.*unless independent execution was arranged/,
+    P13: /^Artifact identity, access, modality capability and evidence owner are distinct.*workers do not inherit attachments/,
+    P14: /^Parent-recorded criterion-level media inspection can support Oracle assessment.*that lack alone is no blocker or extra-call reason.*Explicit independent media verification requires exact access and capability/,
+    P15: /^With inaccessible media, Fixer proceeds only from independently sufficient textual\/structured requirements.*artifact-independent deterministic implementation remains allowed/,
+    P16: /^Keep corpus claims separate: semantic item-level truth.*every claimed item before identical-scope automation.*exact-rule transformation.*population claims/,
+    P17: /^Samples support discovery or sample-scoped claims, never unprocessed items.*Scripts, fixtures, presets, generated data, prior outputs and summaries are not corpus truth/,
+    P18: /^A worker result or terminal operation does not close an objective.*failed prerequisites block only dependents/,
+    P19: /^Negative\/blocked conclusions requiring material semantic inference.*separate Planning premise assessment.*Different-path controls do not prove normal outcomes/,
+    P20: /^Stop unfinished work only for.*ordinary Review-cap non-delivery is also permitted under its reference, never an impossibility claim, waiver of delivery requirements, route evasion or automatic contact\.$/,
+    P21: /^Inspect Reviewed\/xdev background children only on completion or transport resume, never poll.*Never revive superseded work/,
+    P23: /^Ordinary Reviewed tasks durably bind logical task ID plus generation before dispatch.*material conflicts fail closed/,
+    P24: /^Reviewed completion requires a clear final independent delivery assessment.*zero pending work.*Before those conditions hold, the parent must not describe the Reviewed\/xdev outcome or current snapshot as done, complete or ready; report 'implemented, unassessed', 'assessment deficient' or the exact outstanding condition\. Defined task\/transport statuses and factual completed substeps are unchanged\.$/,
+    I3: /^Technical, implementation, strategy, architecture and ordinary product\/UI choices.*Exactly three user-owned kinds exist:.*indispensable user-only access\/fact.*genuinely incompatible product-intent/,
+    I4: /^Before any user question.*actual fenced matching `USER_INPUT_REQUIRED`.*current request epoch.*Only this record permits asking/,
+    I5: /^Finish other feasible authorized work.*ask only when no authorized work remains ready/,
+    I6: /^Record objective ID.*A clear goal proceeds without ratification or specified implementation/,
+    I7: /^Initial goal clarification is one question in one user turn per objective, only for irreconcilable outcome readings after proportionate discovery and independent authorized preparation\..*never a menu\/questionnaire\. .*do not reset it; only a materially replaced objective does\./,
+    I8: /^Never reopen a clear goal.*neither authorizes guessing nor repeats the unchanged question.*materially new grounds or a narrower item/,
+    I9: /^Only the parent emits `USER_QUESTION: <exact question>` once, verbatim/,
+    A1: /^Parent preflight checks the typed core.*no requested answer, verdict, approval, preferred solution, shortlist or leaning is an input field/,
+    A2: /^Supply original instructions.*without a preferred solution or shortlist.*Historical choices\/artifacts are evidence, not constraints.*Do not omit/,
+    A3: /^Parent interpretations may appear only as labelled non-authoritative historical evidence.*after its own source-first framing/,
+    B1: /^Oracle independently reconstructs.*before evaluating parent conclusions.*Planning originates.*simpler\/no-change/,
+    B2: /^For unresolved material decisions, derive decisive levers.*exclusion reasons.*beyond the parent frame.*settled work needs basis and bounded action/,
+    B3: /^Planning and Review judge necessity.*never an invented|^Planning and Review judge necessity.*advice never relaxes criteria/,
+    B4: /^Actions are ordered and concrete.*Every action cites a real finding or decision/,
+  },
+  review: {
+    R1: /^DELIVERY requires the exact complete unit.*all required validation passing on that snapshot.*only the designated Review-action todo open/,
+    R2: /^STATIC\/DESIGN requires identified sources.*once per coherent unit.*never return/,
+    R3: /^BLOCKED_REVIEW requires all feasible checks run.*no viable authorized in-scope remedy.*always has blocking findings/,
+    R5: /^Missing\/contradictory context preventing judgment.*unestablished evidence provenance.*Cosmetic record defects/,
+    R7: /^Finish accepted scope, whole corrections batch and integration.*parent self-review cannot supply independent delivery evidence/,
+    R8: /^Echo assigned mode, Review ID, Unit ID and Snapshot ID verbatim.*stateRevision verbatim.*non-xdev results omit it/,
+    R9: /^Preconditions status is MET or REVIEW_PRECONDITION_NOT_MET.*unmet material criteria have blocking finding IDs.*Every prior finding/,
+    R10: /^Every blocking issue has a stable finding ID and current-state evidence\. Every requiredAction has a falsifiable acceptance predicate\. Deterministic claims require a mechanical predicate naming fixed inputs, a repeatable executable or rule-based static check and its expected result; where judgment is indispensable, name the authoritative criterion, concrete scenario\/evidence and observable resolving condition, and explain why a mechanical check alone is insufficient\. Oracle repairs incomplete predicates before returning; a non-conforming return is malformed, not delivery evidence, and the parent preserves it rather than inventing or weakening its predicate\./,
+    R11: /^A clear delivery assessment means DELIVERY mode, met preconditions, every material criterion satisfied and no blocking finding/,
+    R12: /^Decisions use the shared structured rationale.*with deficiencies allows remedy only.*clear DELIVERY allows reconcile only/,
+    R13: /^Findings use.*Reuse the prior ID for the same root cause.*Allocate new IDs after the highest historical suffix/,
+    R14: /^Turn the whole findings batch into one corrective contract\. Before every redispatch, name each prior finding's defect class \(shared failure mechanism, not instance\/location\), identify and inspect equivalent in-scope paths\/stages, and record how corrections or evidence-backed rebuttals and class-level checks cover them; justify inapplicability\..*rerun affected checks and every required validation, preserving applicable unchanged-input evidence\. Never interleave assessment with partial corrections\.$/,
+    R15: /^On recurrence of a defect class, even under a new finding ID, or after a second deficient whole-unit delivery assessment, stabilize before redispatch\..*materially change the repair or validation mechanism.*alone is not a changed strategy\..*Recheck root causes, equivalent affected paths, induced defects and test adequacy\. Executable regressions must execute the intended path and fail with the guard\/feature disabled, isolating prior state\/retries; static\/evidence\/judgment repairs must demonstrate detection of the prior failure by repeatable comparison or criterion-grounded adverse scenario\. Recurring findings retain history\.$/,
+    R16: /^Ordinary Reviewed units default to at most six DELIVERY\/BLOCKED_REVIEW dispatches; STATIC\/DESIGN, Planning and xdev are excluded\. Commit expenditure before call start: preflight rejection spends none; every started DELIVERY\/BLOCKED_REVIEW call spends one, including cancelled, replacement, malformed and precondition-failed calls\. No generation\/snapshot\/rename resets expenditure\. Only the repository owner, or a human explicitly designated by that owner for this decision, may extend a named unit's limit by an explicit finite added allowance\. Before using it, record the exact instruction, authority, unit, added allowance and resulting cumulative limit in the unit's existing assessment history\. The parent cannot self-grant, infer or generalize an extension; it changes effort only, not eligibility, findings, validation or independent assessment, and grants no user contact\. Later and extended dispatches still require eligibility and R15 stabilization\.$/,
+    R17: /^Assess the complete current unit.*genuine new material findings remain required.*rebuttals are not re-litigated/,
+    R18: /^Bind baseline and shipping scope.*subordinate clauses.*owner\/load applicability.*reader/,
+    R19: /^Compare actor, condition, prohibition and exception.*restore losses unless actual instructions authorize them/,
+    R20: /^Supported coverage\/dispositions.*bounded assurance, not exhaustive equivalence.*never extra completeness Reviews/,
+  },
+  xdev: {
+    X1: /^Resolve one exact state locator per objective.*never overwrite an existing plan/,
+    X5: /^Each durable semantic write increments State revision exactly once.*atomically R to N=R\+1.*Runtime-ID.*neutral/,
+    X6: /^Every authorized dispatch has a pre-dispatch ledger entry.*Logical ID\/generation is identity/,
+    X8: /^Todo IDs are stable and never reused.*Never silently delete\/reopen/,
+    X9: /^Reconcile the complete todo list on resume.*one designated Review-action todo stays open/,
+    X10: /^Outcome is active\/delivered\/conclusively blocked.*Local results never replace Outcome/,
+    X12: /^Baseline, sprint and final checks\/scenarios record revision, snapshot, execution owner.*material raw evidence/,
+    X14: /^Before ending an active root turn, reread the exact plan.*complete todo list.*automatic resume/,
+    X16: /^Batch consecutive sprints sharing contract, invariants or validation.*not sprint boundaries/,
+    X17: /^A last\/only sprint assessment serves final whole-state assessment.*every non-closure todo satisfied/,
+    X18: /^Routine active recovery needs no closure assessment.*Negative\/blocked closure.*revision-bound Oracle assessment/,
+    X19: /^Before dispatch at N, atomically record candidate ID\/revision N.*Oracle reads the entire exact plan/,
+    X20: /^Bind assessment to candidate ID\/revision\/proposed Outcome\/task\/generation.*Conclusions are advisory/,
+    X21: /^Atomic assessment integration.*N to N\+1.*Only a substantive premise-changing event/,
+    X22: /^Delivered settlement satisfies every non-closure todo.*never falsely discharged/,
+    X23: /^At delivered candidate N only the designated assessment todo may remain open.*active Outcome permits no terminal user-facing claim/,
+    X24: /^Awaiting_user is execution disposition, not Outcome.*does not permit contact/,
+  },
+};
+function rule(text, id) {
+  const m = text.match(new RegExp(`^- \\*\\*${id}\\*\\* (.*)$`, "m"));
+  assert.ok(m, `missing rule ${id}`);
+  return flat(m[1]);
+}
+test("critical canonical duties and polarity controls remain load-bearing", () => {
+  for (const [file, rules] of Object.entries(guards)) {
+    for (const [id, pattern] of Object.entries(rules)) {
+      const text = rule(files[file], id);
+      assert.match(text, pattern, `${file}/${id}`);
+      assert.throws(() => assert.match(`It is not true that ${text}`, pattern));
+      assert.throws(() => rule(files[file].replace(`- **${id}**`, "- **REMOVED**"), id));
+    }
   }
 });
 
-test("xdev results must bind the assigned state revision; others omit it", () => {
-  const s = read(REVIEW_REFERENCE).replace(/\s+/g, " ");
-  const binding = /xdev results must carry the assigned `stateRevision` verbatim/i;
-  assertObligation(s, binding, /xdev results must carry/i, "xdev revision must-carry obligation");
-  assert.match(s, /non-xdev results omit it/i, "non-xdev results omit the field");
-  assert.match(s, /Product bytes cannot identify semantic state/i, "snapshot bytes cannot stand in for state revision");
-  // Demotion and prefix-negation counterexamples must fail the binding guard.
-  const demoted = "xdev units may add a `stateRevision` string; it is otherwise omitted.";
-  assert.ok(!binding.test(demoted), "revision guard must bite when the binding is demoted");
-  const prefixed = "It is not true that xdev results must carry the assigned `stateRevision` verbatim.";
-  assert.throws(() => assertObligation(prefixed, binding, /xdev results must carry/i, "revision"),
-    "revision guard must bite on a prefix-negated must-carry obligation");
-});
+// F001/F002/F003/F004 repairs: each restored duty and corrected guard gets its own
+// falsifiable control, so a later narrowing fails here rather than passing silently.
+test("restored any-route, material-choice, dispatch-scope and clarification duties bite", () => {
+  const skill = flat(files.skill);
+  // F001: prompt/skill rewrites load and apply preservation on ANY route.
+  const anyRoute = /For a prompt or skill rewrite on \*\*any route\*\*, the parent first reads and applies/;
+  assert.match(skill, anyRoute);
+  assert.match(skill, /R18–R20/);
+  assert.match(skill, /not a Review requirement/);
+  assert.throws(() => assert.match(skill.replace("any route", "Review dispatches only"), anyRoute));
+  // F002: parent-settled material choices compare mechanism/coupling/reversibility and stress-check.
+  const p7 = rule(files.skill, "P7");
+  assert.match(p7, /including ones the parent settles by default without consulting Oracle/);
+  assert.match(p7, /compare causal mechanisms, coupling and reversibility/);
+  assert.match(p7, /stress-check the rationale under plausible evidence-supported changes in conditions/);
+  assert.throws(() => assert.match(p7.replace(/compare causal mechanisms, coupling and reversibility/, ""),
+    /compare causal mechanisms, coupling and reversibility/));
+  assert.doesNotMatch(flat(files.op), /For material choices, compare causal mechanisms/,
+    "restored duty lives in shared policy, not duplicated backend prose");
+  // F003: Review submission is scoped to Review; Fixer keeps its TARGET.
+  const x13 = rule(files.xdev, "X13");
+  assert.match(x13, /Review adds `REVIEW_SUBMISSION v2`/);
+  assert.match(x13, /Fixer dispatches use their bounded TARGET only/);
+  assert.throws(() => assert.match(x13.replace("Fixer dispatches use their bounded TARGET only.", ""),
+    /Fixer dispatches use their bounded TARGET only\./));
+  // The broadening defect F003 named: Review submission imposed on every dispatch.
+  const broadenedX13 = x13.replace("Review adds `REVIEW_SUBMISSION v2`,",
+    "Every dispatch uses `REVIEW_SUBMISSION v2`,");
+  assert.throws(() => assert.match(broadenedX13,
+    /Oracle dispatches use `ORACLE_ASSIGNMENT v2` plus the bound record their lane requires: Review adds `REVIEW_SUBMISSION v2`/));
+  // F004: I7's outcome-only condition cannot be broadened to valid implementation choices.
+  const i7 = rule(files.skill, "I7");
+  assert.match(i7, /only for irreconcilable outcome readings/);
+  const broadened = i7.replace("only for irreconcilable outcome readings",
+    "also for implementation choices with a clear goal");
+  assert.throws(() => assert.match(broadened, guards.skill.I7),
+    "broadening I7 to clear-goal implementation choices must fail its guard");
+  assert.throws(() => assert.match("It is not true that " + i7, guards.skill.I7));
 
-test("shared contract states the full BLOCKED_REVIEW admission predicate", () => {
-  const s = read(REVIEW_REFERENCE).replace(/\s+/g, " ");
-  assert.match(s, /`BLOCKED_REVIEW` \| Feasible checks run, blocked checks evidenced, no viable authorized in-scope remedy\./);
-  assert.match(s, /Readiness, approval, or relaxation of xdev closure; returns only `Verdict: FAIL`/);
-  assert.match(s, /Never dispatch `BLOCKED_REVIEW` to find a remedy or spend a capped slot early/);
-});
-
-test("both parents resolve the contract path independently of working directory", () => {
-  for (const f of [PI_PARENT, OC_PARENT]) {
-    const s = read(f);
-    assert.match(s, /agent-review\/SKILL\.md/, `${f} must name the exact contract path`);
-    const cwdGuard = f === PI_PARENT
-      ? /never assuming the working directory is the repository/i
-      : /never assume the caller[\s\S]{1,3}s[\s\S]{1,3}s?working directory/i;
-    assert.match(s, cwdGuard, `${f} must warn against cwd assumptions`);
+  // ANTI-LOOP-01: these control canonical wording, not runtime agent compliance.
+  const weakenings = [
+    ["skill", "P20", "waiver of delivery requirements", "waiver"],
+    ["skill", "P24", "must not describe", "may describe"],
+    ["skill", "P24", "Defined task/transport statuses and factual completed substeps are unchanged.", ""],
+    ["review", "R10", "Deterministic claims require a mechanical predicate", "Deterministic claims may use any observable predicate"],
+    ["review", "R10", "where judgment is indispensable", "even when judgment is unnecessary"],
+    ["review", "R10", "is malformed, not delivery evidence", "is usable delivery evidence"],
+    ["review", "R14", "Before every redispatch", "After the second deficient assessment"],
+    ["review", "R14", "identify and inspect equivalent in-scope paths/stages", "inspect the cited instance only"],
+    ["review", "R15", "On recurrence of a defect class, even under a new finding ID, or after a second", "After a second"],
+    ["review", "R15", "materially change the repair or validation mechanism", "patch another instance"],
+    ["review", "R15", "static/evidence/judgment repairs must demonstrate detection of the prior failure", "static/evidence/judgment repairs need no detection evidence"],
+    ["review", "R16", "Only the repository owner", "Only the parent"],
+    ["review", "R16", "an explicit finite added allowance", "an unlimited allowance"],
+    ["review", "R16", "record the exact instruction, authority, unit, added allowance and resulting cumulative limit", "record only the new limit"],
+    ["review", "R16", "No generation/snapshot/rename resets expenditure", "A new generation resets expenditure"],
+    ["review", "R16", "it changes effort only, not eligibility, findings, validation or independent assessment", "it waives independent assessment"],
+  ];
+  for (const [file, id, before, after] of weakenings) {
+    const text = rule(files[file], id);
+    assert.ok(text.includes(before), `missing ${file}/${id} mutation target`);
+    const weakened = text.replace(before, after);
+    assert.notEqual(weakened, text);
+    assert.throws(() => assert.match(weakened, guards[file][id]),
+      `${file}/${id} weakening must fail its guard`);
   }
 });
 
-test("opencode oracle carries concrete read-only boundary and protected-effect definitions", () => {
-  const s = read(OC_ORACLE);
-  assert.match(s, /READ-ONLY inspection only/);
-  assert.match(s, /run builds or\s+tests/);
-  assert.match(s, /not an enforced sandbox/);
-  assert.match(s, /staging\/production mutations/);
-  assert.match(s, /Unknown or potentially valuable\s+local databases remain protected/);
-  assert.match(s, /DELIVERY` Review only/);
-  assert.match(s, /STATIC\/DESIGN` Review requires identified sources/);
-});
-
-test("opencode mirrors the structured user-input assessment contract", () => {
-  const o = read(OC_ORACLE);
-  assert.match(o, /## User-input assessments/);
-  assert.match(o, /oracle-input-assessment/);
-  assert.match(o, /USER_INPUT_ASSESSMENT/);
-  assert.match(o, /goal-clarification` purpose uses `kind: "product-intent"/);
-  const p = read(OC_PARENT);
-  assert.match(p, /matching `USER_INPUT_REQUIRED` record with that `dependencyId`/);
-});
-
-test("opencode oracle loads the authoritative xdev skill for closure", () => {
-  const s = read(OC_ORACLE);
-  assert.match(s, /Load `skills\/xdev\/SKILL\.md`/);
-  assert.match(s, /SOLE\s+authority for xdev lifecycle/);
-  assert.match(s, /subordinate to that skill/);
-});
-
-test("backend frontmatter is preserved (no accidental mode/tools drift)", () => {
-  // Pi role prompts declare a frontmatter block; opencode uses mode: subagent.
-  const piOracle = read(PI_ORACLE);
-  assert.match(piOracle, /^---\n/);
-  const ocOracle = read(OC_ORACLE);
-  assert.match(ocOracle, /^---\n/);
-  assert.match(ocOracle, /mode: subagent/);
-  const review = read(REVIEW_SKILL);
-  assert.match(review, /^---\nname: agent-review\n/);
-});
-
-test("root sanity: paths resolve", () => {
-  for (const rel of [PI_PARENT, PI_ORACLE, PI_FIXER, OC_PARENT, OC_ORACLE, OC_FIXER, REVIEW_SKILL, REVIEW_REFERENCE, XDEV_SKILL]) {
-    assert.ok(existsSync(new URL(`../${rel}`, import.meta.url)), `missing ${rel}`);
+test("backend adapters require loading, bounded roles and read-only boundaries", () => {
+  for (const key of ["pp", "op", "po", "oo", "pf", "of"])
+    assert.match(files[key], /agent-review\/SKILL\.md/);
+  for (const key of ["pp", "op"]) {
+    const s = flat(files[key]);
+    assert.match(s, /Before any Oracle dispatch/);
+    assert.match(s, /never assume the working directory is the repository/);
+    assert.match(s, /ORACLE_ASSIGNMENT v2.*never a shortlist or requested verdict/);
+    assert.match(s, /Implement, self-review and validate locally without Oracle permission/);
+    for (const route of ["Direct", "Reviewed", "xdev"]) assert.ok(s.includes(`| ${route} |`));
   }
-  assert.ok(root.length > 0);
+  for (const key of ["po", "oo"]) {
+    const s = flat(files[key]);
+    assert.match(s, /Do not edit files, spawn agents/);
+    assert.match(s, /never execute it yourself/);
+    assert.match(s, /run builds\/tests\/package managers/);
+    assert.match(s, /not an enforced sandbox/);
+    assert.match(s, /whitelist is a limit, not a grant/);
+    for (const cmd of ["git diff", "git rev-parse", "jj diff", "gh pr diff", "gh api"])
+      assert.ok(s.includes(cmd));
+    assert.match(s, /oracle-review-result/);
+    assert.match(s, /oracle-input-assessment/);
+    assert.match(s, /xdev\/SKILL\.md/);
+  }
+  for (const key of ["pf", "of"]) {
+    const s = flat(files[key]);
+    assert.match(s, /Before mutation read the entire TARGET/);
+    assert.match(s, /ordinary in-scope implementation choices/);
+    assert.match(s, /Never execute protected effects/);
+    assert.match(s, /Documentation lookup is limited to assigned implementation needs; no open-ended research/);
+    assert.match(s, /Never modify\/discharge todo checkboxes/);
+    assert.match(s, /Do not broaden validation/);
+    for (const status of ["IMPLEMENTED_AND_VALIDATED", "INCOMPLETE_REMEDIABLE", "BLOCKED"])
+      assert.ok(s.includes(status));
+  }
+  assert.match(files.pp, /For pi dispatches, Oracle performs no shell execution/);
+});
+
+test("pi transport preserves exact payload semantics and diagram presentation", () => {
+  const s = flat(files.pp);
+  for (const marker of ["STATUS:CONTINUE <next step>", "STATUS:WAIT <pending event>",
+    "STATUS:DONE", "STATUS:BLOCKED user oracle=<run-id> dependency=<dependency-id> <description>",
+    "STATUS:BLOCKED external owner=<nonhuman-owner> <description>", "STATUS:FAILED <reason>"])
+    assert.ok(s.includes(marker));
+  for (const phrase of ["final line at column zero", "same physical line",
+    "launching unstarted work is CONTINUE, not WAIT", "start nothing else while waiting",
+    "Human replies require user BLOCKED", "PI_MAX_CONTINUATIONS=0", "Measure rendered width"])
+    assert.ok(s.includes(phrase));
+});
+
+test("records preserve lifecycle fields and reference canonical assessment", () => {
+  for (const key of ["unit", "plan", "sprint"])
+    assert.match(files[key], /schema_version:\*?\*? 3\.0|schema_version: 3\.0/);
+  for (const key of ["plan", "sprint"]) {
+    assert.match(files[key], /agent-review\/references\/review\.md/);
+    assert.match(files[key], /oracle-review-result/);
+    assert.match(files[key], /Snapshot/);
+  }
+  for (const field of ["State revision", "Outcome", "Execution disposition", "Task Ledger",
+    "Authoritative Todo List", "Initial clarification used", "Terminal Decision Record",
+    "Oracle logical task ID / generation", "Todo settlement"])
+    assert.ok(files.plan.includes(field));
+  assert.match(files.unit, /Initial clarification|initial clarification/);
+  assert.match(files.unit, /Second-deficiency changed strategy/);
+  assert.match(files.xdev, /oracle-closure-assessment/);
+  for (const key of ["skill", "review", "xdev", "unit", "plan", "sprint"])
+    assert.doesNotMatch(files[key], /REVIEW_READY|Verdict: PASS|Verdict: FAIL|"verdict"|"orchestratorBrief"/);
+});
+
+const piOracleFront = `---
+name: oracle
+description: Decision adviser, strategic technical advisor, and read-only code reviewer.
+tools: read, grep, find, ls, bash, contact_supervisor
+skills: agent-review
+async: true
+model: gpt-6.1-sol
+thinking: xhigh
+advertise: true
+systemPromptMode: replace
+inheritProjectContext: true
+inheritGlobalContext: false
+inheritSkills: true
+---`;
+const piFixerFront = `---
+name: fixer
+description: Bounded implementation specialist for clear, assigned work.
+tools: read, grep, find, ls, bash, edit, write, resolve-library-id, query-docs, contact_supervisor
+skills: agent-review
+async: true
+model: DeepSeek-V4.1-Flash
+thinking: max
+advertise: true
+systemPromptMode: replace
+inheritProjectContext: true
+inheritGlobalContext: false
+inheritSkills: true
+---`;
+const ocParentFront = `---
+description: AI coding orchestrator that delegates bounded work, resolves ordinary decisions at agent level, and reconciles results.
+mode: primary
+model: litellm/DeepSeek-V4.1-Flash#max
+---`;
+const permissionFront = (description, model, editing) => `---
+description: ${description}
+mode: subagent
+model: ${model}
+permissions:
+  - action: "*"
+    resource: "*"
+    effect: deny
+  - action: read
+    resource: "*"
+    effect: allow
+  - action: glob
+    resource: "*"
+    effect: allow
+  - action: grep
+    resource: "*"
+    effect: allow
+${editing ? `  - action: edit
+    resource: "*"
+    effect: allow
+` : ""}  - action: shell
+    resource: "*"
+    effect: allow
+---`;
+test("all backend frontmatter remains byte-identical", () => {
+  const expected = {
+    po: piOracleFront, pf: piFixerFront, op: ocParentFront,
+    oo: permissionFront("Decision adviser, strategic technical advisor, and read-only code reviewer.", "litellm/gpt-6.1-sol#max", false),
+    of: permissionFront("Bounded implementation specialist for clear, assigned work.", "litellm/DeepSeek-V4.1-Flash#max", true),
+  };
+  for (const [key, value] of Object.entries(expected))
+    assert.equal(files[key].match(/^---\n[\s\S]*?\n---/)[0], value);
+});
+
+test("backend worker bodies remain consistent except documented shell wording", () => {
+  const body = (s) => s.replace(/^---\n[\s\S]*?\n---\n/, "").trim();
+  assert.equal(body(files.pf), body(files.of));
+  const normalize = (s) => flat(body(s)).replace(
+    "Shell is for READ-ONLY inspection only, forbidden before bootstrap and unless the bound parent contract expressly permits inspection. The whitelist is a limit, not a grant:",
+    "Shell is forbidden before bootstrap and unless the bound parent contract expressly permits inspection. The whitelist is a limit, not a grant. Only these commands are allowed:");
+  assert.equal(normalize(files.po), normalize(files.oo));
 });

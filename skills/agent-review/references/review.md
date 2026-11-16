@@ -1,232 +1,141 @@
-# Review reference
+# Independent Review assessment
 
-Modes, entry conditions, assignment, result schema and anti-loop rules; loaded from `SKILL.md`.
-Review is a delivery gate, never an intermediate micro-gate.
+This file alone owns Review. Load `agent-review/SKILL.md` first.
+Review judges evidence and gives concrete corrections/decisions; it is not a permission
+ballot or an intermediate micro-assessment. The parent owns delivery.
 
-## Modes and entry conditions
+## Modes and eligibility
 
-| Mode | Admissible when | Not a substitute for |
-|---|---|---|
-| `DELIVERY` | `REVIEW_READY` (below), pre-Review validation passing, no pending delivery-blocking correction, reconciled state, xdev todo reconciliation with its Review-action todo open. | — |
-| `STATIC/DESIGN` | Identified sources or design scope, authoritative criteria, reviewer evidence; completed implementation **not** required. | Delivery Review; a PASS here never approves delivery. |
-| `BLOCKED_REVIEW` | Feasible checks run, blocked checks evidenced, no viable authorized in-scope remedy. | Readiness, approval, or relaxation of xdev closure; returns only `Verdict: FAIL`. |
+- **R1** DELIVERY requires the exact complete unit, contract and immutable snapshot; passing criterion-level execution or faithful static/scenario evidence; integrated non-superseded results; no pending scoped implementation, correction or integration; all required validation passing on that snapshot; resolved/revalidated prior actionable findings and no actionable in-scope defect. xdev also requires its todo reconciliation, with only the designated Review-action todo open.
+- **R2** STATIC/DESIGN requires identified sources/design scope, authoritative criteria and reviewer evidence, not implementation or passing delivery checks. It is optional, non-gating and once per coherent unit across snapshots/generations; never return to it or substitute it for delivery assessment.
+- **R3** BLOCKED_REVIEW requires all feasible checks run, authoritative blocked-check evidence and no viable authorized in-scope remedy. It is explicit non-delivery, always has blocking findings and never relaxes readiness, authorization or xdev closure. Never use it to discover remedies or spend a slot early.
+- **R4** Incomplete/remediable work returns to authorized repair, discovery or decision advice, not user contact. Advice cannot waive acceptance, validation, snapshot identity or independent delivery assessment.
+- **R5** Missing/contradictory context preventing judgment of target, snapshot, material acceptance, integration, pending work or required validation is an unmet precondition, including unestablished evidence provenance, missing required parent media evidence or unavailable explicitly required independent verification. Cosmetic record defects are observations once authoritative evidence fixes material facts.
 
-`REVIEW_READY` means ready for delivery Review, not approved. The parent **criterion self-audit**
-references passing applicable execution evidence per material criterion, or static/scenario evidence
-where a command cannot honestly suffice, and reconciles every prior finding. It needs no separate
-artifact or approval.
+Eligibility is recorded as reconciled facts, not a separate readiness label or approval.
+The parent supplies its complete criterion self-audit and prior resolutions. Oracle reads
+authoritative changed files and validation evidence directly, names exact missing checks
+for the parent and discloses execution ownership under shared policy.
+Read a changed file rather than request the same unchanged diff twice.
 
-- An incomplete unit or failed check returns to authorized repair, discovery, or decision advice,
-  not user contact. Decision advice cannot waive acceptance, required validation, snapshot identity,
-  or final independent Review. Readiness defects block Review only while material acceptance,
-  snapshot, integration, pending-work, or required-validation claims stay indeterminate; cosmetic
-  record defects are observations once authoritative evidence fixes the material facts.
-- Oracle reads authoritative changed files and validation evidence directly, names the exact shell
-  checks the parent must run rather than running missing validation, and discloses evidence
-  ownership: parent and Fixer checks are execution evidence, not Oracle computations.
-- Durable evidence is a repository path plus content hash, an immutable artifact or URL, or inline
-  material evidence; runtime IDs, notifications, temporary paths, and task reports alone are
-  volatile and establish nothing. Missing required parent-owned evidence, or required independent
-  media verification the reviewer cannot perform, is a precondition failure.
-- Never dispatch `BLOCKED_REVIEW` to find a remedy or spend a capped slot early.
+## Submission and preflight
 
-## Parent dispatch discipline
-
-The parent supplies all evidence, never requests or prefers PASS, and validates the assignment
-before dispatch. Finish accepted scope, the full corrections batch and integration before Review of
-the complete coherent unit, never a file, finding or generation. Preflight rejection before call start
-spends no slot; reused identity/history resets neither count nor readiness. Independence concerns
-authorship, not model choice: parent self-review cannot supply independent delivery PASS.
-
-## REVIEW_ASSIGNMENT v1 — required input
-
-Fill every field; arrays may reference durable evidence Oracle can read.
+Use `ORACLE_ASSIGNMENT v2` plus this bound submission. Fill all fields, N/A only where
+inapplicable. Original instructions/sources/raw evidence precede parent conclusions.
 
 ```text
-REVIEW_ASSIGNMENT v1
+REVIEW_SUBMISSION v2
 Mode: DELIVERY | STATIC/DESIGN | BLOCKED_REVIEW
-Review contract: <accessible path + hash>
-Objective ID / goal revision: <stable identity>
-Unit ID / complete accepted outcome: <identity and end-to-end boundary>
-Review dispatch ordinal / prior dispatches: <history references>
-Review ID: <exact identity string, echoed verbatim in the result>
-Route: <route>
-xdev state path / revision / covered sprint and todo IDs: <values or N/A>
+Review contract: <exact accessible path + hash>
+Objective ID / goal revision:
+Unit ID / complete accepted end-to-end outcome:
+Review ID:
+Dispatch ordinal / complete prior dispatch history / recorded owner extension: <or N/A>
+Route:
+xdev state path / revision / covered sprint and todo IDs: <or N/A>
 
-SNAPSHOT BINDING <root/base; commit/tree or manifest + hash; Snapshot ID; paths, status, modes,
-byte hashes, deletions, exclusions; product inputs and integration context; change since the last
-Review; output evidence separate.>
-ORIGINAL INSTRUCTIONS <task verbatim; later constraints and exact authorizations; references only
-where Oracle can read their exact contents.>
-CONTRACT AND CRITERIA <contract + hash; criterion IDs with observable expected outcomes,
-authoritative basis, invariants, allowed scope, exclusions, required validation and owner.>
-OBSERVATIONS AND RAW EVIDENCE <observation | source/owner | exact reference | coverage limits;
-check commands, inputs, exit status, expected vs actual, raw output.>
-CONTRARY EVIDENCE AND KNOWN GAPS <fact or gap | source | affected criterion | consequence; access
-and modality limits; parent-owned media or corpus evidence.>
-PARENT INTERPRETATIONS — NOT AUTHORITATIVE EXPECTED RESULTS <labeled, with supporting and contrary
-references, or none; no requested verdict, approval framing, or preference.>
-RECONCILED STATE <per-criterion acceptance claims with evidence and owner; integration and
-nonsuperseded results; pending work; defects; validation applicability; readiness gate and
-evidence. DELIVERY: REVIEW_READY. STATIC/DESIGN: sources, criteria, assessment evidence.
-BLOCKED_REVIEW: feasible checks, blocked-check evidence, exhausted remedies.>
-COMPLETE PRIOR-FINDINGS BATCH <every prior raw Review result; per finding ID its requirement,
-required action, parent disposition (corrected | rebutted | superseded | outstanding), evidence,
-affected paths and checks, supersession mapping; after a second whole-unit FAIL, the changed
-strategy and evidence, with intended-path and disabled-feature controls.>
-REQUEST Assess this exact current unit independently against the authoritative criteria; return
-the mandated result with all material findings as one batch. Do not approve future corrections or
-treat summaries as inspected evidence.
+SNAPSHOT BINDING
+<root/base; commit/tree or deterministic manifest + hash; exact Snapshot ID;
+paths/status/material modes/byte hashes/deletions/exclusions; product inputs,
+integration context and change since prior assessment; output evidence separately>
+
+CONTRACT AND CRITERIA
+<contract + hash; IDs, materiality, observable expectations, authoritative basis,
+invariants, allowed scope/exclusions; required validation and owner>
+
+RAW EVIDENCE AND LIMITS
+<observation | source/inspection or execution owner | exact reference | coverage;
+commands/inputs/exits/expected vs actual/raw output; contrary evidence and gaps;
+access/modality limits and parent-recorded media/corpus evidence>
+
+RECONCILED STATE
+<criterion self-audit with evidence/owner; integration/non-superseded results;
+pending work, defects, validation applicability and every mode-eligibility fact;
+material undecided questions; labelled parent interpretations are non-authoritative>
+
+COMPLETE PRIOR-FINDINGS BATCH
+<every raw prior result; each finding's requirement/action/disposition:
+corrected | rebutted | superseded | outstanding; evidence and supersession mapping;
+for every redispatch: defect-class mapping, equivalent in-scope paths/stages inspected,
+class-level corrections/rebuttals/checks and limits; when R15 applies: earlier correction
+failure, changed repair/validation mechanism, intended-path/disabled-feature controls>
+
+REQUEST
+Assess this exact current unit against authoritative criteria and independently
+judge its approach. Return all material findings, prior resolutions, decisions and
+ordered actions in one bound result. Parent interpretations do not bound the search.
+Do not approve future corrections or claim summaries were directly inspected.
 ```
 
-## Mandated Oracle result
+- **R6** Before call start, parent preflight checks fields, readable bindings, identity, history, pending work and structural/internal consistency; malformedness requires parsing, not semantic judgment. Settle safety/corpus/provenance dependencies before dispatch, not with a capped intake call.
+- **R7** Finish accepted scope, whole corrections batch and integration before assessing the coherent unit; never dispatch per file, finding, diagnostic or generation. Independence concerns authorship, not model choice: parent self-review cannot supply independent delivery evidence.
 
-Return one `Verdict: PASS` or `Verdict: FAIL` line plus exactly one `oracle-review-result` JSON
-block whose `verdict` matches it. `a | b` marks **allowed alternatives**, not text to emit.
+## Result
+
+Return exactly one `oracle-review-result`, no verdict/approval line or scalar ballot.
+Allowed alternatives below are enums, not literal pipe strings.
 
 ```json
-{"version": 1, "mode": "DELIVERY", "reviewId": "<id>", "unitId": "<unit id>",
- "snapshotId": "<snapshot id>", "verdict": "FAIL", "reasonCodes": [],
- "preconditions": {"status": "MET", "evidenceRefs": []},
- "criteria": [{"id": "<criterion ID>", "status": "satisfied | not-satisfied | not-assessed",
-               "evidenceRefs": [], "findingIds": []}],
- "findings": [{"id": "<unitId>-F001", "blocking": true, "criterionIds": [],
-   "locations": [{"path": "<path>", "lineStart": 1, "lineEnd": 1}],
-   "defect": "<current-state failure>",
-   "evidenceRefs": ["<reproduction: command, scenario, or static proof; expected vs observed>"],
-   "requiredAction": {"instruction": "<bounded remediation outcome>",
-     "acceptancePredicate": "<observable condition resolving the defect>"}}],
- "priorFindingResolutions": [{"id": "<prior id>",
-   "status": "resolved | unresolved | withdrawn | superseded", "evidenceRefs": []}],
- "coverage": {"inspectedRefs": [], "executionOwners": [], "limitations": []},
- "residualRisks": [],
- "orchestratorBrief": {"stage": "DELIVERY",
-   "judgment": {"qualityLevel": "DEFICIENT", "authorDecisionItems": []},
-   "nextActions": [{"kind": "remedy", "owner": "parent",
-     "instruction": "<bounded next action covering one coherent findings batch>",
-     "acceptancePredicate": "<observable resolution condition>",
-     "findingIds": [], "decisionIds": []}]}}
+{
+  "version": 2, "mode": "DELIVERY", "reviewId": "<assigned Review ID>",
+  "unitId": "<assigned Unit ID>", "snapshotId": "<assigned Snapshot ID>",
+  "reasonCodes": [],
+  "preconditions": {"status": "MET", "evidenceRefs": []},
+  "criteria": [{
+    "id": "C1", "status": "not-satisfied", "evidenceRefs": [], "findingIds": ["<unit>-F001"]
+  }],
+  "findings": [{
+    "id": "<unit>-F001", "blocking": true, "criterionIds": ["C1"],
+    "locations": [{"path": "<path>", "lineStart": 1, "lineEnd": 1}],
+    "defect": "<current-state failure>",
+    "evidenceRefs": ["<static proof or reproduction: expected vs observed>"],
+    "requiredAction": {
+      "instruction": "<bounded remediation outcome>",
+      "acceptancePredicate": "<observable condition resolving this defect>"
+    }
+  }],
+  "priorFindingResolutions": [],
+  "coverage": {"inspectedRefs": [], "executionOwners": [], "limitations": []},
+  "residualRisks": [],
+  "authorDecisionItems": [],
+  "nextActions": [{
+    "kind": "remedy", "owner": "parent",
+    "instruction": "<one coherent corrective batch>",
+    "acceptancePredicate": "<observable resolution>",
+    "findingIds": ["<unit>-F001"], "decisionIds": []
+  }]
+}
 ```
 
-### `orchestratorBrief` — the orchestrator-facing instruction
+- **R8** Echo assigned mode, Review ID, Unit ID and Snapshot ID verbatim. xdev results carry assigned stateRevision verbatim; non-xdev results omit it. Product bytes cannot identify semantic state. Version is 2; all shown fields/arrays are required, empty rather than fabricated.
+- **R9** Preconditions status is MET or REVIEW_PRECONDITION_NOT_MET; unmet status includes that reason code and a blocking finding. Criteria are satisfied/not-satisfied/not-assessed, covering every assigned criterion; unmet material criteria have blocking finding IDs. Every prior finding receives resolved/unresolved/withdrawn/superseded status with evidence.
+- **R10** Every blocking issue has a stable finding ID and current-state evidence. Every requiredAction has a falsifiable acceptance predicate. Deterministic claims require a mechanical predicate naming fixed inputs, a repeatable executable or rule-based static check and its expected result; where judgment is indispensable, name the authoritative criterion, concrete scenario/evidence and observable resolving condition, and explain why a mechanical check alone is insufficient. Oracle repairs incomplete predicates before returning; a non-conforming return is malformed, not delivery evidence, and the parent preserves it rather than inventing or weakening its predicate. No anonymous blocker, unsupported standard, vague “improve” or “ask Oracle again”. Locations use integer lineStart/lineEnd; requiredAction type implementation/validation/evidence/decision is optional.
+- **R11** A clear delivery assessment means DELIVERY mode, met preconditions, every material criterion satisfied and no blocking finding; the parent derives it from the result, never requests a ballot. BLOCKED_REVIEW cannot be clear. A deficient delivery assessment has unmet preconditions, unmet/unassessed material criteria or blocking findings.
+- **R12** Decisions use the shared structured rationale and remain recommendations, not acceptance criteria. Ordered nextActions cite real findings/decisions and nonempty instructions/predicates. Planning allows execute/discover/validate; STATIC/DESIGN allows remedy/validate/discover; DELIVERY or BLOCKED_REVIEW with deficiencies allows remedy only; clear DELIVERY allows reconcile only. Remedies cover implementation, validation, evidence repair or decision settlement, not a mandatory implementation over equivalent remedies. Actions are nonempty for deficient/blocked assessments and empty only when no action/advice applies.
 
-Required in every Review result; relaxes no contract invariant.
+Criteria violations are findings. An acceptable-but-improvable or unnecessary approach is
+a shared authorDecisionItems recommendation, never an invented blocking defect.
+Apply shared source-first intelligence and exact next steps even when criteria are satisfied.
+An out-of-scope or newly protected alternative is reported, never performed or assumed.
+An unmet-precondition result uses this same shape, with applicable fields and no fabricated
+inspection. A malformed result cannot be rescued by its actions.
 
-Planning's full return contract is in `agent-review/SKILL.md`: decision and one `oracle-advisory-result`,
-no Review verdict. Input-assessment and xdev closure contracts are unchanged.
-An `acceptancePredicate` is an executable check, a faithful scenario, or a static proof; commands
-name bound inputs, expected result, and owner, and architectural or product-level judgment gets no
-invented one.
+## IDs, correction and effort
 
-### Field types, alternatives, and binding agreement
+- **R13** Findings use `<unitId>-F001`, F002 and onward. Reuse the prior ID for the same root cause after line movement; never renumber, reset or assign an old ID to a different cause. Allocate new IDs after the highest historical suffix. Generation, snapshot, rename or prose hash never decides semantic identity or resets unit identity, contact allowance or dispatch count.
+- **R14** Turn the whole findings batch into one corrective contract. Before every redispatch, name each prior finding's defect class (shared failure mechanism, not instance/location), identify and inspect equivalent in-scope paths/stages, and record how corrections or evidence-backed rebuttals and class-level checks cover them; justify inapplicability. Repair/self-review/validate locally, rerun affected checks and every required validation, preserving applicable unchanged-input evidence. Never interleave assessment with partial corrections.
+- **R15** On recurrence of a defect class, even under a new finding ID, or after a second deficient whole-unit delivery assessment, stabilize before redispatch. Explain why the previous correction/check missed the class and materially change the repair or validation mechanism to address that cause; another snapshot, additional instances patched or another assessment alone is not a changed strategy. Recheck root causes, equivalent affected paths, induced defects and test adequacy. Executable regressions must execute the intended path and fail with the guard/feature disabled, isolating prior state/retries; static/evidence/judgment repairs must demonstrate detection of the prior failure by repeatable comparison or criterion-grounded adverse scenario. Recurring findings retain history.
+- **R16** Ordinary Reviewed units default to at most six DELIVERY/BLOCKED_REVIEW dispatches; STATIC/DESIGN, Planning and xdev are excluded. Commit expenditure before call start: preflight rejection spends none; every started DELIVERY/BLOCKED_REVIEW call spends one, including cancelled, replacement, malformed and precondition-failed calls. No generation/snapshot/rename resets expenditure. Only the repository owner, or a human explicitly designated by that owner for this decision, may extend a named unit's limit by an explicit finite added allowance. Before using it, record the exact instruction, authority, unit, added allowance and resulting cumulative limit in the unit's existing assessment history. The parent cannot self-grant, infer or generalize an extension; it changes effort only, not eligibility, findings, validation or independent assessment, and grants no user contact. Later and extended dispatches still require eligibility and R15 stabilization.
+- **R17** Assess the complete current unit on first and subsequent calls, not just old findings. Previously overlooked defects include evidence and the earlier coverage gap. Never block on hypothetical future bytes, absent stale defects, unrelated scope or preferences; genuine new material findings remain required. Replacements assess current bytes independently; unchanged-input evidence survives and evidence-backed rebuttals are not re-litigated.
 
-`version` is `1`; `mode` equals assignment `Mode`; `verdict` is exactly `PASS` or `FAIL` and matches
-the textual verdict line. Each enum takes one shown alternative, else contract-invalid. `reviewId`,
-`unitId`, and `snapshotId` echo assigned `Review ID`, `Unit ID`, and `Snapshot ID` verbatim.
-xdev results must carry the assigned `stateRevision` verbatim; non-xdev results omit it. Product bytes cannot identify
-semantic state. `preconditions.status` is `MET` or unmet, unmet must be represented as
-`REVIEW_PRECONDITION_NOT_MET`, and that forces `FAIL`. `reasonCodes`, `criteria`, `findings`,
-`priorFindingResolutions`, and `residualRisks` are arrays, empty rather than omitted; `locations`
-holds integer `lineStart`/`lineEnd`. `requiredAction.type` (`implementation`, `validation`,
-`evidence`, `decision`) is permitted, not mandatory. Unmet-precondition, `STATIC/DESIGN`, and xdev
-results use one shape: only the applicable fields are populated, non-applicable ones stay empty,
-and nothing is fabricated.
-
-`orchestratorBrief` is always present with its three properties `stage`, `judgment`
-(`qualityLevel`, `authorDecisionItems`), and `nextActions`. `stage` is `ADVISORY | QUALITY | DELIVERY`;
-`STATIC/DESIGN` maps to `QUALITY`, `DELIVERY` and `BLOCKED_REVIEW` to `DELIVERY`. `qualityLevel` is
-`ACCEPTABLE | DEFICIENT | NOT_ASSESSED`:
-PASS gives `ACCEPTABLE`, FAIL `DEFICIENT`, unmet material preconditions `NOT_ASSESSED` while retaining
-mandatory FAIL and `REVIEW_PRECONDITION_NOT_MET`, and Planning `NOT_ASSESSED`. `authorDecisionItems`
-separates a justified author-owned contract or strategy decision — `id`, `owner`, `decision`,
-`selectedOption`, `rationale`, `assumptions`, `reconsiderationTrigger`, `evidenceRefs` — from a defect
-in the submitted sources; they are recommendations, not acceptance criteria, and a user-owned
-dependency still needs the unchanged input-assessment protocol.
-`nextActions` is ordered, nonempty on Review FAIL, and empty only when no advice applies; each entry
-has `kind`, `owner` (`parent | fixer`, a proposed owner, not delegation or authorization),
-`instruction`, `acceptancePredicate`, `findingIds`, `decisionIds`, referencing real entries rather
-than an invented anonymous blocker.
-
-Kinds are stage-gated: ADVISORY takes `execute | discover | validate`, QUALITY takes
-`remedy | validate | discover`, DELIVERY PASS takes `reconcile`, and **DELIVERY FAIL takes `remedy`
-only**. Delivery remedies may cover implementation, validation, evidence repair or decision settlement;
-require bounded outcomes and acceptance predicates; never say "rebuild and come back" or "ask Oracle
-again", or approve future corrected bytes. Per-finding `requiredAction` governs: the brief groups and
-orders actions, never mandates a preferred implementation over an equivalent remedy satisfying the
-finding. Empty `instruction` or `acceptancePredicate`, stage-illegal `kind`, missing brief or an action
-referencing no real finding or decision is contract-invalid; adding a brief cannot repair a malformed
-result.
-
-### Result invariants
-
-PASS requires met preconditions, satisfied material criteria, and no blocking finding. Every
-blocking issue, including missing material evidence, has a finding ID and a required action, never
-an anonymous blocker outside the batch, and every prior finding gets a resolution entry. Required
-actions specify the **observable condition that resolves the defect**, never "improve", "be more
-careful", or "ask Oracle again". Evidence may be a direct static proof, and Oracle must not run
-forbidden validation to manufacture a command result: do not raise a finding unsupported by the
-submitted standard.
-
-### Deterministic IDs
-
-Each finding gets a stable `<unitId>-F001`, `F002`, … Reuse the prior ID for the same root cause
-after line movement; never renumber, reuse, or reset IDs after snapshot or generation changes.
-Allocate new IDs sequentially after the highest historical suffix. Semantic equivalence still needs
-judgment; a hash of changing prose does not decide it. No generation, rename, or snapshot change resets unit
-identity, finding IDs, or the clarification allowance.
-
-## Correction after FAIL
-
-Turn Oracle's whole findings batch into one corrective contract; repair and validate locally,
-rerun affected checks and preserve unchanged-input evidence.
-After a second whole-unit FAIL, materially recheck root causes, equivalent affected paths, induced
-defects and test adequacy. Show implicated regression behaviour executes the intended path and fails
-with guard/feature disabled, prior state or retries isolated so they cannot mask that control.
-Recurring findings retain their ID/history and explain why the earlier correction failed and how
-the new repair differs.
-
-## Effort limit
-
-Ordinary Reviewed units have at most three DELIVERY/`BLOCKED_REVIEW` dispatches; `STATIC/DESIGN`,
-Planning, and xdev are excluded. Expenditure is decided **before the call starts**, never inferred
-from findings: preflight rejection spends no slot; **every started DELIVERY/`BLOCKED_REVIEW` call
-spends one, including replacements, malformed assignments, and precondition failures**.
-Preflight checks required fields, bound evidence, identity, history and pending work for structure
-and internal consistency, not semantic admissibility; malformed-ness requires parsing. No generation,
-snapshot or rename resets the count. The third dispatch still needs `REVIEW_READY` and second-FAIL
-stabilization. The parent owns exhaustion, non-delivery and xdev batching.
-
-## Anti-loop rules
-
-Inspect and report the complete unit on first Review and the whole batch on re-review, not just
-likely or old findings. Each finding demonstrates a current snapshot/bound-evidence defect;
-previously overlooked defects include evidence and the earlier coverage gap. Never fail for
-hypothetical future changes, absent stale defects, unrelated scope or unstated preferences;
-genuine new material findings remain required. Mechanical/judgment classification is optional
-correction-note diagnostics, not schema or bookkeeping. Transport-failed, cancelled or regenerated
-replacements judge the current snapshot independently: unchanged-input evidence survives; do not
-re-litigate rebuttals supported by evidence the earlier Review lacked.
+The parent owns exhaustion and explicit unsuccessful non-delivery; xdev owns its batching
+and closure. Record class checks and extensions in existing evidence/history, not new schema fields.
 
 ## Prompt preservation
 
-For prompt/skill rewrites, bind baseline and shipping scope. The parent contextually reads every
-affected source block, including lists, tables, schemas and subordinate clauses. Record complete
-range coverage and grouped duty-family dispositions, destination quotes, owner/load applicability,
-rationale and reader; give explicit no-duty dispositions for other affected text. Unchanged bytes
-and applicability need no re-audit. Extraction/counts establish integrity, not completeness.
+- **R18** Bind baseline and shipping scope. The parent contextually reads every affected source block, including lists/tables/schemas/subordinate clauses, recording complete range coverage and grouped duty dispositions, destination quotes, owner/load applicability, rationale and reader. Other affected text gets explicit no-duty dispositions; unchanged bytes/applicability need no re-audit. Extraction/counts prove integrity, not completeness.
+- **R19** Compare actor, condition, prohibition and exception. For changed safety, contact, role, evidence/validation, identity, lifecycle or Review-limit duties, supply adverse scenarios/static proofs scaled to consequence. Investigate mismatches and restore losses unless actual instructions authorize them; disclosure alone authorizes nothing.
+- **R20** Supported coverage/dispositions, risk evidence and resolved known losses provide bounded assurance, not exhaustive equivalence. Missing evidence or unauthorized loss is blocking. Report residual uncertainty; use existing routes/assessment, never extra completeness Reviews.
 
-Compare actors, conditions, prohibitions and exceptions. Scale evidence by consequence: adverse
-scenarios or static proofs for each affected safety, user-contact, role, evidence/validation,
-identity, lifecycle or Review-limit invariant. Investigate mismatches; restore losses unless actual
-instructions authorize the change. Disclosure authorizes nothing.
-
-Accept supported coverage/dispositions, risk evidence and all known-loss resolutions, not an
-exhaustive-equivalence certificate. Missing evidence or demonstrated unauthorized loss fails
-preservation. Report bounded assurance and residual uncertainty, never unqualified completeness.
-Use existing routes/gates, not extra completeness Reviews.
-
-## Scope and limitations
-
-Shared contracts fix thin context and vague remedies, not weak validation or exhaustive discovery.
-Persistent loops with complete assignments and actionable findings require better validation and
-correction strategy, not more fields.
+Shared contracts cannot substitute for faithful validation or exhaustive discovery.
+Persistent loops need improved correction and validation, not additional schema ceremony.

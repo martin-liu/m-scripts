@@ -1,156 +1,178 @@
 ---
 name: agent-review
-description: Shared agent protocol — the home for Oracle lane contracts (Planning, input assessment, Review, xdev closure), the Review Assignment template, and the oracle-review-result schema. Loaded before any Oracle dispatch and at child bootstrap.
+description: Shared policy and Oracle contracts for independent Planning, decisions, input assessment and Review. Load before Oracle dispatch or bounded implementation.
 license: MIT
 metadata:
   author: martinliu
-  version: "2.0.0"
+  version: "3.0.0"
 ---
 
-# Agent protocol entry point
+# Agent protocol
 
-Read this file, then only the reference for the lane you are in.
+This file owns shared policy, assignment and intelligence contracts.
+`references/review.md` alone owns Review semantics.
+`templates/reviewed_unit.md` carries ordinary Reviewed facts.
+`xdev/SKILL.md` alone owns xdev lifecycle and closure.
 
-| File | Owns | Load when |
-|---|---|---|
-| `references/review.md` | Review modes and entry conditions, dispatch discipline, `REVIEW_ASSIGNMENT v1`, `oracle-review-result` schema, IDs, correction and anti-loop rules, effort limit | Any `DELIVERY`, `STATIC/DESIGN`, or `BLOCKED_REVIEW` dispatch |
-| `templates/reviewed_unit.md` | Durable carrier of a Reviewed unit's context | First Reviewed dispatch and every resume |
-| `xdev/SKILL.md` | xdev lifecycle, revisions, todos, closure | xdev route or closure assessment |
+Resolve `<skill>/<path>` through installed skill roots, or repository `skills/<skill>/<path>`;
+bare `references/` and `templates/` resolve against this skill, never a record directory.
+Never use `../` traversal. Parent, Oracle and Fixer load their exact bound policy before
+dependent work; frontmatter is discovery only. Missing/unreadable policy stops dependent
+work and is reported to the parent, never guessed or treated as grounds for user contact.
+First Reviewed dispatch/every resume loads its template; any Review loads its reference;
+xdev work/closure loads its skill. Reload lost policy on resume.
 
-Write `<skill>/<path from its root>` (e.g. `agent-review/references/review.md`) in a skill, template,
-record, or assignment, resolved through the installed skill roots; bare `references/…` and
-`templates/…` mean this skill's directory, and repository files use `skills/<skill>/<path>`. Never
-write `../` traversal: a record's directory is unrelated to a skill, so it breaks on instantiation.
+For a prompt or skill rewrite on **any route**, the parent first reads and applies
+`agent-review/references/review.md` **Prompt preservation** (R18–R20), and supplies that procedure
+and its bound evidence in assignments. This is a loading duty, not a Review requirement: ordinary
+Direct work still needs no Review, and this creates no additional assessment call.
 
-Loading is mandatory: a missing or unreadable required file stops the work and is reported to the
-parent as a missing dependency, never a license to proceed on assumptions or to ask the user.
-Frontmatter or dispatch naming is discovery metadata only; it delivers no rules.
+## Shared policy
 
-## Common assignment contract
+- **P1** The parent alone owns effects, state, routing, delegation, integration, recovery, user contact, continuation and closure; workers return advice or evidence, never permission, lifecycle markers or state edits.
+- **P2** Protected effects include identified staging/production actions, consequential external/shared mutations, privileged actions, deploy/publish, machine-wide changes and destructive local database operations unless affirmatively disposable development/test state; unknown or potentially valuable local databases remain protected.
+- **P3** Ordinary repository work, local containers/processes, tests and local dependency installation are not protected merely for state or network use.
+- **P4** Only the parent executes protected effects with sufficient explicit authorization covering the exact effect, target and limits; reuse a still-valid grant, never demand fresh confirmation merely on a later turn.
+- **P5** Broad goals, routes, advice, assessment evidence and worker contracts grant no protected authorization; missing authorization blocks only that effect, not authorized inspection/preparation. Workers never execute or authorize protected effects. Prompt policy is not OS isolation; isolate untrusted work.
+- **P6** A bounded target names output/behavior, authoritative basis, allowed scope, criterion IDs and observable expectations, evidence, validation owner/commands, material cases and invariants; it creates no Planning, artifact or user-approval requirement.
+- **P7** Choose the smallest coherent evidence-backed solution, not smallest diff; preserve correctness, security, integrity, operational invariants and manageable lifetime maintenance. Inspect authoritative files and nearby patterns; reuse only when assumptions fit. For material choices — including ones the parent settles by default without consulting Oracle — compare causal mechanisms, coupling and reversibility, and stress-check the rationale under plausible evidence-supported changes in conditions. Add no abstraction, optimization, refactoring or hardening without requirements/evidence.
+- **P8** Required deterministic behavior uses faithful input/output, boundary, error and regression checks; use faithful scenarios/integration evidence when tests do not suffice. Required checks pass; investigate every mismatch and never weaken authoritative expected results.
+- **P9** Durable evidence is repository path plus content hash, immutable artifact/URL or inline material evidence; runtime IDs, notifications, temporary paths and task reports alone establish nothing.
+- **P10** Bind validation and assessment to root/base and a commit/tree materializing all relevant bytes, or a deterministic manifest: sorted relevant tracked/staged/untracked paths, status, material modes, byte hashes, deletions, exclusions and manifest-lines hash. Include implementation, tests, fixtures and required validation inputs; reference output separately.
+- **P11** Exclude mutable plans, runtime receipts, generated reports and the manifest itself from product identity. Product mutation stales evidence; bookkeeping-only edits do not. Historical records retain bindings; final validation and assessment share one final snapshot.
+- **P12** Disclose inspection/execution owners, exact check inputs, commands, exits, expected/actual results and material raw evidence; never claim computations, inspection, modality access or verification not performed. Parent/Fixer execution is not Oracle computation; do not require personal hash computation unless independent execution was arranged.
+- **P13** Artifact identity, access, modality capability and evidence owner are distinct. The parent inspects user attachments and materially relevant visual/spatial/temporal/audio content, including dependent final validation, before delegation; workers do not inherit attachments.
+- **P14** Parent-recorded criterion-level media inspection can support Oracle assessment without direct attachment access; that lack alone is no blocker or extra-call reason. Explicit independent media verification requires exact access and capability; summaries cannot substitute. Exact filesystem work also requires direct path access, capability and assigned scope.
+- **P15** With inaccessible media, Fixer proceeds only from independently sufficient textual/structured requirements and binds conclusions to them, or reports a blocker; contract-supported artifact-independent deterministic implementation remains allowed.
+- **P16** Keep corpus claims separate: semantic item-level truth requires parent contextual reading of every claimed item before identical-scope automation; exact-rule transformation uses stated rules/invariants/reference fixtures; population claims require a defined population and independent sampling/estimation or exhaustive support.
+- **P17** Samples support discovery or sample-scoped claims, never unprocessed items. Keep corpus scope/rules identical and investigate every mismatch without moving the baseline. Scripts, fixtures, presets, generated data, prior outputs and summaries are not corpus truth; Oracle/Fixer never establish, recreate or redefine it.
+- **P18** A worker result or terminal operation does not close an objective. Integrate every non-superseded result and take the next authorized action after non-completing results; failed prerequisites block only dependents. Use reversible defaults and narrow diagnostics before costly unchanged retries.
+- **P19** Negative/blocked conclusions requiring material semantic inference through retrieval, selection, materialization, filtering, ranking or counts require a separate Planning premise assessment, not contact permission; routine bounded blockers do not. Reconcile normal-path count-relevant stages and earliest losses over the configured bounded window; state what controls prove. Different-path controls do not prove normal outcomes; full-population tracing is required only for population-exhaustion claims.
+- **P20** Stop unfinished work only for an authoritative non-recoverable blocker, unavailable boundary expansion/reroute or exhausted proportionate materially distinct recovery; ordinary Review-cap non-delivery is also permitted under its reference, never an impossibility claim, waiver of delivery requirements, route evasion or automatic contact.
+- **P21** Inspect Reviewed/xdev background children only on completion or transport resume, never poll. Cancel active stale work before same-role/same-lane replacement; replace terminal failed/cancelled/unreachable work without cancellation, assigning only unfinished scope. Never revive superseded work, cross lanes, duplicate/drop scope or integrate late superseded output; recovery cannot lower route or bypass assessment.
+- **P22** Wait only on confirmed-live started work with a verifiable child/provider event that automatically resumes; unstarted work is not a wait. Preserve integrated evidence and scheduled handoffs.
+- **P23** Ordinary Reviewed tasks durably bind logical task ID plus generation before dispatch; runtime ID is transport metadata. Replacements use a new generation for unfinished scope. Status is pending/running/completed/failed/blocked/cancelled/superseded, not lifecycle outcome. Resume reads exact context, pending generations and all non-superseded results; material conflicts fail closed.
+- **P24** Reviewed completion requires a clear final independent delivery assessment under `agent-review/references/review.md`, zero pending work, integrated non-superseded results and all required validation; xdev additionally satisfies its lifecycle. Worker evidence, advice and approval markers alone never complete work. Before those conditions hold, the parent must not describe the Reviewed/xdev outcome or current snapshot as done, complete or ready; report 'implemented, unassessed', 'assessment deficient' or the exact outstanding condition. Defined task/transport statuses and factual completed substeps are unchanged.
 
-Every assignment supplies lane and identity (lane, objective ID and goal revision, unit, decision,
-dependency, or candidate identity, logical task ID and generation, route), original intent with exact
-authorizations, bound context with hashes and base, evidence with sources, contrary evidence, gaps,
-and access limits, current state, and the lane contract — never a requested answer, verdict, or
-approval. Planning also gets options with exclusion reasons, costs, and reversibility, unresolved
-assumptions, and a labeled parent leaning with the evidence that would change it: never pre-frame an
-option as approved or seek ratification, and Oracle may reject an artificially narrow set. A bounded
-Direct consultation needs no Reviewed context record.
+## Decisions and contact
 
-## Lanes
+- **I1** Use evidence-backed authorized reversible in-scope defaults without menus, confirmation, “unless you object” or waiting for a pick; record material assumptions and reconsideration triggers. Otherwise use parent decision, then Oracle Planning, then indispensable user dependency.
+- **I2** Consult only when an unresolved material decision changes the next action and neither proportionate discovery nor a defensible default settles it. Parent preference and equivalent implementations are not triggers; routine execution, validation, recovery and actionable repair need no Planning. Reconsult only after material changes to evidence, constraints, assumptions, design or validation strategy, not another fix/snapshot.
+- **I3** Technical, implementation, strategy, architecture and ordinary product/UI choices, including uncertainty and “is this in scope”, are agent-owned. Exactly three user-owned kinds exist: required protected authorization; indispensable user-only access/fact with no reasonable compliant substitute; genuinely incompatible product-intent readings changing the expected outcome, not valid implementation tradeoffs.
+- **I4** Before any user question, check instructions/grants, obtainable evidence and authorized alternatives; obtain the actual fenced matching `USER_INPUT_REQUIRED` input record from a completed Oracle run witnessed starting in the current request epoch. Only this record permits asking, never execution or closure.
+- **I5** Finish other feasible authorized work and permitted preparation first; deduplicate dependency/question and ask only when no authorized work remains ready. Targets, baselines, test plans, failed checks, unavailable assessment, uncertainty, disabled continuation and exhausted effort alone permit no contact.
+- **I6** Record objective ID, high-level goal/basis/status, initial clarification use and dependency/assessment/reply references in existing state: conversation target for Direct, unit record for Reviewed, baseline for xdev. A clear goal proceeds without ratification or specified implementation.
+- **I7** Initial goal clarification is one question in one user turn per objective, only for irreconcilable outcome readings after proportionate discovery and independent authorized preparation. Use purpose goal-clarification and kind product-intent; never a menu/questionnaire. Resume, compaction, generations and assessment failures do not reset it; only a materially replaced objective does.
+- **I8** Never reopen a clear goal. An inadequate/partial reply neither authorizes guessing nor repeats the unchanged question; use resolved facts and retain dependencies. Re-ask only through the ordinary indispensable-blocker gate with materially new grounds or a narrower item, never waiving required authorization/access/fact questions.
+- **I9** Only the parent emits `USER_QUESTION: <exact question>` once, verbatim from the record, in its final message. Pi user BLOCKED binds the same oracle run and dependency; Oracle carries the question only in JSON. Contact permission is not permission to abandon other ready work.
 
-Route and lane selection are separate: bounded advice never raises Direct to Reviewed, and a
-`STATIC/DESIGN` PASS never lowers a Reviewed unit's delivery Review. Review lanes load
-`references/review.md`; the xdev closure lane loads `xdev/SKILL.md`, sole authority for xdev
-mechanics. `BLOCKED_REVIEW` is a Review mode, not a sixth lane, and returns only `Verdict: FAIL`.
+## ORACLE_ASSIGNMENT v2
 
-| Lane | Parent supplies | Oracle returns | Never |
-|---|---|---|---|
-| **Planning** | Common contract, decision evidence | Target or selected authorized option; rationale; assumptions; acceptance, evidence, validation owner; reconsideration trigger; discovery actions; an `oracle-advisory-result` with its `ADVISORY` brief | Route change, authorization, delivery approval, repair gating |
-| **Input assessment** (`USER_INPUT_ASSESSMENT`) | Dependency ID, purpose, missing item, discovery tried, grants, alternatives, why assumptions are inadequate | One `oracle-input-assessment` record | A question outside the JSON, a menu, authorization, closure |
-| **`STATIC/DESIGN` Review** | Sources, criteria, own evidence, full assignment | One verdict plus `oracle-review-result` and its `orchestratorBrief` at stage `QUALITY` | Delivery Review, repeated use on one unit; excluded from the ordinary cap |
-| **`DELIVERY` Review** | Integrated unit, `REVIEW_READY`, full assignment | One verdict plus `oracle-review-result` and its `orchestratorBrief` at stage `DELIVERY`, whose post-FAIL actions are `remedy` only | Running missing validation, approving future corrections, piecemeal review |
-| **xdev closure assessment** | Revision-bound candidate: ID, revision, outcome, task, generation, evidence | `CONTINUE_REQUIRED`, `USER_INPUT_REQUIRED`, or `TERMINAL_PREMISE_SUPPORTED`, advisory | Delivery verdict, state edit, contact permission |
-
-### The advisory result (Planning — defined here, not only in `review.md`)
-
-Planning returns a clear bounded plan or decision with rationale and ordered actions, plus exactly one
-fenced `oracle-advisory-result` block and no Review verdict. Its complete return contract lives here:
-
-```json
-{"version": 1, "dependencyId": "<assigned stable decision/dependency ID>",
- "orchestratorBrief": {"stage": "ADVISORY",
-   "judgment": {"qualityLevel": "NOT_ASSESSED", "authorDecisionItems": [
-     {"id": "<decision ID>", "owner": "parent", "decision": "<the decision>",
-      "selectedOption": "<selected option>", "rationale": "<basis>", "assumptions": [],
-      "reconsiderationTrigger": "<evidence that would change it>", "evidenceRefs": []}]},
-   "nextActions": [{"kind": "execute", "owner": "parent",
-     "instruction": "<bounded next action>", "acceptancePredicate": "<observable condition>",
-     "findingIds": [], "decisionIds": ["<decision ID>"]}]}}
-```
-
-- `stage` is always `ADVISORY`; `qualityLevel` is always `NOT_ASSESSED`, since Planning assesses no
-  delivered quality.
-- `nextActions[].kind` is one of `execute | discover | validate`, each with a proposed `owner`
-  (`parent | fixer`, never delegation or authorization), and nonempty `instruction` and
-  `acceptancePredicate`.
-- `authorDecisionItems` carries the same fields as everywhere else — `id`, `owner`, `decision`,
-  `selectedOption`, `rationale`, `assumptions`, `reconsiderationTrigger`, `evidenceRefs` — and is where
-  a justified decision belongs, as distinct from a defect in submitted sources.
-- References must be real: every `findingIds` and `decisionIds` entry must resolve to an actual
-  finding or decision item, and **each action must reference at least one real finding or decision**;
-  an anonymous action is contract-invalid.
-- This block neither supplements nor relaxes the exact `oracle-input-assessment` or xdev closure
-  contracts.
-
-## Decisions and user contact
-
-```mermaid
-flowchart TD
-    A["Unresolved dependency"] --> D{"Defensible default"}
-    D -->|"Yes"| E["Select and record trigger"]
-    D -->|"No"| O["Oracle Planning"]
-    O --> G{"Agent can resolve"}
-    G -->|"Yes"| E
-    G -->|"Needs facts"| F["Discover"]
-    F --> D
-    G -->|"User owned"| U["USER_INPUT_ASSESSMENT"]
-    U --> R{"USER_INPUT_REQUIRED"}
-    R -->|"No"| E
-    R -->|"Yes"| W["Finish ready authorized work"]
-    W --> Q["Parent asks the exact question"]
-```
-
-Agent-owned: technical, implementation, strategy, architecture, and ordinary product choices,
-including defensible uncertainty and "is this in scope". Exactly three dependencies are user-owned:
-**authorization** for a required protected effect; **access/fact** — indispensable access,
-credentials, secrets, or facts only the user can supply, where no reasonable compliant assumption
-can be recorded and continued on, making them irreplaceable; **product-intent** — genuinely
-incompatible readings of the request that change the expected outcome, where an implementation
-tradeoff satisfying the stated outcome is not ambiguity.
-
-Choosing among valid options is an Oracle decision, never a user decision, and a menu is a ladder
-violation: select one within authorization, record the rationale and reconsideration trigger, and
-treat obtainable gaps as discovery, not contact. Oracle may select an authorized alternative
-satisfying the objective, but cannot grant authorization or remove protection. Emit exactly one
-structured `oracle-input-assessment` record for a labeled `USER_INPUT_ASSESSMENT`:
+Every dispatch supplies this typed core; arrays are required, empty when inapplicable.
+References contain readable exact material or durable path/hash identities, never summaries
+as substitutes. `identity` records objective/goal revision, unit/dependency/candidate,
+logical task/generation and route. `state` binds context path/hash, root/base, product
+snapshot, integration, pending work and history. Lane-specific details are additional
+bound records, not a second choice prompt.
 
 ```json
 {
-  "version": 1,
-  "dependencyId": "<id from the assignment>",
-  "outcome": "AGENT_DECISION | USER_INPUT_REQUIRED",
-  "selectedOption": "<AGENT_DECISION only>",
-  "rationale": "<AGENT_DECISION only>",
-  "assumptions": ["<AGENT_DECISION only>"],
-  "reconsiderationTrigger": "<AGENT_DECISION only>",
-  "kind": "authorization | access | fact | product-intent",
-  "dependency": "<USER_INPUT_REQUIRED only: the exact missing item>",
-  "question": "<USER_INPUT_REQUIRED only: the exact question the parent should ask>",
-  "whyAgentCannotResolve": "<USER_INPUT_REQUIRED only>"
+  "version": 2,
+  "lane": "Planning",
+  "identity": {
+    "objectiveId": "<objective>", "goalRevision": 1, "subjectId": "<unit/dependency>",
+    "taskId": "<logical task>", "generation": 1, "route": "Reviewed"
+  },
+  "policyRefs": ["<exact readable policy path + hash>"],
+  "basis": {
+    "originalInstructions": ["<verbatim request and later instructions>"],
+    "intendedOutcome": "<requested outcome>",
+    "userConstraints": [], "authorizations": [],
+    "sources": ["<authoritative readable source + hash>"],
+    "observations": [], "contraryEvidence": [], "gaps": [],
+    "openQuestions": [], "priorChoices": []
+  },
+  "state": {
+    "contextRef": "<exact path + hash or inline Direct context>",
+    "root": "<root>", "base": "<base>", "snapshotRef": "<identity or N/A>",
+    "integration": "<current facts>", "pendingWork": [], "historyRefs": []
+  },
+  "request": {"kind": "originate"}
 }
 ```
 
-Carry the question only in the JSON `question` field; never print a `USER_QUESTION:` line, which the
-parent owns. A completed call is not permission to ask, and the record grants no authorization,
-continuation decision, verdict, or closure.
+The core has exactly these keys and nested fields. Lane is Planning, Input, Review or
+Closure. Request has only `kind`: Planning=originate; Input=assess-ownership;
+Review=assess-current; Closure=assess-candidate. Identity numbers are positive integers.
+Input additionally binds dependency ID/purpose, missing item, discovery tried, grants,
+tried alternatives and why assumptions are inadequate. Review adds its canonical submission;
+Closure adds its revision-bound candidate. Bounded Direct advice needs no durable unit record.
 
-## Context handoff
+- **A1** Parent preflight checks the typed core, lane/request agreement, required readable bindings and internal consistency before dispatch; no requested answer, verdict, approval, preferred solution, shortlist or leaning is an input field.
+- **A2** Supply original instructions, outcome, user constraints, raw evidence and open assumptions without a preferred solution or shortlist; state material undecided questions. Historical choices/artifacts are evidence, not constraints. Do not omit user-required designs, self-audit, prior findings, contrary evidence or material facts to simulate neutrality.
+- **A3** Parent interpretations may appear only as labelled non-authoritative historical evidence, never expected results or the choice set. Structural preflight cannot prove semantic neutrality; Oracle tests these interpretations after its own source-first framing within the same call, not staged disclosure.
 
-```mermaid
-sequenceDiagram
-    participant P as Parent
-    participant C as Unit context
-    participant O as Oracle
-    P->>C: Reconcile state, bind submission
-    P->>O: Lane, identities, refs and hashes
-    O->>C: Read bound context and sources
-    O-->>P: Bound advice or one Review batch
-    P->>C: Reconcile and integrate result
+## Intelligence and actionable returns
+
+- **B1** Oracle independently reconstructs the intended outcome from original instructions, criteria, sources and raw evidence before evaluating parent conclusions. Planning originates the bounded course it would choose, tests premise/decomposition necessity and considers simpler/no-change courses; do not merely expand a supplied design.
+- **B2** For unresolved material decisions, derive decisive levers and materially distinct authorized courses with exclusion reasons, select one and test beyond the parent frame: what it omitted or why no further supported course survives. No quota or exhaustive-discovery claim; settled work needs basis and bounded action, not manufactured alternatives.
+- **B3** Planning and Review judge necessity and warranted better approaches, including costs, risks, reversibility, causal mechanism and what would favor the submitted course. Keep criterion defects separate from acceptable-but-improvable author decisions; advice never relaxes criteria, satisfied criteria never silence advice, and neither expands scope or authorization.
+- **B4** Actions are ordered and concrete: name files/edits or exact checks when evidence permits, with observable executable/scenario/static predicates and owners. Every action cites a real finding or decision; never “ask Oracle again”, vague categories or approval of future bytes.
+
+Planning returns a bounded target, premise judgment, assumptions, acceptance/evidence,
+validation owner/commands, material cases, discovery and reconsideration triggers, plus
+exactly one `oracle-advisory-result`, no verdict:
+
+```json
+{
+  "version": 2, "dependencyId": "<assigned subjectId>",
+  "authorDecisionItems": [{
+    "id": "D1", "owner": "parent", "state": "unresolved",
+    "decision": "<outcome interpretation and premise judgment>",
+    "selectedOption": "<selected authorized course>",
+    "rationale": {
+      "levers": ["<objective/evidence lever>"],
+      "courses": [{"course": "<independently derived course>", "disposition": "selected", "basis": "<why>"}],
+      "frameCheck": "<what the parent frame omits, or why no further supported course survives>",
+      "selectionBasis": "<why this course best satisfies the objective>"
+    },
+    "assumptions": [], "reconsiderationTrigger": "<material change>", "evidenceRefs": []
+  }],
+  "nextActions": [{
+    "kind": "execute", "owner": "parent", "instruction": "<bounded action>",
+    "acceptancePredicate": "<observable result>", "findingIds": [], "decisionIds": ["D1"]
+  }]
+}
 ```
 
-The parent binds each dispatch to the context record's exact path and byte hash, the unit and goal
-identity, the task generation, and the product snapshot; `references/review.md` owns snapshot and
-evidence rules. "Oracle never loses context" means the context is reconstructible or its inadequacy
-detected: on resume read the recorded locator, check pending generations, reload the contracts, and
-reconcile every non-superseded result; conflicting material context fails closed.
+Decision fields are exactly shown; owner is parent. State unresolved uses the structured
+rationale above, nonempty levers/courses/frameCheck/selectionBasis, exactly one selected
+course and rejected courses with bases where supported. State settled instead uses
+`rationale: {"basis": "<settled evidence>", "boundedAction": "<action>"}`.
+Every rationale and selectedOption is substantive; “None” without basis is invalid.
+Actions use execute/discover/validate for Planning; owner parent/fixer is proposed, not
+delegation or authorization. All arrays remain present; each action has nonempty instruction
+and predicate and resolves every cited ID, including at least one decision. No nested
+brief, stage, quality scoreboard or verdict. Review reuses these decisions/actions under
+its own legality rules; Input and Closure do not inherit this envelope.
+
+## Input assessment
+
+Return exactly one `oracle-input-assessment` and no question outside it.
+Outcome AGENT_DECISION includes selectedOption/rationale/assumptions/reconsiderationTrigger
+and no user-only fields. Outcome USER_INPUT_REQUIRED includes kind/dependency/question/
+whyAgentCannotResolve and no agent-only fields. Kind authorization/access/fact/product-intent
+represents the three ownership classes; access and fact share one class.
+
+```json
+{
+  "version": 1, "dependencyId": "<assigned ID>", "outcome": "USER_INPUT_REQUIRED",
+  "kind": "authorization", "dependency": "<exact required missing grant>",
+  "question": "<one necessary concise question>",
+  "whyAgentCannotResolve": "<why no authorized alternative or compliant substitute suffices>"
+}
+```
+
+A goal-clarification assessment decides only indispensable outcome ambiguity, never a
+menu or choice among valid implementations. The record grants no authorization, route,
+continuation, delivery or closure decision.

@@ -4,232 +4,74 @@ description: Full software-lifecycle route for complex multi-sprint work requiri
 license: MIT
 metadata:
   author: martinliu
-  version: "1.1.0"
+  version: "2.0.0"
 ---
 
 # xdev
 
-xdev is the durable lifecycle for complex multi-sprint work requiring coordination
-across phases, risk boundaries, or context limits: coherent target baseline →
-risk-bounded sprints → final whole-state verification. `plan_and_track.md` is its
-sole durable state record. The baseline defines intended behavior, authoritative
-basis, acceptance evidence, and risk boundaries.
+Durable coordination: coherent baseline, risk-bounded sprints, final whole-state evidence.
+`plan_and_track.md` is the sole durable state record.
+Load `agent-review/SKILL.md` for target quality, safety, decisions/contact, recovery,
+snapshots/evidence/media/corpus and completion; never replace missing shared policy.
+`agent-review/references/review.md` alone owns Review eligibility, submissions/results,
+IDs, correction and effort rules. This skill owns lifecycle, revisions, tasks/todos,
+batching and closure, not duplicated Review semantics.
 
-Before acting, load `agent-review/SKILL.md`. The bound parent contract owns target and quality,
-routing, safety/protected effects, decision ownership and user contact, liveness/recovery,
-snapshots/evidence, media/corpus, reconciliation, escalation and completion. This skill owns only
-the durable lifecycle: never replace missing global policy or act on obligations whose bound
-reference is unavailable.
+## Locator and authority
 
-## Bootstrap, resume, and state authority
+- **X1** Resolve one exact state locator per objective: caller path or `.tmp/xdev/{objective-slug}/plan_and_track.md`. Slug normalization lowercases/trims, replaces non-alphanumeric runs with hyphens and trims hyphens; record path/objective. Create only an absent file, never overwrite an existing plan or silently create a second one.
+- **X2** Resume reads the recorded locator before dispatch; missing/conflicting/ambiguous locators or another-objective default collision stop/escalate under shared policy. Bootstrap/migration/malformed-state recovery reads exact versioned templates and fails closed unless required fields migrate safely. If a template is unavailable, search matching existing plans before creation; ambiguity fails closed.
+- **X3** Ordinary resume reads recorded schema, locator, task/todo/evidence/status fields without rereading template prose; creating/updating a sprint reads exact `xdev/templates/sprint_block.md`. The parent alone writes state/checkboxes, one writer per record/worktree. Workers propose changes and report evidence, never edit state.
+- **X4** Transport/results/notifications inform reconciliation but cannot reconstruct semantic state. Repair from the record and authoritative reports/evidence; retain terminal references and replacement reasons, not volatile unchanged-resume/nudge counts.
 
-- Resolve one deterministic locator per objective: use the caller's exact path,
-  or `.tmp/xdev/{objective-slug}/plan_and_track.md`. Normalize only the slug:
-  lowercase, trim, replace each run of non-alphanumeric characters with a hyphen,
-  then trim hyphens. Record the exact resolved path and objective identity.
-- Bootstrap creates only an absent file; never overwrite an existing plan.
-  A default-path collision with another objective requires stopping or escalation
-  under global policy. Resume reuses the locator and reads the record before
-  dispatch; missing, conflicting, or ambiguous locators require escalation.
-- Templates carry `schema_version`. Bootstrap, migration, and malformed-state
-  recovery read the exact templates and fail closed unless versions and required
-  fields can be migrated safely. Ordinary resume reads the recorded schema,
-  locator, task/todo/evidence fields, and status, without rereading template prose.
-  Before creating or updating a sprint block, read the exact
-  `xdev/templates/sprint_block.md` and preserve its required fields.
-  If a template is unavailable, search existing plans for matching objective
-  identity before creating anything; ambiguity fails closed. Never silently
-  create a second plan.
-- The Orchestrator alone writes the record and its authoritative checkbox list:
-  one writer per state record/worktree. Planning, Fixer, and Review return
-  contracts, reports, verdicts, evidence, or proposed changes—not state edits.
-  Transport status, results, notifications, and availability inform reconciliation
-  but cannot reconstruct semantic state. Repair only from the record and
-  authoritative task reports/evidence under global reconciliation policy.
-- Todo IDs are stable and never reused. Unchecked means outstanding; check only
-  after recording reconciliation, integration, required evidence, state revision,
-  and an authoritative reference. Never silently delete or reopen a todo;
-  replacements and follow-ups receive new IDs with lineage. Todos reference the
-  task ledger for transport/generation/integration, sprint contracts for acceptance,
-  and evidence/Review for results rather than duplicating those authorities.
-- Reconcile the complete todo list on resume, before dispatch, after results, before
-  Review readiness, and before a closure candidate. Readiness requires scoped implementation,
-  correction, integration, and required-validation todos discharged; one designated Review-action
-  todo per delivery unit stays open until `PASS`. Record failed attempts and replacements by task
-  generation; create correction todos for actual blocking work, not another Review attempt.
-  Preserve completed evidence as historical rather than rewriting it as current.
+## Revisions, tasks and todos
 
-## Durable revisions, snapshots, and recovery
+- **X5** Each durable semantic write increments State revision exactly once; apply all related scope/task/todo/candidate/binding changes atomically R to N=R+1. Create tasks/candidates/todos at N before dispatch. Runtime-ID, dispatch and running/pending transport updates are neutral unless scope, acceptance, integration or closure premise changes; formatting is neutral unless authority changes.
+- **X6** Every authorized dispatch has a pre-dispatch ledger entry: logical task ID/generation, role/lane, exact scope, runtime transport ID, Status, supersession/replacement lineage, integration, authoritative terminal result/evidence and replacement reason. Logical ID/generation is identity; missing runtime receipts do not invalidate it.
+- **X7** Replacements use new generations for unfinished scope. Planning and Review are distinct immutable lanes, each with at most one active generation; shared replacement rules apply. Historical entries retain original state, not current authority. Current unit scope, eligibility, integration and validation have one authoritative record referenced by resume fields.
+- **X8** Todo IDs are stable and never reused. Unchecked means outstanding; check only after recorded reconciliation, integration, required evidence and discharge revision/reference. Never silently delete/reopen; replacement/follow-up IDs carry lineage. Todos reference ledger, contracts and evidence rather than duplicating them.
+- **X9** Reconcile the complete todo list on resume, before dispatch, after results, before delivery assessment and before closure. Scoped implementation/correction/integration/required-validation todos are discharged before assessment; one designated Review-action todo stays open until a clear delivery result is integrated. Failed attempts/replacements retain generations; create correction todos for real blocking work, not another assessment attempt.
+- **X10** Outcome is active/delivered/conclusively blocked; task/sprint Status is pending/running/completed/failed/blocked/cancelled/superseded. Local results never replace Outcome. Delivered requires contract/validation satisfaction; conclusively blocked is exact evidence-backed terminal non-delivery with no viable authorized remedy, satisfying no delivery criterion.
+- **X11** Keep revision, phase, sprint, next owner/action, pending tasks, integration, validation, final assessment and Outcome explicit before dispatch/after integration. History retains semantic/recovery-significant baseline/assessment acceptance, completed/assessed sprints, revisions, blockers/replacements, final validation and settlement; routine diagnostics update their task/sprint, not vague Latest history.
 
-Every durable semantic write increments **State revision** exactly once.
-An atomic transition applies all related semantic changes and bindings together
-from R to N=R+1; never half-apply task/todo/candidate creation or its references.
-Create logical tasks, candidates, and todos at revision N before dispatch.
-Dispatch, runtime-ID recording, and running/pending transport updates are
-revision-neutral unless they change scope, acceptance, integration, or closure
-premise. Formatting-only edits are neutral unless authoritative content changes.
-Closure binds logical task ID plus generation and revision—not runtime identity;
-atomic closure integration follows **Parent-objective closure**.
+## Evidence and continuation
 
-Each validation and Review record includes its state revision and unit/state
-snapshot ID. Bind product inputs by exact paths and content hashes or a commit/tree
-identifying those bytes, including material modes, under the shared snapshot rules.
-Historical sprints retain their original snapshot IDs; final whole-state validation
-and Review share one final snapshot ID recorded in current state and final records.
+- **X12** Baseline, sprint and final checks/scenarios record revision, snapshot, execution owner, expected/actual, PASS/FAIL/BLOCKED, command exit where applicable and material raw evidence. Summaries cannot replace inspection/reproduction evidence. Product snapshots follow shared policy; historical sprints retain bindings and final validation/assessment share one final snapshot.
+- **X13** Review records additionally bind assessment revision/owner, covered units/sprints, canonical oracle-review-result and findings. Oracle dispatches use `ORACLE_ASSIGNMENT v2` plus the bound record their lane requires: Review adds `REVIEW_SUBMISSION v2`, Planning adds its decision basis, Input adds the dependency evidence, Closure adds its revision-bound candidate. Fixer dispatches use their bounded TARGET only. Never duplicate these schemas here.
+- **X14** Before ending an active root turn, reread the exact plan and reconcile received results with the complete todo list; execute/dispatch ready authorized work unless terminal closure holds, the separate contact gate permits an asked necessary question with no other ready work, or no action is ready and a named non-superseded task/generation is confirmed live with automatic resume.
+- **X15** User dependencies block only dependents. Status updates, child completion, remediable failure, context pressure, compaction and a future Next action are not terminal exits. Automatic CONTINUE may carry durably recorded work to another root turn, never abandonment/closure; live waits retain their wake path.
 
-Transport-only references cannot discharge todos or establish readiness. Record, ledger, todos,
-validation and Review records, and references must suffice for resume after context reset: preserve
-terminal result and evidence references and replacement reasons, not volatile unchanged-resume
-counts or nudge history.
+## Baseline, sprints and completion
 
-## Durable task ledger and outcomes
+Author a coherent baseline under shared target/corpus rules; Planning is conditional,
+never a preimplementation Baseline Review. Carry goal statement/basis/status and initial
+clarification/dependency/assessment/reply history so resume cannot reset intake.
+Execute bounded sprint contracts with fewer, larger evidence-backed risk boundaries;
+combine mechanical work sharing contract/validation, split for failure isolation,
+ordering or materially different invariants, never arbitrary files/checklist items.
 
-Create one ledger entry per authorized dispatch in its pre-dispatch transition.
-Record logical task ID, generation, role/lane, exact scope, runtime transport ID,
-Status, supersedes/replacement lineage, integration state, authoritative terminal
-result/evidence reference, and replacement reason where applicable.
-Logical task ID plus generation are identity; runtime ID is transport metadata.
-A replacement creates a new generation for unfinished scope. Planning and Review
-are immutable, distinct lanes, each with at most one active generation; apply
-global background-task transport/replacement rules.
-
-One unit record holds current scope, readiness, and validation authority; resume
-fields reference it rather than restating values. Missing runtime-ID receipts
-during dispatch do not invalidate logical-task/generation binding. Historical
-entries describe their recorded state, not current authority.
-
-The lifecycle has one **Outcome**: `active`, `delivered`, or `conclusively blocked`.
-Sprint/task **Status** is separate: `pending`, `running`, `completed`, `failed`,
-`blocked`, `cancelled`, or `superseded`. Local result classifications never imply
-or replace Outcome. `delivered` requires satisfied contract and validation;
-`conclusively blocked` requires an exact recorded blocker and no viable in-scope
-remediation, means terminal non-delivery, and satisfies no delivery criterion.
-
-Keep Status current before dispatch and after integrated results. Resume uses explicit revision,
-phase, current sprint, next owner and action, pending tasks, integration, validation, final Review,
-and outcome fields — not a vague `Latest`. History retains only semantic/recovery-significant baseline and
-Review acceptance, completed or reviewed sprints, revisions, material blockers and replacements,
-final validation, and completion; routine dispatches, diagnostics, and failures update Status or
-their sprint or task entry.
-
-## Active-lifecycle continuation
-
-Before ending an xdev root turn, reread the exact resolved plan and reconcile received results against
-its complete authoritative todo list. Execute or dispatch the next authorized action unless:
-- The lifecycle is terminal under **Completion and Review** and **Parent-objective closure**.
-- The separate user-input gate permits the necessary question, the question is asked, and no other authorized action remains ready.
-- No action is ready and a named, non-superseded task is confirmed live, with its task ID and generation recorded.
-
-A user-owned dependency blocks only dependent work; finish other feasible authorized actions and
-prepare blocked effects as allowed. Status updates, child completion, remediable failure, context
-pressure, compaction, and a future Next action are not terminal exits. An automatic `CONTINUE`
-handoff may carry durably recorded ready work into the next root turn; it never permits terminal
-closure or abandonment of an active objective. A live-task wait must retain its automatic-resume
-path.
-
-## Baseline, sprint, and Review evidence
-
-For every baseline, sprint, or final-validation check or scenario, record state revision, snapshot ID under the rules above, execution owner, expected and actual results, status (`PASS`, `FAIL`, or `BLOCKED`), command exit status when applicable, and material raw-output or evidence references: a summary cannot replace evidence needed for inspection or reproduction.
-
-Review records additionally identify the Review revision and owner and contain the
-independent verdict and findings. Every Review dispatch fills the Review Assignment from
-`agent-review/references/review.md` and returns its `oracle-review-result`; that reference,
-not this one, owns entry conditions, assignment fields, the result schema, finding IDs, the
-effort cap, second-FAIL stabilization, and anti-loop rules. Precondition failure is
-`Verdict: FAIL` with `REVIEW_PRECONDITION_NOT_MET`; `BLOCKED_REVIEW` is never approval.
-
-## Completion and Review
-
-Successful completion requires Outcome `delivered`, final-validation results for every approved check, all required validation complete, final whole-state Review `Verdict: PASS` with required evidence, zero pending tasks, and integration of every non-superseded result. Reconcile the complete todo list under the ledger rules above; delivered closure requires every non-closure todo satisfied.
-
-Each risk-boundary sprint receives independent delivery Review only after the `REVIEW_READY` gate and xdev todo reconciliation: scoped implementation, correction, integration, and validation todos discharged, the designated Review-action todo open until its result is integrated.
-
-Batch sprints before Review. A sprint's completion is not by itself a reason to Review: consolidate consecutive sprints into one delivery Review whenever they share a contract, invariants, or validation, and hold a Review-receivable unit until its accepted scope and all identified corrections are complete. Split only for failure isolation, ordering, or materially different invariants — never merely at a sprint boundary. A batched Review's assignment names every covered sprint. A last or only sprint Review also serves as the final whole-state Review when scope and evidence coincide; otherwise obtain one whole-state Review.
-
-Terminal transitions follow **Parent-objective closure**; `conclusively blocked` is terminal non-delivery, never successful completion.
+- **X16** Batch consecutive sprints sharing contract, invariants or validation into one delivery assessment; sprint completion alone is no assessment reason. Complete accepted scope and all known corrections first; split only for failure isolation, ordering or materially different invariants, not sprint boundaries. Name every covered sprint.
+- **X17** A last/only sprint assessment serves final whole-state assessment when scope/evidence coincide; otherwise obtain whole-state assessment. Successful completion requires Outcome delivered, every approved final check and required validation complete, clear final independent delivery assessment, zero pending tasks, integrated non-superseded results and every non-closure todo satisfied.
 
 ## Parent-objective closure
 
-A closure candidate proposes a terminal Outcome for the parent objective after the Orchestrator rereads the exact resolved plan and reconciles baseline and criteria, all sprints, task generations and supersession, integration, validation, Review findings, blockers, recovery attempts, remaining authorized actions, and the complete todo list.
+Before proposing closure, the parent rereads the exact plan and reconciles baseline/criteria,
+all sprints, task generations/supersession, integration, validation, findings, blockers,
+recovery, remaining authorized actions and complete todo settlement.
 
-| Trigger or binding | Required record or transition |
-| --- | --- |
-| Routine recovery with Outcome `active` | Orchestrator-owned; no closure assessment required. |
-| Delivered closure fully covered by final sprint Review | If its scope and evidence exactly equal the whole-state scope and every completion invariant holds, the `PASS` plus Orchestrator reconciliation may transition to `delivered` without a separate assessment. |
-| Blocked/negative closure or any uncovered delivered-closure premise | Requires a separate revision-bound Oracle closure assessment. |
-| Candidate binding before dispatch | At revision N record candidate ID and revision N, proposed Outcome, reconciliation, authoritative evidence references, and the Oracle logical task ID and generation. Oracle reads the entire plan and authoritative references directly and assesses that candidate at N. |
-| Assessment binding | Durably bind the assessment to candidate ID, candidate revision, proposed Outcome, Oracle logical task ID, task generation, and authoritative assessment reference. Its conclusion is advisory; the Orchestrator alone writes state and owns the decision. |
-| `TERMINAL_PREMISE_SUPPORTED` | Permits the Orchestrator's terminal decision only with matching binding and all applicable completion or blocked-settlement invariants. |
-| `CONTINUE_REQUIRED` | Outcome remains `active`; continue authorized work. |
-| `USER_INPUT_REQUIRED` | Outcome remains `active`; identifies the user-owned dependency and proposed question but does not permit contact. Apply the separate gate below. |
-| Missing, malformed, stale, unavailable, contradictory, or unreconciled evidence | Fail closed: Outcome stays `active`; no terminal transition or user-facing claim. |
-| Atomic integration | Record the bound task's terminal result, assessment, decision, and designated closure-assessment todo settlement as one transition from N to N+1; neither that result nor the integration invalidates the binding. Only a substantive event changing the closure premise requires a new candidate and assessment. |
+- **X18** Routine active recovery needs no closure assessment. Delivered closure fully covered by the final sprint's exact whole-state scope/evidence and all completion invariants may use that clear result plus parent reconciliation without a separate assessment. Negative/blocked closure or any uncovered delivered premise requires a separate revision-bound Oracle assessment.
+- **X19** Before dispatch at N, atomically record candidate ID/revision N, proposed Outcome, reconciliation/evidence and Oracle logical task/generation. Oracle reads the entire exact plan and authoritative references, including todos/lineage/discharge, ledger, criteria, validation and findings; missing, contradictory, stale or unreconciled evidence fails closed.
+- **X20** Bind assessment to candidate ID/revision/proposed Outcome/task/generation and authoritative assessment reference. Conclusions are advisory: CONTINUE_REQUIRED retains active and identifies authorized work; USER_INPUT_REQUIRED retains active and identifies exact user dependency/question without contact permission; TERMINAL_PREMISE_SUPPORTED supports parent settlement only with matching binding and every applicable invariant.
+- **X21** Atomic assessment integration records the bound task result, assessment, parent decision and designated assessment-todo settlement from N to N+1; this integration does not stale its binding. Only a substantive premise-changing event requires a new candidate/assessment. Malformed, missing, stale, unavailable or contradictory binding/evidence keeps Outcome active with no terminal claim.
+- **X22** Delivered settlement satisfies every non-closure todo and completion invariant. Blocked settlement records the exact blocker/no viable authorized action; satisfied todos remain satisfied and each unfinished todo stays explicitly evidence-backed unmet/blocked with dependency and no-action basis, never falsely discharged.
+- **X23** At delivered candidate N only the designated assessment todo may remain open; blocked candidates may also retain evidence-backed unmet/blocked todos. Settle the assessment todo atomically at N+1. Missing/stale/unreconciled todo state prevents assessment eligibility/closure; active Outcome permits no terminal user-facing claim.
+- **X24** Awaiting_user is execution disposition, not Outcome. Closure USER_INPUT_REQUIRED does not permit contact; apply the separate input-assessment gate. One explicitly assigned Input task with dependency ID may supply both records; otherwise obtain the separate input record.
 
-`awaiting_user` is an execution disposition, not an Outcome. Before contact following
-`USER_INPUT_REQUIRED`, satisfy the global `USER_INPUT_ASSESSMENT` evidence gate. One Oracle Planning
-task may supply both records only if explicitly assigned `USER_INPUT_ASSESSMENT` with a dependency
-ID; otherwise obtain that assessment separately.
-
-Todo settlement differs by terminal Outcome:
-- **Delivered:** every non-closure todo is satisfied and every completion invariant, including final
-  whole-state Review `PASS`, holds.
-- **Conclusively blocked:** record an evidence-backed blocker and establish that no viable authorized
-  action remains; satisfied todos stay satisfied, and each unfinished todo receives an explicit
-  evidence-backed unmet or blocked disposition explaining its dependency and why no actionable work
-  remains. Never mark unfinished work satisfied or discharged merely to close the lifecycle.
-- **Assessment pending:** for Delivered candidates the designated assessment todo alone may remain
-  open at candidate revision N; for conclusively blocked candidates evidence-backed unmet or blocked
-  todos may also remain open without being treated as satisfied or discharged. Settle the designated
-  assessment todo atomically at N+1 as specified above.
-
-Missing, contradictory, stale, or unreconciled todo state prevents Review readiness or terminal
-closure, and no terminal user-facing claim is permitted while Outcome remains `active`.
-
-## Lifecycle
-
-```mermaid
-stateDiagram-v2
-    [*] --> Baseline
-    Baseline --> Sprint: accepted baseline
-    Sprint --> Ready: scope complete
-    Ready --> Review: REVIEW_READY
-    Review --> Sprint: FAIL or pending
-    Review --> Delivered: PASS, final
-    Delivered --> [*]
-```
-
-The main line is deliberately short; the premise branch forks off it, and the next drawing
-carries that branch to its three outcomes. Between them an objective can only end at
-`Delivered`, or at a settled non-delivery.
-
-`Settled` records exactly one proposed Outcome — `proposed Outcome = delivered` or
-`proposed Outcome = conclusively blocked` — and the assessment that supports it.
-
-```mermaid
-flowchart TD
-    S["Sprint"] -- "blocked premise" --> C["Premise candidate"]
-    C --> A{"Assessment"}
-    A -- "CONTINUE" --> S
-    A -- "USER_INPUT" --> G["Contact gate: one question"]
-    G --> S
-    A -- "TERMINAL" --> T["Settled"]
-    T -- "delivered" --> D["Delivered"]
-    T -- "blocked" --> B["Blocked (non-delivery)"]
-```
-
-1. **Baseline.** Author and accept it under the shared target/corpus rules. Invoke Planning only
-   when its triggers apply; there is no preimplementation Baseline Review. Record the
-   final-validation execution owner, and carry the objective-level goal statement, goal status,
-   and initial-clarification-used/reference state so a resumed or compacted root reuses it
-   instead of re-asking.
-2. **Sprints.** Execute approved bounded sprint contracts. Use review-worthy risk boundaries, not
-   arbitrary files or checklist items: combine mechanical changes sharing a contract and
-   validation; split for failure isolation, ordering, or materially different invariants. Prefer
-   fewer, larger sprints; do not split merely to produce more review boundaries.
-3. **Evidence.** Reconcile under **Baseline, sprint, and Review evidence**, then apply
-   **Completion and Review**.
-4. **Final verification.** The designated owner runs the approved final checks; the Orchestrator
-   integrates their evidence and obtains final whole-state Review per **Completion and Review**.
-5. **Settlement.** Reconcile completion and settle the objective under **Parent-objective
-   closure**.
-
+Closure returns one `oracle-closure-assessment` with:
+candidateId, stateRevision, proposedOutcome, taskId, generation, evidenceRefs, conclusion,
+rationale and nextActions. Echo assigned bindings; conclusion is exactly
+CONTINUE_REQUIRED/USER_INPUT_REQUIRED/TERMINAL_PREMISE_SUPPORTED.
+USER_INPUT_REQUIRED additionally carries dependency, whyAgentCannotResolve and one concise
+question. Actions are proposed authorized work, not delegation/permission; Oracle never
+changes state, asks the user, approves completion or emits lifecycle markers.
+The parent records the authoritative assessment reference during integration.

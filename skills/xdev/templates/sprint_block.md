@@ -1,53 +1,39 @@
 ### Sprint N: {Title}
-
-**schema_version:** 2.0
-Canonical state, todo, snapshot, evidence, and Review rules: `xdev/SKILL.md`.
+**schema_version:** 3.0
+Lifecycle: `xdev/SKILL.md`; Review: `agent-review/references/review.md`.
 
 #### Contract
-- **Task ledger reference:** {logical task ID + generation entry}
-- **Scope:**
-- **Allowed files:**
-- **Target/baseline references:**
-- **Acceptance criteria:**
-  | Criterion ID | Acceptance criterion | Todo ID(s) | Result |
-  |---|---|---|---|
-- **Required validation commands, scenarios, or other faithful evidence:**
-- **Expected results:**
-- **Out-of-scope:**
-- **Assumptions:**
+- **Task ledger:** {logical ID/generation}
+- **Scope / allowed files:**
+- **Target/baseline / authoritative basis:**
+- **Assumptions / out-of-scope:**
+- **Required validation commands/scenarios/inputs and owner:**
+- **Expected results / material cases/invariants:**
+| Criterion ID/materiality | Observable acceptance | Todo IDs | Result/evidence |
+|---|---|---|---|
 
 #### Completion Report
-- **Files changed:** {exact paths}
+- **Files changed:**
 - **Status:** pending / running / completed / failed / blocked / cancelled / superseded
-- **Validation evidence:**
-  | Revision | Snapshot ID | Owner | Check/scenario or command | Expected | Actual | Status (PASS/FAIL/BLOCKED) | Exit status | Raw reference (when material) |
-  |---|---|---|---|---|---|---|---|---|
-- **Proposed follow-up:** {distinct follow-up work and todo/ledger references}
-- **Deviations/blockers:** {none or exact details and evidence}
+| Revision | Snapshot | Owner | Command/scenario/inputs | Expected | Actual | PASS/FAIL/BLOCKED | Exit | Material raw reference |
+|---|---|---|---|---|---|---|---|---|
+- **Proposed follow-up:** {new work and todo/ledger references}
+- **Deviations/blockers:** {exact evidence or none}
 
-#### Review Readiness
-- **Exact unit / contract / snapshot:** {references; snapshot binding under canonical rules}
-- **Acceptance criteria:** {results and evidence references}
-- **Todo reconciliation:** {revision; scoped implementation/correction/integration/required-validation settlement references; Review-action todo ID/status}
-- **Non-superseded results integrated:** {yes/no; ledger references}
-- **Pending tasks:** {none or ledger references}
-- **Required validation against snapshot:** {all PASS or outstanding; evidence references}
-- **Prior actionable findings:** {resolved and revalidated or outstanding; references}
-- **Known actionable in-scope defect:** {none or listed}
-- **Gate:** {REVIEW_READY or unmet readiness; BLOCKED_REVIEW is non-delivery, never approval}
-- **Remaining authorized actions:** {actions or none; blocker evidence}
+#### Delivery-Unit Evidence
+{Populate by reference when a covering sprint already holds the same scope/facts.}
+- **Exact unit / contract / immutable snapshot:**
+- **Criterion self-audit / required validation evidence and owner:**
+- **Integration / non-superseded results / pending work:**
+- **Prior finding resolutions/revalidation / known defects:**
+- **Todo reconciliation revision/settlement / Review-action todo:**
+- **Mode eligibility facts / remaining authorized actions / blockers:**
 
-#### Evaluation Verdict
-{One verdict per Review-covered unit. Batching, split conditions, and the no-partial-redispatch
-rule live in `xdev/SKILL.md` **Completion and Review**; record the outcome here, not the policy.
-Populate readiness fields by reference to the covering sprint block when scopes coincide.
-The dispatch fills the Review Assignment from `agent-review/references/review.md`; findings
-use its stable IDs.}
-- **Reviewed sprint IDs:** {one or more sprint IDs covered by this verdict}
-- **Review revision:**
-- **Review owner:**
-- **Snapshot ID:** {same snapshot ID used by required validation; binding reference}
-- **Verdict:** PASS / FAIL
-- **Reason code (when precondition fails):** REVIEW_PRECONDITION_NOT_MET
-- **`oracle-review-result` reference:**
-- **Review findings:** {stable finding IDs from `oracle-review-result`}
+#### Independent Assessment
+{One result per covered unit; batch under `xdev/SKILL.md`, not per sprint.}
+- **Covered sprint IDs:**
+- **Review ID / dispatch history:**
+- **Review revision / owner / snapshot:**
+- **`oracle-review-result` reference:** {v2 canonical bound result}
+- **Criterion evidence / stable findings / prior resolutions:**
+- **Parent integration/disposition / corrective batch:**
