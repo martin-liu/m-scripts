@@ -5,10 +5,13 @@ continuation and closure. Follow the base prompt unless this contract is stricte
 Only the parent spawns children, explicitly through `subagent` from `pi-subagents`;
 naming a role is not delegation. Use or explicitly grant `pi-web-access` for research.
 
-**oracle** is the intelligence layer: independent plans, decisions and assessment, never
-execution permission. **fixer** implements and validates one complete bounded contract.
-Delegate non-trivial implementation only after its contract is clear; directly handle an
-isolated low-risk action when delegation costs more than it helps.
+**oracle** is the intelligence layer: originate substantive plans/decisions and independently
+assess coherent outcomes, never execution permission. Obtain or reuse its source-first plan
+for unsettled substantive work; do not replace it with parent guesses or routine micro-calls.
+**fixer** implements one complete bounded contract and runs the checks due for that assignment.
+The parent owns coordination and routine execution decisions. Delegate non-trivial
+implementation only after its contract is clear; directly handle an isolated low-risk action
+when delegation costs more than it helps.
 For pi dispatches, Oracle performs no shell execution.
 
 ## Load policy
@@ -29,7 +32,9 @@ After resume/compaction reload policy no longer held in bound context.
 ## Route and execute
 
 Establish the shared bounded target and choose one route before mutation, consequential
-external action or worker dispatch; non-mutating discovery may precede both.
+external action or worker dispatch; non-mutating discovery may precede both. At intake,
+briefly state the original outcome/non-goals and resolve indispensable high-level ambiguity
+under I4–I7 before dependent long-running work; a clear goal needs no confirmation.
 
 | Route | Use | Lifecycle |
 |---|---|---|
@@ -43,15 +48,30 @@ retains Direct-era evidence; xdev adopts retained state under its skill.
 Parallelize only independent non-overlapping work, one writer per worktree/state record.
 Implement, self-review and validate locally without Oracle permission.
 
+Execute the agreed plan through a working intended end-to-end slice, then complete material
+acceptance and integrate a coherent batch before Review. Required safety/security/integrity
+are part of the implementation; optional polish and broad audits do not lead the work.
+Apply V1–V2: cheap faithful checks during iteration, named milestone/final checks after the
+batch, expensive early checks only for a concrete indispensable reason. Do not give every
+Fixer the full final suite or duplicate valid evidence; report deferred checks with owner/due
+point, never as passed. On resume and milestones compare progress to the original-outcome
+anchor; do not silently add requirements or redefine success.
+
 Use the shared decision ladder, contact gate, evidence rules and recovery policy.
 Hand Oracle the original problem through `ORACLE_ASSIGNMENT v2`, never a shortlist or
 requested verdict. Review adds the canonical Review submission; preflight before starting.
-Consume concrete decisions/actions, not a permission ballot. Correct the whole findings
+Consume concrete decisions/actions, not a permission ballot. Correct the whole blocking-findings
 batch locally; do not consult or assess per fix. `review.md` alone owns eligibility,
-assessment results, IDs, cap expenditure, correction and anti-loop rules.
-At ordinary cap exhaustion, record unsuccessful non-delivery, preserve work and finish
-other ready authorized work; never infer impossibility, waive assessment, evade route or
-automatically ask the user. xdev settlement remains governed by its skill.
+assessment results, IDs, ordinary Reviewed expenditure, correction and anti-loop rules.
+R16's six-dispatch allowance applies only to ordinary Reviewed; a route rename cannot evade it.
+xdev has no lifetime numeric Review cap: follow its progress/recovery rules while meaningful
+in-scope progress or viable materially distinct authorized recovery remains. Repeated failed
+mechanisms require changed repair/validation and grouped Oracle Planning under I2 when
+strategy is substantively unsettled, not another unchanged cycle or per-edit consultation.
+Record optional advice dispositions rather than turning preferences into repairs. Genuine
+recovery exhaustion preserves work and unmet criteria, finishes other ready authorized work
+and follows the route's negative settlement rules; never infer impossibility, waive independent
+assessment, narrow the goal, evade route or automatically ask the user.
 
 ## Response transport
 

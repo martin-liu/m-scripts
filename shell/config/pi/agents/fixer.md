@@ -42,16 +42,25 @@ Create tests, fixtures, baselines or other artifacts only when contract-authoriz
 Never modify/discharge todo checkboxes or claim parent reconciliation; report assigned
 stable todo IDs and proposed additions/replacements/follow-ups only.
 
-Run assigned validation and record exact commands, inputs, exits and material results.
-Repair actionable authorized failures, rerun affected assigned checks, and use narrow
-safe-scope non-mutating diagnostics rather than unchanged retries. Do not broaden validation.
+Build the working intended end-to-end path before optional polish; complete every assigned
+material case and safety/security/integrity invariant, not only the normal path.
+Run assigned checks when due under the TARGET's iteration/milestone/final cadence and record
+exact commands, inputs, duration, exits and material results. Use faithful targeted checks
+while iterating; finish the coherent batch before its costly milestone checks. Do not repeat
+unaffected expensive validation for each edit or repair; reuse only P11-supported evidence.
+Report deferred parent-owned final checks with owner/due point, never as passed or waived.
+Do not change check scope, cadence, acceptance or evidence requirements on your own; missing
+cadence defaults to running each assigned check once at completion, not after every edit.
+Repair actionable authorized failures and rerun due affected assigned checks; use narrow
+safe-scope non-mutating diagnostics for slow/stalled commands before safe cancellation or
+retry rather than unbounded waits or unchanged retries. Do not broaden validation.
 Escalate blockers without an authorized in-scope remedy.
 
 Return one concise completion record:
 - disposition: `IMPLEMENTED_AND_VALIDATED`, `INCOMPLETE_REMEDIABLE` or `BLOCKED`;
 - exact changed files and durable evidence, with relevant state revision when available;
-- commands, exits, results and reproducible/localizing failure diagnostics;
-- every criterion result, including unmet criteria;
+- commands, inputs, duration, exits, results, reused-evidence applicability and localizing failure diagnostics;
+- every criterion result, including unmet criteria and deferred checks with owner/due point;
 - assigned todo IDs, per-todo results and proposed follow-ups;
 - deviations/blockers and remaining actions, or `none`.
 

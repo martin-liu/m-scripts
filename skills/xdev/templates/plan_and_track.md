@@ -1,7 +1,11 @@
 # Plan & Track: {Feature Name}
-**schema_version:** 3.0
+**schema_version:** 3.2
 Lifecycle authority: `xdev/SKILL.md`; shared policy: `agent-review/SKILL.md`;
 Review authority: `agent-review/references/review.md`.
+For a 3.0/3.1 plan, retain identity/revisions/goal/clarification, validation, findings and
+complete Review history under X2. Reconstruct anchor/cadence/recovery facts from authoritative
+sources; retain policy-derived spent calls/limits as history, not xdev stop authority.
+Explicit user/host constraints remain binding.
 
 ## State Locator
 - **Objective identity:**
@@ -21,7 +25,7 @@ evidence-backed unmet/blocked work.
 ## State
 - **State revision:**
 - **Lifecycle phase:** baseline / sprint / final validation / complete
-- **Outcome:** active / delivered / conclusively blocked
+- **Outcome:** active / delivered / conclusively blocked / unsuccessful
 - **Execution disposition:** continue / awaiting_user
 - **Closure candidate:** {terminal record reference or none}
 - **Current delivery-unit record:** {scope/eligibility/validation/integration authority}
@@ -36,7 +40,11 @@ evidence-backed unmet/blocked work.
 ## Coherent Baseline
 ### Goal Understanding
 - **Goal statement / high-level outcome:**
+- **Objective / goal revision:**
 - **Basis:** {verbatim original request, later constraints/grants}
+- **Original-outcome anchor / non-goals / observable acceptance / material assumptions:**
+- **Goal revision/source history:** {only authoritative outcome changes; design is separate}
+- **Latest resume/milestone alignment:** {progress/next action versus original anchor}
 - **Goal status:** clear / clarified / open
 - **Initial clarification used:** {no or dependency/assessment/reply references}
 - **Material undecided questions / historical choices, not constraints:**
@@ -45,7 +53,9 @@ evidence-backed unmet/blocked work.
 - **Scope / allowed files / exclusions:**
 - **Intended behavior / expected outputs:**
 - **Authoritative basis:**
+- **Oracle plan/decisions / reconsideration triggers:**
 - **Design / risk boundaries:**
+- **First working end-to-end slice / coherent delivery-unit boundaries:**
 - **Normal, boundary/error and regression/invariant cases:**
 | Criterion ID/materiality | Observable expectation | Authoritative basis | Result/evidence | Todo IDs |
 |---|---|---|---|---|
@@ -54,6 +64,10 @@ evidence-backed unmet/blocked work.
 
 ### Validation Strategy
 - **Final-validation execution owner:**
+| Check / criterion | Exact command/scenario / inputs / expected | Owner | Cadence / due point | Cost/duration | Rerun trigger / evidence applicability |
+|---|---|---|---|---|---|
+- **Deferred checks / owner / due point:** {pending, never PASS}
+- **Indispensable early costly checks:** {decision and why cheap evidence cannot suffice, or none}
 - **Required deterministic commands/checks:**
 - **Faithful scenario/integration evidence:**
 - **Corpus claim class / claimed and automation scopes / exact rules / mismatches:**
@@ -62,18 +76,22 @@ evidence-backed unmet/blocked work.
 - **Population support:** {defined population and independent method/exhaustive evidence}
 
 ### Baseline Validation Evidence
-| Revision | Snapshot | Owner | Command/scenario/inputs | Expected | Actual | PASS/FAIL/BLOCKED | Exit | Material raw reference |
+| Revision | Execution snapshot / current applicability | Owner | Command/scenario/inputs / duration | Expected | Actual | PASS/FAIL/BLOCKED | Exit | Material raw reference |
 |---|---|---|---|---|---|---|---|---|
 
 ## Sprint Records
 {Use `xdev/templates/sprint_block.md`; preserve historical snapshot bindings.}
 
 ## Review Coverage Log
-| Dispatch | Covered unit/sprint IDs | Revision/owner | Snapshot | Raw oracle-review-result | Findings/resolutions |
+- **Stable outcome / inherited dispatch/finding lineage:** {history, not a lifetime Review allowance}
+| Dispatch ordinal | Stable outcome / covered unit/sprint IDs | Revision/owner | Snapshot | Raw oracle-review-result | Findings/resolutions / optional advice disposition |
 |---|---|---|---|---|---|
+- **Latest coherent-boundary progress/recovery:** {criterion/class improvement or decisive new
+  evidence; failed mechanism and changed repair/validation; Oracle plan/trigger when needed;
+  viable materially distinct next action versus original-outcome anchor, with evidence refs}
 
 ## Final Validation Evidence
-| Revision | Snapshot | Owner | Command/scenario/inputs | Expected | Actual | PASS/FAIL/BLOCKED | Exit | Material raw reference |
+| Revision | Execution snapshot / current applicability | Owner | Command/scenario/inputs / duration | Expected | Actual | PASS/FAIL/BLOCKED | Exit | Material raw reference |
 |---|---|---|---|---|---|---|---|---|
 
 ## Final Whole-State Review
@@ -91,9 +109,10 @@ evidence-backed unmet/blocked work.
 - **Reconciliation:** {baseline/criteria, sprints, generations/supersession, integration,
   validation, findings, blockers/recovery, remaining actions, complete todos}
 - **Authoritative evidence / unmet criteria:**
-- **Materially distinct recovery attempts/results:**
-- **Remaining authorized actions / no-action basis:**
-- **Todo settlement:** {satisfied refs; unmet/blocked dependencies;
+- **Materially distinct recovery courses / attempted results / evidence-backed exclusions:**
+- **Unresolved findings / unsuccessful basis:** {genuine recovery exhaustion, not count or impossibility}
+- **Remaining authorized actions / why no viable recovery remains:**
+- **Todo settlement:** {satisfied refs; unmet/blocked dependencies or exhausted-recovery basis;
   designated assessment todo discharge revision/reference}
 - **Parent decision:** {Outcome, disposition, rationale, atomic integration revision}
 

@@ -252,6 +252,30 @@ test("delivery condition is derived, including stale evidence and non-delivery",
   assert.throws(() => review(noBlock, noBlock, ["C1"]));
 });
 
+test("optional observations do not force repair while material failures remain blocking", () => {
+  const [r] = examples(files.review);
+  const optional = clone(r);
+  optional.criteria[0] = { id: "C1", status: "satisfied", evidenceRefs: ["verified outcome"], findingIds: [] };
+  optional.findings[0].blocking = false;
+  optional.findings[0].criterionIds = [];
+  optional.findings[0].defect = "Optional maintainability observation, deferred with rationale";
+  optional.nextActions = [];
+  optional.priorFindingResolutions = [{ id: optional.findings[0].id, status: "unresolved",
+    evidenceRefs: ["Nonblocking; deferred outside required delivery scope"] }];
+  review(optional, optional, ["C1"], [optional.findings[0].id]);
+  assert.equal(clear(optional, ["C1"]), true);
+
+  const materialFailure = clone(optional);
+  materialFailure.criteria[0].status = "not-satisfied";
+  materialFailure.criteria[0].findingIds = [materialFailure.findings[0].id];
+  assert.throws(() => review(materialFailure, materialFailure, ["C1"]),
+    "a material failed criterion cannot be disguised as optional advice");
+  const realBlocker = clone(r);
+  realBlocker.findings[0].defect = "Demonstrated data-integrity failure on the intended path";
+  review(realBlocker, realBlocker, ["C1"]);
+  assert.equal(clear(realBlocker, ["C1"]), false);
+});
+
 test("review binding, batch references and conditional action legality bite", () => {
   const [r] = examples(files.review);
   for (const mutate of [
@@ -278,11 +302,11 @@ const guards = {
     P3: /^Ordinary repository work, local containers\/processes, tests and local dependency installation are not protected merely for state or network use\./,
     P4: /^Only the parent executes protected effects with sufficient explicit authorization covering the exact effect, target and limits; reuse a still-valid grant/,
     P5: /^Broad goals, routes, advice, assessment evidence and worker contracts grant no protected authorization; missing authorization blocks only that effect/,
-    P6: /^A bounded target names output\/behavior, authoritative basis, allowed scope, criterion IDs and observable expectations, evidence, validation owner\/commands, material cases and invariants/,
+    P6: /^A bounded target names output\/behavior, authoritative basis, allowed scope\/non-goals, criterion IDs and observable expectations, evidence, validation owner\/commands\/cadence, material cases and invariants/,
     P8: /^Required deterministic behavior uses faithful input\/output, boundary, error and regression checks;.*never weaken authoritative expected results\./,
     P9: /^Durable evidence is repository path plus content hash, immutable artifact\/URL or inline material evidence; runtime IDs, notifications, temporary paths and task reports alone establish nothing\./,
     P10: /^Bind validation and assessment to root\/base.*tracked\/staged\/untracked.*material modes.*deletions.*manifest-lines hash/,
-    P11: /^Exclude mutable plans.*Product mutation stales evidence; bookkeeping-only edits do not/,
+    P11: /^Exclude mutable plans.*Product mutation stales whole-snapshot assessment, not every check automatically; bookkeeping-only edits stale neither\. Reuse a check only when its complete relevant inputs, dependency\/configuration\/environment and freshness requirements are demonstrably unchanged; unknown applicability requires rerun\. Preserve its original execution snapshot and evidence, record applicability to the current snapshot, and rerun affected checks\..*final validation and assessment share one final snapshot/,
     P12: /^Disclose inspection\/execution owners.*never claim computations.*unless independent execution was arranged/,
     P13: /^Artifact identity, access, modality capability and evidence owner are distinct.*workers do not inherit attachments/,
     P14: /^Parent-recorded criterion-level media inspection can support Oracle assessment.*that lack alone is no blocker or extra-call reason.*Explicit independent media verification requires exact access and capability/,
@@ -291,15 +315,18 @@ const guards = {
     P17: /^Samples support discovery or sample-scoped claims, never unprocessed items.*Scripts, fixtures, presets, generated data, prior outputs and summaries are not corpus truth/,
     P18: /^A worker result or terminal operation does not close an objective.*failed prerequisites block only dependents/,
     P19: /^Negative\/blocked conclusions requiring material semantic inference.*separate Planning premise assessment.*Different-path controls do not prove normal outcomes/,
-    P20: /^Stop unfinished work only for.*ordinary Review-cap non-delivery is also permitted under its reference, never an impossibility claim, waiver of delivery requirements, route evasion or automatic contact\.$/,
+    P20: /^Stop unfinished work only for.*ordinary Reviewed additionally permits Review-cap non-delivery under R16\. xdev uses its progress\/recovery and settlement rules, never a lifetime Review count as a stop reason\. Neither route permits an impossibility claim, waiver of delivery requirements, route evasion or automatic contact\.$/,
     P21: /^Inspect Reviewed\/xdev background children only on completion or transport resume, never poll.*Never revive superseded work/,
     P23: /^Ordinary Reviewed tasks durably bind logical task ID plus generation before dispatch.*material conflicts fail closed/,
     P24: /^Reviewed completion requires a clear final independent delivery assessment.*zero pending work.*Before those conditions hold, the parent must not describe the Reviewed\/xdev outcome or current snapshot as done, complete or ready; report 'implemented, unassessed', 'assessment deficient' or the exact outstanding condition\. Defined task\/transport statuses and factual completed substeps are unchanged\.$/,
+    V1: /^Before implementation, assign checks to iteration, milestone or final validation.*criterion, exact command\/scenario, inputs, owner, expected result, cost\/duration.*due point and rerun trigger.*broad builds, image creation and long integration suites normally wait.*not every edit, Fixer dispatch or Review correction.*may require an early expensive check.*Never weaken required final checks or expected outputs/,
+    V2: /^Complete the coherent implementation\/correction batch.*Do not duplicate a check across workers and parent.*deferred, not passed, waived or a blocker.*exceeds its expected duration or yields no useful progress.*bounded diagnostics.*avoid unbounded waits.*not a pass for the required check.*not child polling/,
+    I2: /^On Reviewed\/xdev, obtain or reuse source-first Oracle Planning before dependent implementation when substantive goal interpretation, architecture, strategy, decomposition or validation design remains unsettled.*Group related questions into one coherent plan.*a valid existing Oracle plan suffices, but a parent-authored design\/default alone does not settle substantive work.*routine implementations.*need no call.*not every fix\/snapshot/,
     I3: /^Technical, implementation, strategy, architecture and ordinary product\/UI choices.*Exactly three user-owned kinds exist:.*indispensable user-only access\/fact.*genuinely incompatible product-intent/,
     I4: /^Before any user question.*actual fenced matching `USER_INPUT_REQUIRED`.*current request epoch.*Only this record permits asking/,
-    I5: /^Finish other feasible authorized work.*ask only when no authorized work remains ready/,
-    I6: /^Record objective ID.*A clear goal proceeds without ratification or specified implementation/,
-    I7: /^Initial goal clarification is one question in one user turn per objective, only for irreconcilable outcome readings after proportionate discovery and independent authorized preparation\..*never a menu\/questionnaire\. .*do not reset it; only a materially replaced objective does\./,
+    I5: /^For ordinary indispensable blockers, finish other feasible authorized work.*ask only when no authorized work remains ready.*Initial outcome alignment follows I7 before dependent implementation/,
+    I6: /^Before dependent implementation, record objective ID\/goal revision, verbatim original basis.*non-goals, observable acceptance, material assumptions.*a clear goal proceeds without ratification or specified implementation.*outcome\/acceptance changes require authoritative instruction or clarification.*never silent drift/,
+    I7: /^Initial goal clarification is one question in one user turn per objective, only for irreconcilable outcome readings after proportionate discovery and bounded intake preparation\..*at intake, before dependent implementation or long-running work.*I4 input assessment is still required.*never a menu\/questionnaire or a choice among valid implementations\..*do not reset it; only a materially replaced objective does\./,
     I8: /^Never reopen a clear goal.*neither authorizes guessing nor repeats the unchanged question.*materially new grounds or a narrower item/,
     I9: /^Only the parent emits `USER_QUESTION: <exact question>` once, verbatim/,
     A1: /^Parent preflight checks the typed core.*no requested answer, verdict, approval, preferred solution, shortlist or leaning is an input field/,
@@ -318,13 +345,13 @@ const guards = {
     R7: /^Finish accepted scope, whole corrections batch and integration.*parent self-review cannot supply independent delivery evidence/,
     R8: /^Echo assigned mode, Review ID, Unit ID and Snapshot ID verbatim.*stateRevision verbatim.*non-xdev results omit it/,
     R9: /^Preconditions status is MET or REVIEW_PRECONDITION_NOT_MET.*unmet material criteria have blocking finding IDs.*Every prior finding/,
-    R10: /^Every blocking issue has a stable finding ID and current-state evidence\. Every requiredAction has a falsifiable acceptance predicate\. Deterministic claims require a mechanical predicate naming fixed inputs, a repeatable executable or rule-based static check and its expected result; where judgment is indispensable, name the authoritative criterion, concrete scenario\/evidence and observable resolving condition, and explain why a mechanical check alone is insufficient\. Oracle repairs incomplete predicates before returning; a non-conforming return is malformed, not delivery evidence, and the parent preserves it rather than inventing or weakening its predicate\./,
+    R10: /^Every blocking issue has a stable finding ID and current-state evidence tied to a material assigned criterion or required invariant; no demonstrated material consequence means observation\/advice, not a blocker\. Missing required material validation\/evidence or assessment preconditions is itself a material evidence failure, without needing a proven implementation bug\. Every requiredAction has a falsifiable acceptance predicate\. Deterministic claims require a mechanical predicate naming fixed inputs, a repeatable executable or rule-based static check and its expected result; where judgment is indispensable, name the authoritative criterion, concrete scenario\/evidence and observable resolving condition, and explain why a mechanical check alone is insufficient\. Oracle repairs incomplete predicates before returning; a non-conforming return is malformed, not delivery evidence, and the parent preserves it rather than inventing or weakening its predicate\./,
     R11: /^A clear delivery assessment means DELIVERY mode, met preconditions, every material criterion satisfied and no blocking finding/,
     R12: /^Decisions use the shared structured rationale.*with deficiencies allows remedy only.*clear DELIVERY allows reconcile only/,
     R13: /^Findings use.*Reuse the prior ID for the same root cause.*Allocate new IDs after the highest historical suffix/,
-    R14: /^Turn the whole findings batch into one corrective contract\. Before every redispatch, name each prior finding's defect class \(shared failure mechanism, not instance\/location\), identify and inspect equivalent in-scope paths\/stages, and record how corrections or evidence-backed rebuttals and class-level checks cover them; justify inapplicability\..*rerun affected checks and every required validation, preserving applicable unchanged-input evidence\. Never interleave assessment with partial corrections\.$/,
+    R14: /^Turn the whole blocking-findings batch into one corrective contract; record optional advice dispositions without mandatory implementation\. Before every redispatch, name each prior finding's defect class \(shared failure mechanism, not instance\/location\), identify and inspect equivalent in-scope paths\/stages, and record how corrections or evidence-backed rebuttals and class-level checks cover them; justify inapplicability\..*due affected checks under V1–V2.*every required delivery check on the current snapshot by execution or P11 unchanged-input applicability\. Do not rerun expensive unaffected checks merely for another correction or dispatch\. Never interleave assessment with partial corrections\.$/,
     R15: /^On recurrence of a defect class, even under a new finding ID, or after a second deficient whole-unit delivery assessment, stabilize before redispatch\..*materially change the repair or validation mechanism.*alone is not a changed strategy\..*Recheck root causes, equivalent affected paths, induced defects and test adequacy\. Executable regressions must execute the intended path and fail with the guard\/feature disabled, isolating prior state\/retries; static\/evidence\/judgment repairs must demonstrate detection of the prior failure by repeatable comparison or criterion-grounded adverse scenario\. Recurring findings retain history\.$/,
-    R16: /^Ordinary Reviewed units default to at most six DELIVERY\/BLOCKED_REVIEW dispatches; STATIC\/DESIGN, Planning and xdev are excluded\. Commit expenditure before call start: preflight rejection spends none; every started DELIVERY\/BLOCKED_REVIEW call spends one, including cancelled, replacement, malformed and precondition-failed calls\. No generation\/snapshot\/rename resets expenditure\. Only the repository owner, or a human explicitly designated by that owner for this decision, may extend a named unit's limit by an explicit finite added allowance\. Before using it, record the exact instruction, authority, unit, added allowance and resulting cumulative limit in the unit's existing assessment history\. The parent cannot self-grant, infer or generalize an extension; it changes effort only, not eligibility, findings, validation or independent assessment, and grants no user contact\. Later and extended dispatches still require eligibility and R15 stabilization\.$/,
+    R16: /^Ordinary Reviewed units default to at most six DELIVERY\/BLOCKED_REVIEW dispatches; STATIC\/DESIGN, Planning, Input and Closure are not delivery calls and cannot substitute for them\. Treat six as a ceiling, not a target: R15 and P20 permit earlier proportionate unsuccessful settlement when materially distinct recovery is exhausted\. Commit expenditure before call start: preflight rejection spends none; every started DELIVERY\/BLOCKED_REVIEW call spends one, including cancelled, replacement, malformed and precondition-failed calls\. No generation\/snapshot\/rename\/sprint\/regrouping\/route change resets expenditure; replacements or overlapping\/repartitioned units retain spent history for the same unfinished outcome\. A route label alone cannot evade this allowance\. Genuine xdev escalation requires durable coordination under its route criteria, preserves complete dispatch\/finding history and follows xdev progress\/recovery rather than inheriting this lifetime numeric limit\. This allowance and extension policy does not govern xdev\..*Only the repository owner.*named ordinary Reviewed unit.*an explicit finite added allowance.*record the exact instruction, authority, unit, added allowance and resulting cumulative limit.*it changes effort only, not eligibility, findings, validation or independent assessment, and grants no user contact\..*At exhaustion without a clear delivery assessment.*unsuccessful non-delivery.*Never loop through advice\/closure.*self-approve, request an extension automatically or call the unresolved outcome impossible\.$/,
     R17: /^Assess the complete current unit.*genuine new material findings remain required.*rebuttals are not re-litigated/,
     R18: /^Bind baseline and shipping scope.*subordinate clauses.*owner\/load applicability.*reader/,
     R19: /^Compare actor, condition, prohibition and exception.*restore losses unless actual instructions authorize them/,
@@ -332,21 +359,22 @@ const guards = {
   },
   xdev: {
     X1: /^Resolve one exact state locator per objective.*never overwrite an existing plan/,
+    X2: /^Resume reads the recorded locator before dispatch.*Existing records retain IDs, revisions, goal\/clarification history, validation, findings and complete Review history.*reconstruct changed anchor\/cadence\/recovery fields from authoritative instructions\/evidence.*never invent authority or reset history.*For 3\.0\/3\.1 records, retain policy-derived spent calls\/limits as history, not xdev stop authority; explicit user\/host constraints remain binding/,
     X5: /^Each durable semantic write increments State revision exactly once.*atomically R to N=R\+1.*Runtime-ID.*neutral/,
     X6: /^Every authorized dispatch has a pre-dispatch ledger entry.*Logical ID\/generation is identity/,
     X8: /^Todo IDs are stable and never reused.*Never silently delete\/reopen/,
     X9: /^Reconcile the complete todo list on resume.*one designated Review-action todo stays open/,
-    X10: /^Outcome is active\/delivered\/conclusively blocked.*Local results never replace Outcome/,
+    X10: /^Outcome is active\/delivered\/conclusively blocked\/unsuccessful.*Local results never replace Outcome.*Unsuccessful records genuinely exhausted proportionate materially distinct authorized recovery under X18\/X22, not a lifetime Review count, elapsed days, technical impossibility or lack of authorization/,
     X12: /^Baseline, sprint and final checks\/scenarios record revision, snapshot, execution owner.*material raw evidence/,
     X14: /^Before ending an active root turn, reread the exact plan.*complete todo list.*automatic resume/,
-    X16: /^Batch consecutive sprints sharing contract, invariants or validation.*not sprint boundaries/,
+    X16: /^Batch consecutive sprints sharing contract, invariants or validation.*not sprint boundaries.*preserve dispatch\/finding history.*xdev has no hard lifetime delivery-Review cap; R16's ordinary Reviewed allowance does not apply\. Continue while meaningful in-scope progress or viable materially distinct authorized recovery remains\..*record criterion or defect-class improvement, decisive new evidence or a supported next recovery action against the original-outcome anchor.*Cosmetic edits, renamed findings, new snapshots, repeated commands and narrowed goals are not progress\..*A failed causal correction or recurring class requires root-cause analysis and a materially changed repair\/validation mechanism, not an unchanged retry\. Obtain or reuse grouped Oracle recovery Planning under I2 when that substantive strategy remains unsettled; then execute through the next coherent boundary without per-edit consultations\. No fresh Review without required new correction\/evidence; optional advice creates no mandatory cycle\.$/,
     X17: /^A last\/only sprint assessment serves final whole-state assessment.*every non-closure todo satisfied/,
-    X18: /^Routine active recovery needs no closure assessment.*Negative\/blocked closure.*revision-bound Oracle assessment/,
+    X18: /^Routine active recovery needs no closure assessment.*Negative\/blocked\/unsuccessful closure.*revision-bound Oracle assessment.*Before proposing unsuccessful settlement, record supported proportionate materially distinct recovery courses, their attempted results or evidence-backed exclusions and why no viable authorized recovery remains.*finish other ready authorized work\. Review count, elapsed days, context pressure or an unchanged failed attempt do not establish exhaustion\..*identify viable materially distinct recovery or missing premise evidence as CONTINUE_REQUIRED\. It cannot prescribe unchanged repetition, waive independent delivery assessment or infer technical impossibility\.$/,
     X19: /^Before dispatch at N, atomically record candidate ID\/revision N.*Oracle reads the entire exact plan/,
-    X20: /^Bind assessment to candidate ID\/revision\/proposed Outcome\/task\/generation.*Conclusions are advisory/,
+    X20: /^Bind assessment to candidate ID\/revision\/proposed Outcome\/task\/generation.*Conclusions are advisory: CONTINUE_REQUIRED retains active and identifies concrete ready authorized progress\/recovery or missing settlement evidence, even after many Reviews/,
     X21: /^Atomic assessment integration.*N to N\+1.*Only a substantive premise-changing event/,
-    X22: /^Delivered settlement satisfies every non-closure todo.*never falsely discharged/,
-    X23: /^At delivered candidate N only the designated assessment todo may remain open.*active Outcome permits no terminal user-facing claim/,
+    X22: /^Delivered settlement satisfies every non-closure todo.*Unsuccessful settlement records genuinely exhausted proportionate materially distinct authorized recovery, attempted results\/evidence-backed exclusions, unresolved criteria\/findings and why no viable next recovery remains; a lifetime Review count alone never supports it\. It grants no waiver, contact or impossible-outcome claim.*exhausted-recovery basis, never falsely discharged/,
+    X23: /^At delivered candidate N only the designated assessment todo may remain open.*blocked\/unsuccessful candidates.*active Outcome permits no terminal user-facing claim.*Unsuccessful settlement reports unsuccessful non-delivery \(Pi STATUS:FAILED\), never DONE or an automatic user question/,
     X24: /^Awaiting_user is execution disposition, not Outcome.*does not permit contact/,
   },
 };
@@ -421,7 +449,7 @@ test("restored any-route, material-choice, dispatch-scope and clarification duti
     ["review", "R16", "Only the repository owner", "Only the parent"],
     ["review", "R16", "an explicit finite added allowance", "an unlimited allowance"],
     ["review", "R16", "record the exact instruction, authority, unit, added allowance and resulting cumulative limit", "record only the new limit"],
-    ["review", "R16", "No generation/snapshot/rename resets expenditure", "A new generation resets expenditure"],
+    ["review", "R16", "No generation/snapshot/rename/sprint/regrouping/route change resets expenditure", "A new generation resets expenditure"],
     ["review", "R16", "it changes effort only, not eligibility, findings, validation or independent assessment", "it waives independent assessment"],
   ];
   for (const [file, id, before, after] of weakenings) {
@@ -432,6 +460,130 @@ test("restored any-route, material-choice, dispatch-scope and clarification duti
     assert.throws(() => assert.match(weakened, guards[file][id]),
       `${file}/${id} weakening must fail its guard`);
   }
+});
+
+test("validation cadence controls costly loops without waiving final evidence", () => {
+  const checks = [
+    ["skill", "V1", "broad builds, image creation and long integration suites normally wait", "broad builds run after every edit"],
+    ["skill", "V1", "may require an early expensive check", "never permits an early expensive check"],
+    ["skill", "V1", "Never weaken required final checks or expected outputs", "Weaken required final checks"],
+    ["skill", "V2", "deferred, not passed, waived or a blocker", "deferred and considered passed"],
+    ["skill", "V2", "avoid unbounded waits", "wait indefinitely"],
+    ["skill", "V2", "not a pass for the required check", "a pass for the required check"],
+    ["skill", "P11", "complete relevant inputs, dependency/configuration/environment and freshness requirements", "changed source file only"],
+    ["skill", "P11", "unknown applicability requires rerun", "unknown applicability permits reuse"],
+    ["skill", "P11", "Preserve its original execution snapshot and evidence", "Replace its original execution snapshot"],
+    ["review", "R14", "every required delivery check on the current snapshot by execution or P11 unchanged-input applicability", "only a cheap smoke check"],
+    ["review", "R14", "Do not rerun expensive unaffected checks", "Rerun expensive unaffected checks"],
+  ];
+  for (const [file, id, before, after] of checks) {
+    const text = rule(files[file], id);
+    assert.ok(text.includes(before), `${file}/${id} control target`);
+    assert.throws(() => assert.match(text.replace(before, after), guards[file][id]),
+      `${file}/${id} weakening must be detected`);
+  }
+  for (const key of ["pf", "of"]) {
+    const s = flat(files[key]);
+    for (const phrase of ["checks when due", "deferred parent-owned final checks with owner/due point",
+      "never as passed or waived", "Do not change check scope, cadence, acceptance",
+      "missing cadence defaults to running each assigned check once at completion"])
+      assert.ok(s.includes(phrase), `${key}: ${phrase}`);
+  }
+  assert.match(rule(files.review, "R1"), /all required validation passing.*unchanged-input applicability/);
+  assert.match(rule(files.review, "R1"), /nonblocking advice has a recorded disposition, not mandatory repair/);
+});
+
+test("outcome anchor and Oracle ownership prevent intake guessing and resume drift", () => {
+  const checks = [
+    ["skill", "I2", "obtain or reuse source-first Oracle Planning before dependent implementation", "consult Oracle after each edit"],
+    ["skill", "I2", "Group related questions into one coherent plan", "Ask each question separately"],
+    ["skill", "I2", "a parent-authored design/default alone does not settle substantive work", "a parent guess settles substantive work"],
+    ["skill", "I6", "non-goals, observable acceptance, material assumptions", "implementation preferences"],
+    ["skill", "I6", "outcome/acceptance changes require authoritative instruction or clarification", "outcome changes require only agent preference"],
+    ["skill", "I7", "at intake, before dependent implementation or long-running work", "after all independent sprints finish"],
+    ["skill", "I7", "I4 input assessment is still required", "I4 input assessment is optional"],
+    ["xdev", "X2", "never invent authority or reset history", "reset history on migration"],
+  ];
+  for (const [file, id, before, after] of checks) {
+    const text = rule(files[file], id);
+    assert.ok(text.includes(before));
+    assert.throws(() => assert.match(text.replace(before, after), guards[file][id]));
+  }
+  assert.match(rule(files.skill, "I5"), /Initial outcome alignment follows I7 before dependent implementation/);
+  assert.match(flat(files.skill), /actions sufficient for autonomous execution.*not a plan that depends on routine intermediate Oracle consultations/);
+  assert.match(flat(files.xdev), /clear goal needs no user ratification/);
+  assert.match(flat(files.pp), /original outcome\/non-goals.*before dependent long-running work/);
+  for (const key of ["unit", "plan", "sprint"])
+    assert.match(files[key], /[Oo]riginal-outcome anchor/);
+  for (const key of ["unit", "plan"]) {
+    assert.match(files[key], /Goal revision\/source history/);
+    assert.match(files[key], /[Oo]racle plan\/decisions/);
+    assert.match(files[key], /3\.0/);
+    assert.match(files[key], /[Rr]etain.*history|identity\/history/s);
+  }
+});
+
+test("delivery batches preserve materiality and route-specific recovery without self-approval", () => {
+  const checks = [
+    ["review", "R16", "Ordinary Reviewed units default to at most six", "Reviewed and xdev delivery units default to at most six"],
+    ["review", "R16", "every started DELIVERY/BLOCKED_REVIEW call spends one", "only well-formed completed calls spend one"],
+    ["review", "R16", "same unfinished outcome", "same file name"],
+    ["review", "R16", "A route label alone cannot evade this allowance", "A route label resets this allowance"],
+    ["review", "R16", "Genuine xdev escalation requires durable coordination under its route criteria", "Renaming the route to xdev is sufficient"],
+    ["review", "R16", "This allowance and extension policy does not govern xdev", "This allowance and extension policy governs xdev"],
+    ["review", "R16", "At exhaustion without a clear delivery assessment", "At exhaustion even with a clear delivery assessment"],
+    ["review", "R10", "no demonstrated material consequence means observation/advice, not a blocker", "any preference is a blocker"],
+    ["review", "R10", "Missing required material validation/evidence or assessment preconditions is itself a material evidence failure", "Missing validation is always optional advice"],
+    ["review", "R14", "record optional advice dispositions without mandatory implementation", "implement every optional suggestion"],
+    ["xdev", "X10", "not a lifetime Review count, elapsed days", "because six Reviews or multiple days elapsed"],
+    ["xdev", "X18", "their attempted results or evidence-backed exclusions and why no viable authorized recovery remains", "the total Review count"],
+    ["xdev", "X18", "identify viable materially distinct recovery or missing premise evidence as CONTINUE_REQUIRED", "stop after six Reviews despite viable recovery"],
+    ["xdev", "X18", "It cannot prescribe unchanged repetition, waive independent delivery assessment or infer technical impossibility", "It may waive independent delivery assessment"],
+    ["xdev", "X22", "a lifetime Review count alone never supports it", "a lifetime Review count alone supports it"],
+    ["xdev", "X22", "never falsely discharged", "mark unfinished todos complete"],
+    ["xdev", "X23", "never DONE or an automatic user question", "emit DONE"],
+  ];
+  for (const [file, id, before, after] of checks) {
+    const text = rule(files[file], id);
+    assert.ok(text.includes(before), `${file}/${id} control target`);
+    assert.throws(() => assert.match(text.replace(before, after), guards[file][id]));
+  }
+  assert.match(rule(files.review, "R7"), /working intended end-to-end path and complete material acceptance, not fragment polish/);
+  assert.match(flat(files.review), /Real in-scope security and edge-case failures still block/);
+  assert.match(flat(files.review), /optional advice; that advice neither obliges another repair cycle/);
+  assert.match(files.unit, /spent dispatches \/ cumulative limit \/ explicit finite extension basis/);
+  for (const key of ["unit", "plan", "sprint"]) {
+    assert.match(files[key], /[Oo]ptional advice disposition/);
+    assert.match(files[key], /[Dd]eferred.*[Oo]wner.*[Dd]ue point/s);
+  }
+  assert.match(files.plan, /Outcome:\*\* active \/ delivered \/ conclusively blocked \/ unsuccessful/);
+  assert.match(flat(files.pp), /six-dispatch allowance applies only to ordinary Reviewed.*xdev has no lifetime numeric Review cap/);
+});
+
+test("xdev continues distinct recovery, rejects cosmetic progress and preserves cold-resume history", () => {
+  const checks = [
+    ["xdev", "X16", "xdev has no hard lifetime delivery-Review cap", "xdev stops after six delivery Reviews"],
+    ["xdev", "X16", "Continue while meaningful in-scope progress or viable materially distinct authorized recovery remains", "Stop once six Reviews have started"],
+    ["xdev", "X16", "against the original-outcome anchor", "against a narrowed agent-defined outcome"],
+    ["xdev", "X16", "Cosmetic edits, renamed findings, new snapshots, repeated commands and narrowed goals are not progress", "A new snapshot alone is progress"],
+    ["xdev", "X16", "root-cause analysis and a materially changed repair/validation mechanism, not an unchanged retry", "another unchanged retry"],
+    ["xdev", "X16", "Obtain or reuse grouped Oracle recovery Planning under I2 when that substantive strategy remains unsettled", "Ask Oracle after every edit"],
+    ["xdev", "X16", "No fresh Review without required new correction/evidence", "Review unchanged deficiencies again"],
+    ["xdev", "X18", "Review count, elapsed days, context pressure or an unchanged failed attempt do not establish exhaustion", "Six Reviews establish exhaustion"],
+    ["xdev", "X20", "even after many Reviews", "unless six Reviews have started"],
+    ["xdev", "X2", "retain policy-derived spent calls/limits as history, not xdev stop authority", "retain legacy limits as active xdev stop authority"],
+    ["xdev", "X2", "explicit user/host constraints remain binding", "explicit user/host constraints are discarded"],
+  ];
+  for (const [file, id, before, after] of checks) {
+    const text = rule(files[file], id);
+    assert.ok(text.includes(before), `${file}/${id} control target`);
+    assert.throws(() => assert.match(text.replace(before, after), guards[file][id]));
+  }
+  assert.match(flat(files.plan), /3\.0\/3\.1 plan.*complete Review history.*history, not xdev stop authority.*Explicit user\/host constraints remain binding/);
+  assert.match(flat(files.plan), /Latest coherent-boundary progress\/recovery.*criterion\/class improvement or decisive new evidence.*failed mechanism and changed repair\/validation.*viable materially distinct next action/);
+  assert.match(files.sprint, /complete dispatch history \/ inherited unit\/finding lineage/);
+  for (const key of ["plan", "sprint"])
+    assert.doesNotMatch(files[key], /cumulative limit|explicit finite extension|inherited spent allowance|Spent delivery-unit allowance/);
 });
 
 test("backend adapters require loading, bounded roles and read-only boundaries", () => {
@@ -485,19 +637,20 @@ test("pi transport preserves exact payload semantics and diagram presentation", 
 });
 
 test("records preserve lifecycle fields and reference canonical assessment", () => {
-  for (const key of ["unit", "plan", "sprint"])
-    assert.match(files[key], /schema_version:\*?\*? 3\.0|schema_version: 3\.0/);
+  assert.match(files.unit, /schema_version: 3\.1/);
+  for (const key of ["plan", "sprint"])
+    assert.match(files[key], /schema_version:\*\* 3\.2/);
   for (const key of ["plan", "sprint"]) {
     assert.match(files[key], /agent-review\/references\/review\.md/);
     assert.match(files[key], /oracle-review-result/);
-    assert.match(files[key], /Snapshot/);
+    assert.match(files[key], /snapshot/i);
   }
   for (const field of ["State revision", "Outcome", "Execution disposition", "Task Ledger",
     "Authoritative Todo List", "Initial clarification used", "Terminal Decision Record",
     "Oracle logical task ID / generation", "Todo settlement"])
     assert.ok(files.plan.includes(field));
   assert.match(files.unit, /Initial clarification|initial clarification/);
-  assert.match(files.unit, /Second-deficiency changed strategy/);
+  assert.match(files.unit, /Recurring-class\/second-deficiency changed strategy/);
   assert.match(files.xdev, /oracle-closure-assessment/);
   for (const key of ["skill", "review", "xdev", "unit", "plan", "sprint"])
     assert.doesNotMatch(files[key], /REVIEW_READY|Verdict: PASS|Verdict: FAIL|"verdict"|"orchestratorBrief"/);
