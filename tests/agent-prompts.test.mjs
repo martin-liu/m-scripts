@@ -662,7 +662,7 @@ description: Decision adviser, strategic technical advisor, and read-only code r
 tools: read, grep, find, ls, bash, contact_supervisor
 skills: agent-review
 async: true
-model: gpt-6.1-sol
+model: gpt-6.2-sol
 thinking: xhigh
 advertise: true
 systemPromptMode: replace
@@ -713,6 +713,20 @@ ${editing ? `  - action: edit
     resource: "*"
     effect: allow
 ---`;
+test("Pi registers both GPT-6.2 models and uses Sol for Oracle", () => {
+  const models = JSON.parse(read("shell/config/pi/models.json")).providers.litellm.models;
+  const previousSol = models.find((model) => model.id === "gpt-6.1-sol");
+  assert.ok(previousSol);
+  for (const [id, name] of [["gpt-6.2-astra", "GPT-6.2 Astra"], ["gpt-6.2-sol", "GPT-6.2 Sol"]]) {
+    const matching = models.filter((model) => model.id === id);
+    assert.equal(matching.length, 1, `${id} must be registered exactly once`);
+    assert.deepEqual(matching[0], { ...previousSol, id, name });
+  }
+  const oracleModel = files.po.match(/^model: (.+)$/m)[1];
+  assert.equal(oracleModel, "gpt-6.2-sol");
+  assert.ok(models.some((model) => model.id === oracleModel));
+});
+
 test("all backend frontmatter remains byte-identical", () => {
   const expected = {
     po: piOracleFront, pf: piFixerFront, op: ocParentFront,

@@ -4,7 +4,7 @@ description: Decision adviser, strategic technical advisor, and read-only code r
 tools: read, grep, find, ls, bash, contact_supervisor
 skills: agent-review
 async: true
-model: gpt-6.1-sol
+model: gpt-6.2-sol
 thinking: xhigh
 advertise: true
 systemPromptMode: replace
