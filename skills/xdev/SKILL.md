@@ -19,6 +19,13 @@ snapshots/evidence/media/corpus and completion; never replace missing shared pol
 IDs, correction and effort rules. This skill owns lifecycle, revisions, tasks/todos,
 batching and closure, not duplicated Review semantics.
 
+Apply P7's first-principles thinking throughout xdev, including resume and recovery:
+anchor decisions to the original outcome, current evidence and binding constraints.
+Revisit causal assumptions when evidence changes; retain supported plans under I2
+rather than routinely replanning.
+Avoid both overengineering and oversimplification: choose the simplest sufficient solution,
+preserving required behavior, material failure handling and maintainability.
+
 ## Locator and authority
 
 - **X1** Resolve one exact state locator per objective: caller path or `.tmp/xdev/{objective-slug}/plan_and_track.md`. Slug normalization lowercases/trims, replaces non-alphanumeric runs with hyphens and trims hyphens; record path/objective. Create only an absent file, never overwrite an existing plan or silently create a second one.
@@ -40,7 +47,7 @@ batching and closure, not duplicated Review semantics.
 
 - **X12** Baseline, sprint and final checks/scenarios record revision, snapshot, execution owner, expected/actual, PASS/FAIL/BLOCKED, command exit where applicable and material raw evidence. Carry V1–V2 cadence, due/deferred checks and P11 unchanged-input applicability in the existing validation strategy/evidence; deferred checks have no PASS. Summaries cannot replace inspection/reproduction evidence. Product snapshots follow shared policy; historical sprints retain execution bindings and final validation/assessment share one final snapshot with explicit reuse applicability.
 - **X13** Review records additionally bind assessment revision/owner, covered units/sprints, canonical oracle-review-result and findings. Oracle dispatches use `ORACLE_ASSIGNMENT v2` plus the bound record their lane requires: Review adds `REVIEW_SUBMISSION v2`, Planning adds its decision basis, Input adds the dependency evidence, Closure adds its revision-bound candidate. Fixer dispatches use their bounded TARGET only. Never duplicate these schemas here.
-- **X14** Before ending an active root turn, reread the exact plan and reconcile received results with the complete todo list and original-outcome anchor; execute/dispatch ready authorized work unless terminal closure holds, the separate contact gate permits an asked necessary question under I5–I7, or no action is ready and a named non-superseded task/generation is confirmed live with automatic resume.
+- **X14** Before ending an active root turn, reread the exact plan and reconcile received results with the complete todo list and original-outcome anchor; execute/dispatch ready authorized work unless terminal closure holds, the separate contact gate permits an asked necessary question under I5–I7, or no action is ready and a named non-superseded task/generation is confirmed live with automatic resume. A completed turn, sprint or readiness report does not establish delivered Outcome; unfinished required work or its unresolved dependencies rule out DONE.
 - **X15** User dependencies block only dependents. Status updates, child completion, remediable failure, context pressure, compaction and a future Next action are not terminal exits. Automatic CONTINUE may carry durably recorded work to another root turn, never abandonment/closure; live waits retain their wake path.
 
 ## Baseline, sprints and completion

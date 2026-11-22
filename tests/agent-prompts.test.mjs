@@ -313,7 +313,7 @@ const guards = {
     P15: /^With inaccessible media, Fixer proceeds only from independently sufficient textual\/structured requirements.*artifact-independent deterministic implementation remains allowed/,
     P16: /^Keep corpus claims separate: semantic item-level truth.*every claimed item before identical-scope automation.*exact-rule transformation.*population claims/,
     P17: /^Samples support discovery or sample-scoped claims, never unprocessed items.*Scripts, fixtures, presets, generated data, prior outputs and summaries are not corpus truth/,
-    P18: /^A worker result or terminal operation does not close an objective.*failed prerequisites block only dependents/,
+    P18: /^A worker result or terminal operation does not close an objective.*failed prerequisites block only dependents.*On every route, completing a turn, phase, plan or readiness report is not objective completion while required in-scope work remains\. A plan\/report-only objective may complete with clearly optional or out-of-scope follow-up; never relabel required work as optional\.$/,
     P19: /^Negative\/blocked conclusions requiring material semantic inference.*separate Planning premise assessment.*Different-path controls do not prove normal outcomes/,
     P20: /^Stop unfinished work only for.*ordinary Reviewed additionally permits Review-cap non-delivery under R16\. xdev uses its progress\/recovery and settlement rules, never a lifetime Review count as a stop reason\. Neither route permits an impossibility claim, waiver of delivery requirements, route evasion or automatic contact\.$/,
     P21: /^Inspect Reviewed\/xdev background children only on completion or transport resume, never poll.*Never revive superseded work/,
@@ -323,7 +323,7 @@ const guards = {
     V2: /^Complete the coherent implementation\/correction batch.*Do not duplicate a check across workers and parent.*deferred, not passed, waived or a blocker.*exceeds its expected duration or yields no useful progress.*bounded diagnostics.*avoid unbounded waits.*not a pass for the required check.*not child polling/,
     I2: /^On Reviewed\/xdev, obtain or reuse source-first Oracle Planning before dependent implementation when substantive goal interpretation, architecture, strategy, decomposition or validation design remains unsettled.*Group related questions into one coherent plan.*a valid existing Oracle plan suffices, but a parent-authored design\/default alone does not settle substantive work.*routine implementations.*need no call.*not every fix\/snapshot/,
     I3: /^Technical, implementation, strategy, architecture and ordinary product\/UI choices.*Exactly three user-owned kinds exist:.*indispensable user-only access\/fact.*genuinely incompatible product-intent/,
-    I4: /^Before any user question.*actual fenced matching `USER_INPUT_REQUIRED`.*current request epoch.*Only this record permits asking/,
+    I4: /^Before any user question.*actual fenced matching `USER_INPUT_REQUIRED`.*current request epoch.*Only this record permits asking, never execution or closure\. Do not defer required work behind implied or future\/conditional confirmation, readiness ratification or a go-ahead; such a dependency uses this gate just like an explicit question\.$/,
     I5: /^For ordinary indispensable blockers, finish other feasible authorized work.*ask only when no authorized work remains ready.*Initial outcome alignment follows I7 before dependent implementation/,
     I6: /^Before dependent implementation, record objective ID\/goal revision, verbatim original basis.*non-goals, observable acceptance, material assumptions.*a clear goal proceeds without ratification or specified implementation.*outcome\/acceptance changes require authoritative instruction or clarification.*never silent drift/,
     I7: /^Initial goal clarification is one question in one user turn per objective, only for irreconcilable outcome readings after proportionate discovery and bounded intake preparation\..*at intake, before dependent implementation or long-running work.*I4 input assessment is still required.*never a menu\/questionnaire or a choice among valid implementations\..*do not reset it; only a materially replaced objective does\./,
@@ -366,7 +366,7 @@ const guards = {
     X9: /^Reconcile the complete todo list on resume.*one designated Review-action todo stays open/,
     X10: /^Outcome is active\/delivered\/conclusively blocked\/unsuccessful.*Local results never replace Outcome.*Unsuccessful records genuinely exhausted proportionate materially distinct authorized recovery under X18\/X22, not a lifetime Review count, elapsed days, technical impossibility or lack of authorization/,
     X12: /^Baseline, sprint and final checks\/scenarios record revision, snapshot, execution owner.*material raw evidence/,
-    X14: /^Before ending an active root turn, reread the exact plan.*complete todo list.*automatic resume/,
+    X14: /^Before ending an active root turn, reread the exact plan.*complete todo list.*automatic resume\. A completed turn, sprint or readiness report does not establish delivered Outcome; unfinished required work or its unresolved dependencies rule out DONE\.$/,
     X16: /^Batch consecutive sprints sharing contract, invariants or validation.*not sprint boundaries.*preserve dispatch\/finding history.*xdev has no hard lifetime delivery-Review cap; R16's ordinary Reviewed allowance does not apply\. Continue while meaningful in-scope progress or viable materially distinct authorized recovery remains\..*record criterion or defect-class improvement, decisive new evidence or a supported next recovery action against the original-outcome anchor.*Cosmetic edits, renamed findings, new snapshots, repeated commands and narrowed goals are not progress\..*A failed causal correction or recurring class requires root-cause analysis and a materially changed repair\/validation mechanism, not an unchanged retry\. Obtain or reuse grouped Oracle recovery Planning under I2 when that substantive strategy remains unsettled; then execute through the next coherent boundary without per-edit consultations\. No fresh Review without required new correction\/evidence; optional advice creates no mandatory cycle\.$/,
     X17: /^A last\/only sprint assessment serves final whole-state assessment.*every non-closure todo satisfied/,
     X18: /^Routine active recovery needs no closure assessment.*Negative\/blocked\/unsuccessful closure.*revision-bound Oracle assessment.*Before proposing unsuccessful settlement, record supported proportionate materially distinct recovery courses, their attempted results or evidence-backed exclusions and why no viable authorized recovery remains.*finish other ready authorized work\. Review count, elapsed days, context pressure or an unchanged failed attempt do not establish exhaustion\..*identify viable materially distinct recovery or missing premise evidence as CONTINUE_REQUIRED\. It cannot prescribe unchanged repetition, waive independent delivery assessment or infer technical impossibility\.$/,
@@ -586,6 +586,60 @@ test("xdev continues distinct recovery, rejects cosmetic progress and preserves 
     assert.doesNotMatch(files[key], /cumulative limit|explicit finite extension|inherited spent allowance|Spent delivery-unit allowance/);
 });
 
+test("first-principles reminders stay explicit, grounded and within role boundaries", () => {
+  const reminders = [
+    ["skill", /Apply first-principles thinking throughout assigned work: start from the requested outcome, verified facts and binding constraints; distinguish assumptions from facts and reason about causal mechanisms, not habit or analogy alone\./],
+    ["pp", /Use first-principles thinking throughout coordination, execution and recovery: start from the user's outcome, verified facts and binding constraints; distinguish assumptions from facts and connect actions to causal mechanisms\. Apply P7 and I2 within your role; this mindset adds no routine Oracle calls\./],
+    ...["po", "oo"].map((key) => [key, /Use first-principles thinking in every lane: start from the original outcome, verified facts and binding constraints; distinguish assumptions from facts and judge causal mechanisms rather than merely endorsing the parent's framing\. This reasoning remains within your read-only advisory role\./]),
+    ...["pf", "of"].map((key) => [key, /Use first-principles thinking throughout implementation, debugging and validation: reason from the TARGET's intended behavior, verified facts, binding constraints and causal mechanisms; within assigned scope, repair causes rather than merely hiding symptoms\. Report contradicted contract assumptions to the parent; do not change the contract or take over Planning\./]),
+    ["xdev", /Apply P7's first-principles thinking throughout xdev, including resume and recovery: anchor decisions to the original outcome, current evidence and binding constraints\. Revisit causal assumptions when evidence changes; retain supported plans under I2 rather than routinely replanning\./],
+  ];
+  for (const [key, pattern] of reminders) {
+    const text = key === "skill" ? rule(files.skill, "P7") : flat(files[key]);
+    assert.match(text, pattern, key);
+    for (const [before, after] of [
+      ["first-principles thinking", "habit-based thinking"],
+      ["binding constraints", "optional constraints"],
+      ["first-principles thinking", "no first-principles thinking"],
+    ]) {
+      assert.ok(text.includes(before));
+      assert.throws(() => assert.match(text.replace(before, after), pattern), `${key}: ${after}`);
+    }
+  }
+});
+
+test("first-principles balance rejects both speculative complexity and insufficient shortcuts", () => {
+  const balance = /^Avoid both overengineering and oversimplification: choose the simplest sufficient solution,/;
+  const preservation = /preserving required behavior, material failure handling and maintainability\./;
+  for (const key of ["pp", "po", "pf", "oo", "of", "xdev"]) {
+    const reminder = flat(files[key].match(/^Avoid both overengineering[^\n]*\n[^\n]*/m)?.[0] ?? "");
+    assert.match(reminder, balance, key);
+    assert.match(reminder, preservation, key);
+    for (const [before, after, pattern] of [
+      ["both overengineering and oversimplification", "overengineering only", balance],
+      ["both overengineering and oversimplification", "oversimplification only", balance],
+      ["simplest sufficient solution", "fewest-lines solution", balance],
+      ["preserving required behavior", "omitting required behavior", preservation],
+    ]) {
+      assert.ok(reminder.includes(before));
+      assert.throws(() => assert.match(reminder.replace(before, after), pattern));
+    }
+  }
+  const p7 = rule(files.skill, "P7");
+  const sufficiency = /Avoid both overengineering and oversimplification: choose the simplest sufficient solution\./;
+  const proportionality = /Complexity must earn its cost through concrete requirements or evidence; fewer lines or layers never justify omitting required behavior, material failure handling or maintainability\./;
+  assert.match(p7, sufficiency);
+  assert.match(p7, proportionality);
+  assert.throws(() => assert.match(p7.replace("both overengineering and oversimplification", "overengineering only"), sufficiency));
+  for (const [before, after] of [
+    ["must earn its cost", "needs no justification"],
+    ["never justify omitting", "justify omitting"],
+  ]) assert.throws(() => assert.match(p7.replace(before, after), proportionality));
+  assert.match(p7, /preserve correctness, security, integrity, operational invariants and manageable lifetime maintenance/);
+  assert.match(p7, /reuse only when assumptions fit/);
+  assert.match(p7, /Add no abstraction, optimization, refactoring or hardening without requirements\/evidence/);
+});
+
 test("backend adapters require loading, bounded roles and read-only boundaries", () => {
   for (const key of ["pp", "op", "po", "oo", "pf", "of"])
     assert.match(files[key], /agent-review\/SKILL\.md/);
@@ -634,6 +688,40 @@ test("pi transport preserves exact payload semantics and diagram presentation", 
     "launching unstarted work is CONTINUE, not WAIT", "start nothing else while waiting",
     "Human replies require user BLOCKED", "PI_MAX_CONTINUATIONS=0", "Measure rendered width"])
     assert.ok(s.includes(phrase));
+});
+
+test("objective-level completion rejects premature DONE and implied confirmation stops", () => {
+  const weakenings = [
+    ["skill", "P18", "On every route", "Only on Reviewed"],
+    ["skill", "P18", "is not objective completion while required in-scope work remains", "is objective completion despite remaining work"],
+    ["skill", "P18", "A plan/report-only objective may complete with clearly optional or out-of-scope follow-up", "Every follow-up prevents completion"],
+    ["skill", "P18", "never relabel required work as optional", "relabel required work as optional"],
+    ["skill", "I4", "Do not defer required work behind implied or future/conditional confirmation", "Defer required work behind informal confirmation"],
+    ["skill", "I4", "such a dependency uses this gate just like an explicit question", "such a dependency bypasses this gate"],
+    ["xdev", "X14", "does not establish delivered Outcome", "establishes delivered Outcome"],
+    ["xdev", "X14", "unfinished required work or its unresolved dependencies rule out DONE", "unfinished required work permits DONE"],
+  ];
+  for (const [file, id, before, after] of weakenings) {
+    const text = rule(files[file], id);
+    assert.ok(text.includes(before), `${file}/${id}: ${before}`);
+    assert.throws(() => assert.match(text.replace(before, after), guards[file][id]));
+  }
+  const transport = flat(files.pp.split("## Response transport\n")[1]);
+  const check = /^Before emitting a marker, reconcile required work, validation and dependencies against the original objective and the reply\. A stated required next action or indispensable user dependency rules out DONE; completing a turn, phase, plan or readiness report is not enough\./;
+  const contact = /Do not defer required work behind implied "confirm readiness\/go-ahead" requests: I3–I9 still apply, and agent-owned decisions need no user ratification\./;
+  const scope = /A completed plan\/report-only request may include clearly optional or out-of-scope follow-up; never relabel required work as optional\./;
+  const done = /\| `STATUS:DONE` \| All objective completion conditions hold; no required work or unresolved dependency for that objective remains\. \|/;
+  for (const pattern of [check, contact, scope, done]) assert.match(transport, pattern);
+  for (const [before, after, pattern] of [
+    ["rules out DONE", "permits DONE", check],
+    ["I3–I9 still apply", "I3–I9 do not apply", contact],
+    ["agent-owned decisions need no user ratification", "agent-owned decisions need user ratification", contact],
+    ["may include clearly optional or out-of-scope follow-up", "must execute every proposed follow-up", scope],
+    ["no required work or unresolved dependency for that objective remains", "required work may remain", done],
+  ]) {
+    assert.ok(transport.includes(before));
+    assert.throws(() => assert.match(transport.replace(before, after), pattern));
+  }
 });
 
 test("records preserve lifecycle fields and reference canonical assessment", () => {
