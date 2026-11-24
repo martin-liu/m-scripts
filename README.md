@@ -40,58 +40,35 @@ pnpm add -g --ignore-scripts @earendil-works/pi-coding-agent
 Use `pi` to start it. This repo manages the upstream package
 `@earendil-works/pi-coding-agent`; it does not use OMP or any `@mariozechner`
 package. Configuration is symlinked into `~/.pi/agent`: `settings.json`,
-`models.json`, `APPEND_SYSTEM.md`, and the `agents/` directory (`oracle`, `fixer`,
-and the orchestration contract appended to Pi's system prompt). Auth, project
-trust, sessions, and other runtime files stay local and are not managed here.
+`models.json`, `APPEND_SYSTEM.md` (the default agent’s orchestrator prompt), and the `agents/`
+directory. Auth, project trust, sessions, and other runtime files stay local.
 The model endpoint is defined in `models.json` with the conventional gateway
 URL; the API key is read from the `LITELLM_PROXY_API_KEY` environment variable,
 so no secrets are stored.
 
 Pi packages are declared in `settings.json` and reconciled by Pi:
 
-* `pi-subagents` — delegates to the `oracle` and `fixer` subagents.
+* `pi-subagents` — the orchestrator delegates bounded work to `worker` and decisions
+  or independent assessments to `oracle`. Only exceptional strategy goes to `planner`.
 * `@upstash/context7-pi` — Context7 documentation tools as a direct extension, so
   no MCP adapter is needed.
 * `pi-web-access` — web search and page fetching.
 * `@ff-labs/pi-fff` — replaces the built-in `find` and `grep` with the indexed,
   frecency-ranked FFF search tools (`pi-fff.json` selects `override` mode).
-* `billion-context-pi` — context compression for long sessions. It runs in-process
-  and cancels Pi's native auto-compaction, so it is the sole context manager. It
-  also provides `acp_delegate`; Pi's built-in auto-compaction stays disabled.
 
-The `extensions/` directory holds `session-supervisor.ts`, a local extension that
-reads the status line each turn ends with (see `APPEND_SYSTEM.md`). It notifies the
-terminal when the session is genuinely idle — done, blocked, failed, or stopped
-without declaring — stays silent while a declared `WAIT` is outstanding, and asks
-Pi for one bounded continuation when the agent declares `CONTINUE` with work left.
+On a Mac with Pi installed, run `node tests/installed-pi-boundary.mjs` to check the effective
+child prompts and role catalog offline. Add `--strict-retirement` to check that the old role
+is no longer discoverable, not just hidden from the catalog.
 
-Set `PI_MAX_CONTINUATIONS` for unattended runs. It defaults to `2` (interactive)
-and accepts `0`–`64`; `0` disables automatic continuation. A reservation is
-charged per settled turn, not per tool call, so a larger budget buys real runway
-overnight:
-
-```sh
-PI_MAX_CONTINUATIONS=64 pi
-```
-
-Exhausting the budget is a resource-limited stop, not a pending question: the
-session reports `Automatic continuation budget exhausted - work remains`.
-Restoring the allowance always requires a fresh genuine request; nothing
-augments it in place, and nothing the model prints can refill it. The three
-transitions differ in whether the limit itself is recomputed:
-
-- `/reload` replaces the extension runtime and re-invokes the extension factory,
-  so it re-reads `PI_MAX_CONTINUATIONS`. It still leaves the allowance at zero:
-  the next successfully delivered genuine request receives the newly resolved
-  limit.
-- A session change (new, resume, fork, session switch) or tree navigation revokes
-  the allowance to zero. It does not re-run the factory, so it does not re-read
-  the environment.
-- New input revokes the allowance and starts a fresh handshake; it never
-  replenishes directly.
-
-The budget is a fuse against an unbounded self-continuation loop and never
+Pi uses native auto-compaction. In the live TUI, the session supervisor can continue
+an eligible unfinished turn or verify a wait on a started subagent. An unverified
+wait is not proof that the child stopped. Automatic continuation has no turn-count
+cap by default; `PI_MAX_CONTINUATIONS=0` disables it. Neither a wake nor a status
 grants authorization.
+
+After a cold restart, reopen the intended session and give it a turn to resume from
+the exact xdev plan. The plan preserves what to do; it does not launch Pi or replay
+the last command. The parent reconciles outstanding runs before dispatching again.
 
 Project trust defaults to `ask`, and analytics/install telemetry are disabled.
 Pi tool allowlists and agent prompts are a policy layer, not an OS sandbox; they

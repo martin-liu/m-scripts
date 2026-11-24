@@ -13,39 +13,16 @@
  *     for a user-owned dependency to become askable. This module reads the
  *     assessment and its fence; the supervisor still verifies provenance,
  *     completion, and the `USER_QUESTION:` sibling line before anything is asked.
- *
- * Extracted from `session-supervisor.ts` (formerly lines ~354-722) as a PURE
- * MOVE: no behavior changed. Nothing here reads live session state, so the whole
- * module is testable without a session.
  */
-import { isFenceDecorated, isIndentedCodeLine } from "./marker.ts";
-import { lineStructure } from "./markdown.ts";
-import type { LineStructure } from "./markdown.ts";
+import { documentFences, lineStructure } from "./markdown.ts";
 
-export type WakeProof =
-  | { kind: "subagent"; id: string; event: string }
-  | { kind: "provider"; owner: string; id: string; event: string };
+export type WakeProof = { kind: "subagent"; id: string; event: string };
 
 /** Parse a WAIT payload into a wake-proof reference, or null when it names none. */
 export function parseWakeProof(payload: string): WakeProof | null {
-  const tokens = payload.trim().split(/\s+/).filter((token) => token.length > 0);
-  if (tokens.length === 0) return null;
-
-  if (tokens[0].toLowerCase() === "subagent" && tokens.length >= 3) {
-    const [, id, ...rest] = tokens;
-    const event = rest.join(" ").trim();
-    return id.length > 0 && event.length > 0 ? { kind: "subagent", id, event } : null;
-  }
-
-  if (tokens[0].toLowerCase() === "provider" && tokens.length >= 4) {
-    const [, owner, id, ...rest] = tokens;
-    const event = rest.join(" ").trim();
-    return owner.length > 0 && id.length > 0 && event.length > 0
-      ? { kind: "provider", owner, id, event }
-      : null;
-  }
-
-  return null;
+  const [kind, id, ...event] = payload.trim().split(/\s+/);
+  if (kind.toLowerCase() !== "subagent" || !id || !event.length) return null;
+  return { kind: "subagent", id, event: event.join(" ") };
 }
 
 /**
@@ -169,100 +146,59 @@ export function humanWaitingLeadingClause(payload: string): boolean {
   );
 }
 
-/**
- * One versioned `USER_INPUT_REQUIRED` assessment parsed out of a result.
- *
- * `question` is kept raw so the caller can compare it to a `USER_QUESTION:`
- * line without normalization surprises.
- */
+/** User-owned branch of the Input v1 contract in agent-review/references/advisory.md. */
 export interface UserInputAssessment {
+  version: 1;
+  outcome: "USER_INPUT_REQUIRED";
   dependencyId: string;
-  outcome: string;
-  kind: string;
+  kind: "authorization" | "access" | "fact" | "product-intent";
+  dependency: string;
   question: string;
-  requestEpoch?: string;
+  whyAgentCannotResolve: string;
 }
 
-/**
- * Parse EXACTLY ONE unambiguous, correctly-versioned Oracle assessment record.
- *
- * Rules, all of which must hold for a record to be usable:
- *
- *   * exactly one `oracle-input-assessment` fenced json block may be present;
- *     zero blocks, a block that is not valid JSON, or two or more such blocks
- *     resolve to null (an ambiguous result is not evidence);
- *   * `version` must be the number 1 (or the string "1");
- *   * `outcome` must be exactly `USER_INPUT_REQUIRED`;
- *   * `dependencyId` must be nonempty.
- *
- * A record with `outcome: "AGENT_DECISION"` therefore parses as null, which is
- * what makes referencing an agent-decision Oracle result unable to authorize a
- * user question.
- */
+const nonblank = (value: unknown): value is string => typeof value === "string" && value.trim().length > 0;
+
+/** Parse one complete user-owned assessment; the supervisor separately verifies its provenance. */
 export function parseUserInputAssessment(result: unknown): UserInputAssessment | null {
   if (typeof result !== "string") return null;
   // The documented record lives in an `oracle-input-assessment` fence. As a
   // compatibility path, a bare ```json fence whose object carries the
   // assessment shape is also accepted, so a host that strips the info string
-  // still works. BOTH forms are counted TOGETHER into one candidate list: a
-  // tagged assessment plus a competing bare-JSON assessment is TWO records and
-  // therefore ambiguous. Each PHYSICAL fence is classified exactly once, so a
-  // single `json oracle-input-assessment` block is never double-counted.
-  const candidates = assessmentFenceBodies(result);
-  if (candidates.length !== 1) return null;
+  // still works. Both forms count toward the same uniqueness check.
+  const body = singleAssessmentBody(result);
+  if (body === null) return null;
 
   let parsed: unknown;
   try {
-    parsed = JSON.parse(candidates[0]);
+    parsed = JSON.parse(body);
   } catch {
     return null;
   }
   if (parsed === null || typeof parsed !== "object") return null;
   const record = parsed as Record<string, unknown>;
 
-  if (!isAssessmentVersionOne(record.version)) return null;
-  if (record.outcome !== "USER_INPUT_REQUIRED") return null;
-  const dependencyId = typeof record.dependencyId === "string" ? record.dependencyId.trim() : "";
-  if (dependencyId.length === 0) return null;
-
-  return {
-    dependencyId,
-    outcome: "USER_INPUT_REQUIRED",
-    kind: typeof record.kind === "string" ? record.kind : "",
-    question: typeof record.question === "string" ? record.question.trim() : "",
-    requestEpoch: typeof record.requestEpoch === "string" ? record.requestEpoch : undefined,
-  };
+  const { version, outcome, dependencyId, kind, dependency, question, whyAgentCannotResolve } = record;
+  if (version !== 1 || outcome !== "USER_INPUT_REQUIRED") return null;
+  if (kind !== "authorization" && kind !== "access" && kind !== "fact" && kind !== "product-intent") return null;
+  if (!nonblank(dependencyId) || !nonblank(dependency) || !nonblank(question) || !nonblank(whyAgentCannotResolve)) return null;
+  // All seven required fields are present. Any other field (including an agent decision) is incompatible.
+  if (Object.keys(record).length !== 7) return null;
+  return { version, outcome, dependencyId, kind, dependency, question, whyAgentCannotResolve };
 }
 
-/**
- * Collect the bodies of every fence that could be an assessment record.
- *
- * A single pass classifies each PHYSICAL fence exactly once so a fence that
- * matches both tags (`json oracle-input-assessment`) cannot be counted twice:
- *
- *   * a fence whose info string names `oracle-input-assessment` is a candidate
- *     unconditionally (the documented record survives a shape check later);
- *   * a bare ```json fence is a candidate ONLY when its object already has the
- *     assessment shape, which keeps an unrelated structured block (a Review
- *     verdict, say) from competing;
- *   * anything else is not a candidate.
- */
-function assessmentFenceBodies(text: string): string[] {
-  const candidates: string[] = [];
-  const fence = /```([^\n`]*)\r?\n([\s\S]*?)```/g;
-  let match: RegExpExecArray | null;
-  while ((match = fence.exec(text)) !== null) {
-    const info = match[1];
-    const body = match[2];
-    if (fenceTagMatches(info, "oracle-input-assessment")) {
-      candidates.push(body);
-      continue;
-    }
-    if (fenceTagMatches(info, "json") && looksLikeAssessment(body)) {
-      candidates.push(body);
-    }
+/** A competing named return or unfinished assessment makes the whole result unusable. */
+function singleAssessmentBody(text: string): string | null {
+  let candidate: string | null = null;
+  for (const { info, body, closed } of documentFences(text)) {
+    const tag = info.trim().toLowerCase().replace(/\s+/g, " ");
+    const name = tag.replace(/^json /, "");
+    if (["oracle-closure-assessment", "oracle-review-result", "oracle-advisory-result", "pi-planning-handoff", "acceptance-report"].includes(name)) return null;
+    if (name !== "oracle-input-assessment" && !(tag === "json" && looksLikeAssessment(body))) continue;
+    if (!closed || candidate !== null) return null;
+    candidate = body;
   }
-  return candidates;
+  return candidate;
 }
 
 /** True when a parsed json block carries the assessment record's shape. */
@@ -277,117 +213,23 @@ function looksLikeAssessment(block: string): boolean {
   }
 }
 
-/** Version 1 is accepted as the JSON number `1` or the string `"1"`. */
-function isAssessmentVersionOne(version: unknown): boolean {
-  return version === 1 || version === "1";
-}
-
 /**
- * True when an info string names `tag` as its first token, or as the token
- * after a leading `json`.
- *
- * Oracle's documented info string is exactly `oracle-input-assessment`, and the
- * `json <tag>` form is accepted as an equivalent. A bare ```json fence (empty
- * info string, or `json` alone) matches only the `json` tag, which the caller
- * uses as its compatibility path.
- */
-function fenceTagMatches(info: string, tag: string): boolean {
-  const tokens = info
-    .trim()
-    .split(/\s+/)
-    .filter((token) => token.length > 0)
-    .map((token) => token.toLowerCase());
-  const lowered = tag.toLowerCase();
-  if (tokens[0] === lowered) return true;
-  return tokens[0] === "json" && tokens[1] === lowered;
-}
-
-/**
- * Extract every ELIGIBLE `USER_QUESTION:` line from a message, trimmed.
- *
- * The scan is over the PARENT's projected final message - the same source that
- * declares the marker - never over the Oracle artifact: the protocol requires
- * the PARENT to repeat the question, while Oracle's own artifact carries only
- * the assessment record. Eligibility mirrors the marker's container rules so a
- * fenced EXAMPLE (` ```\nUSER_QUESTION: ...\n``` `), an indented code line, or a
- * fence-decorated line is documentation, not a question:
- *
- *   - the literal prefix must start at column zero;
- *   - the line must not be indented code;
- *   - the line must not be fence-decorated (a backtick-wrapped example);
- *   - the line must not sit INSIDE a fenced region;
- *   - the line must not sit in a LAZY continuation of an OPEN container, where
- *     a quoted example (`> Example:` then an unmarked following line) would
- *     otherwise count as the parent's own question.
- *
- * Every one of those rules - fence membership, indentation, decoration, AND
- * container ownership - is read from the ONE `lineStructure` walk: the last rule
- * is exactly the line's `topLevel` flag, which is "the line carries no container
- * at document level and is not a lazy paragraph continuation". A column-zero
- * question directly beneath a container-fence CLOSER (whose block ENDED there)
- * is therefore top level, while one beneath an open quoted/list PARAGRAPH is
- * not. Reading a SEPARATE container scan here (the former `isInLazyContainer`)
- * let question ownership drift from marker ownership and admit/refuse questions
- * inconsistently with the marker (DEFECT A7).
- *
- * Only zero or a single eligible line can ever satisfy the caller's
- * "unique eligible question" requirement; two-or-more is ambiguous and
- * unusable.
+ * Read questions from the parent's own document paragraphs, never examples or
+ * Oracle's artifact. A question must start a paragraph or immediately follow
+ * another eligible question. Return all siblings so ambiguity is not lost.
  */
 export function userQuestionLines(result: unknown): string[] {
   if (typeof result !== "string") return [];
   const text = result.replace(/\r\n?/g, "\n");
   const lines = text.split("\n");
-  const structure = lineStructure(text);
+  const { topLevel, paragraphStart, inside } = lineStructure(text);
   const found: string[] = [];
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index].replace(/\s+$/, "");
-    if (!line.startsWith("USER_QUESTION:")) continue;
-    if (isIndentedCodeLine(line)) continue;
-    if (isFenceDecorated(line)) continue;
-    if (structure.inside[index]) continue;
-    if (!structure.topLevel[index]) continue;
-    // The question's OWN line must either BEGIN its document paragraph, or be a
-    // SIBLING of an immediately preceding eligible question line. Two adjacent
-    // TOP-LEVEL questions are BOTH declarations whose disagreement must be
-    // caught, and the second is formally a continuation of the first paragraph;
-    // any OTHER kind of paragraph continuation (prose beneath prose) is not the
-    // parent's question. This mirrors the marker's paragraph-start policy while
-    // keeping the sibling rule the tests require.
-    const sibling = questionSiblingAt(lines, index - 1, structure);
-    if (!structure.paragraphStart[index] && !sibling) continue;
-    found.push(line.slice("USER_QUESTION:".length).trim());
+  let previousWasQuestion = false;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    previousWasQuestion = line.startsWith("USER_QUESTION:") && topLevel[i] && !inside[i] &&
+      (paragraphStart[i] || previousWasQuestion);
+    if (previousWasQuestion) found.push(line.slice("USER_QUESTION:".length).trim());
   }
   return found;
 }
-
-/**
- * True when line `index` is part of a run of consecutive top-level
- * `USER_QUESTION:` lines whose FIRST line begins its document paragraph. Such a
- * line is a SIBLING declaration: the protocol lets adjacent top-level questions
- * all compete, so their disagreement is caught instead of silently resolving to
- * the first. A question beneath ordinary prose fails this test (the run breaks
- * on the prose line before it reaches a paragraph-start question).
- */
-function questionSiblingAt(
-  lines: string[],
-  index: number,
-  structure: LineStructure,
-): boolean {
-  let cursor = index;
-  while (cursor >= 0) {
-    const line = lines[cursor].replace(/\s+$/, "");
-    if (!line.startsWith("USER_QUESTION:")) return false;
-    if (isIndentedCodeLine(line)) return false;
-    if (isFenceDecorated(line)) return false;
-    if (structure.inside[cursor]) return false;
-    if (!structure.topLevel[cursor]) return false;
-    if (structure.paragraphStart[cursor]) return true; // run starts here
-    cursor -= 1;
-  }
-  return false;
-}
-
-/**
- * The verifiable facts this extension can require of an Oracle run it witnessed.
- */

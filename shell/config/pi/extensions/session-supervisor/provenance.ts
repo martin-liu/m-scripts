@@ -8,96 +8,73 @@
  * record from a superseded registration must never be able to silence the user,
  * so lineage is compared explicitly (`provenanceBelongsToCurrentGeneration`)
  * rather than inferred from a numeric counter that restarts per registration.
- *
- * Extracted from `session-supervisor.ts` (formerly lines ~370-740) as a PURE
- * MOVE: no behavior changed.
  */
 import { join } from "node:path";
 
 import {
+  asRecord,
   MAX_RESULT_ARTIFACT_BYTES,
   PROVENANCE_CUSTOM_TYPE,
   REQUEST_GENERATION_CUSTOM_TYPE,
   START_FORM_EVENTS,
 } from "./protocol.ts";
 import { sessionUuid } from "./ids.ts";
-import { defaultReadFile, defaultStatSize, isAbsolutePath, readJsonArtifact } from "./transcript.ts";
-import type { ProvenanceRecord, ReadFile } from "./transcript.ts";
+import { messageText } from "./marker.ts";
+import { defaultReadFile, isAbsolutePath, readJsonArtifact, readTranscriptTail } from "./transcript.ts";
+import type { ObservedRun, ProvenanceRecord, ReadFile } from "./transcript.ts";
 
 export interface ObservedRunEvidence {
   /** Absolute async directory the START event named, or null when unknown. */
   asyncDir: string | null;
-  /** Absolute path to the final structured result, or null when unavailable. */
+  /** Host-recorded Pi child transcript, never the mixed progress log. */
   resultPath: string | null;
-  /** The raw result text, or null when it could not be read. */
+  /** All text parts of the terminal assistant message, or null without proof. */
   result: string | null;
-  /** True when `status.json.state === "complete"`. */
+  /** True when the witnessed run's status is complete. */
   completed: boolean;
-  /**
-   * True only when a result artifact EXISTS but could not be read IN FULL - it
-   * exceeds `MAX_RESULT_ARTIFACT_BYTES`, or the read returned fewer bytes than
-   * the file holds. A truncated read can never establish whole-result
-   * uniqueness (an unread suffix may hold a second assessment or a competing
-   * question), so the evidence is unusable and the caller fails closed with
-   * this distinct diagnostic. Absent when the result was read whole or is
-   * simply missing.
-   */
-  truncated?: boolean;
 }
 
-/**
- * Read one bounded completion/result artifact from an ALREADY-OBSERVED async
- * dir.
- *
- * `asyncDir` must come from an observed START event; this function never
- * accepts a caller/model-supplied path. Within that dir it reads `status.json`
- * for the completion fact (`state === "complete"`) and the authoritative result
- * path (`outputFile`), then reads that file. Every failure mode - a missing dir,
- * unreadable status, a state other than `complete`, a missing result, an
- * oversized artifact - yields the honest shape: `completed: false` and/or a
- * null `result`, which the caller treats as unverified.
- *
- * The process exit code is NOT consulted: completion is `state === "complete"`,
- * never a process signal, exactly as pinned by the real run shape.
- */
+/** Read only the final JSONL record: searching backward could accept a superseded ask. */
+function terminalReply(tail: string | null, runId: string): string | null {
+  if (!tail?.endsWith("\n")) return null;
+  const end = tail.length - 1;
+  const start = tail.lastIndexOf("\n", end - 1) + 1;
+  // The native writer prepends an initial prompt. Require the actual record boundary
+  // even at the start of our bounded tail; a suffix of an oversized row is not proof.
+  if (start === 0) return null;
+  const line = tail.slice(start, end);
+  if (Buffer.byteLength(line, "utf8") > MAX_RESULT_ARTIFACT_BYTES) return null;
+  try {
+    const row = JSON.parse(line);
+    if (row?.version !== 1 || row.source !== "async" || row.runId !== runId || row.agent !== "oracle" || row.childIndex !== 0 ||
+        row.recordType !== "message" || row.sourceEventType !== "message_end" || row.role !== "assistant") return null;
+    const msg = row.message;
+    if (msg?.role !== "assistant" || msg.stopReason !== "stop" || msg.errorMessage || !Array.isArray(msg.content)) return null;
+    return messageText(msg) || null;
+  } catch {
+    return null;
+  }
+}
+
+/** Read the raw final reply of one witnessed native Oracle, not tool output or the host's stripped display copy. */
 export function readObservedRunEvidence(
-  asyncDir: string,
+  { asyncDir, runId, sessionUuid: parentUuid }: Pick<ObservedRun, "asyncDir" | "runId" | "sessionUuid">,
   readFile: ReadFile = defaultReadFile,
-  statSize: (path: string) => number | null = defaultStatSize,
+  readTail: ReadFile = (path) => readTranscriptTail(path, MAX_RESULT_ARTIFACT_BYTES + 2),
 ): ObservedRunEvidence {
   const empty: ObservedRunEvidence = { asyncDir, resultPath: null, result: null, completed: false };
-  if (typeof asyncDir !== "string" || asyncDir.length === 0) return empty;
-
+  if (!asyncDir || !runId || !parentUuid) return empty;
   const status = readJsonArtifact(join(asyncDir, "status.json"), readFile);
-  if (status === null) return empty;
+  if (status?.state !== "complete" || status.runId !== runId || typeof status.sessionId !== "string" ||
+      sessionUuid(status.sessionId) !== parentUuid) return empty;
 
-  const state = typeof status.state === "string" ? status.state : "";
-  const completed = state === "complete";
-
-  const outputs = status.outputs;
-  const outputFile =
-    typeof status.outputFile === "string" && status.outputFile.length > 0
-      ? status.outputFile
-      : outputs !== null && typeof outputs === "object" && typeof (outputs as { path?: unknown }).path === "string"
-        ? ((outputs as { path: string }).path ?? null)
-        : null;
-
-  const resultPath = isAbsolutePath(outputFile) ? outputFile : outputFile === null ? null : join(asyncDir, outputFile);
-  const size = resultPath === null ? null : statSize(resultPath);
-  let result = resultPath === null ? null : readFile(resultPath) ?? null;
-
-  // Whole-result uniqueness cannot be established from a partial read: a
-  // truncated prefix could hold one valid assessment while the unread suffix
-  // holds a competing one, or a conflicting question line. Oversize and
-  // short-read artifacts therefore yield UNUSABLE evidence (fail closed).
-  const oversize = size !== null && size > MAX_RESULT_ARTIFACT_BYTES;
-  const shortRead = result !== null && size !== null && Buffer.byteLength(result, "utf8") < size;
-  const truncated = oversize || shortRead;
-  if (truncated) result = null;
-
-  return truncated
-    ? { asyncDir, resultPath, result, completed, truncated: true }
-    : { asyncDir, resultPath, result, completed };
+  const step = status.mode === "single" && Array.isArray(status.steps) && status.steps.length === 1
+    ? asRecord(status.steps[0]) : undefined;
+  if (step?.agent !== "oracle" || step.status !== "complete" || step.transcriptError || !isAbsolutePath(step.transcriptPath)) {
+    return { ...empty, completed: true };
+  }
+  const resultPath = step.transcriptPath;
+  return { asyncDir, completed: true, resultPath, result: terminalReply(readTail(resultPath), runId) };
 }
 
 
@@ -114,18 +91,8 @@ export type ProvenanceIndex = Map<string, ProvenanceRecord>;
  * epoch cannot be bound to the current request.
  */
 export function parseProvenanceRecord(value: unknown): ProvenanceRecord | null {
-  if (value === null || typeof value !== "object") return null;
-  const entry = value as {
-    version?: unknown;
-    runId?: unknown;
-    agent?: unknown;
-    asyncDir?: unknown;
-    sessionUuid?: unknown;
-    requestEpoch?: unknown;
-    terminal?: unknown;
-    deliveryCapable?: unknown;
-    lineage?: unknown;
-  };
+  const entry = asRecord(value);
+  if (!entry) return null;
   // CORR12/NEW-1: version 2 is the current shape (adds `lineage`). Version 1 is
   // still parsed for backward compatibility and is treated as LEGACY: it has no
   // lineage, so it can never be admitted as current-lineage provenance.
@@ -214,101 +181,32 @@ export interface CurrentLineageGeneration {
  */
 export const LEGACY_NO_LINEAGE_SENTINEL = "legacy:no-lineage";
 
-/**
- * CORR11/NEW-1 LEGACY fallback: the newest generation of a domain stream that
- * carries NO lineage identity at all (a branch written entirely before CORR12).
- *
- * With no lineage tokens, a DROP in the same-domain generation is the only
- * available signal of a counter RESTART - the first boundary of a new
- * registration's lineage. This scans the markers in stream order, opens a NEW
- * lineage whenever the generation drops, and returns the maximum of the LAST
- * lineage only. It preserves the exact CORR11 behaviour for pure-legacy
- * branches; every CORR12-aware branch instead uses the unambiguous lineage
- * token and never reaches this path.
- */
-function legacyDropRestartGeneration(generations: number[]): number | null {
-  let latest: number | null = null;
-  let previous: number | null = null;
-  for (const generation of generations) {
-    if (previous !== null && generation < previous) {
-      latest = generation;
-      previous = generation;
-      continue;
-    }
-    previous = generation;
-    if (latest === null || generation > latest) latest = generation;
-  }
-  return latest;
-}
-
-/**
- * CORR12/NEW-1: select THIS process's CURRENT LINEAGE and its latest generation.
- *
- * The defect CORR11 could not close: the numeric epoch alone is ambiguous
- * because the counter is registration-local and RESTARTS, so a superseded
- * registration and a live one can share numerically equal epochs. Inferring a
- * lineage boundary from the VALUE stream (a drop) cannot distinguish a genuine
- * new-registration restart from a non-monotone write. CORR12 therefore makes
- * lineage EXPLICIT: each generation marker carries the per-registration token
- * that produced it.
- *
- * Selection is POSITIONAL, not numeric: the LAST domain-matched marker in the
- * branch names the current lineage (Pi appends entries in branch order, so the
- * most recent writer is the current registration), and the current generation is
- * the maximum epoch among markers carrying THAT token. A marker from a
- * SUPERSEDED registration carries a different token and is discarded entirely,
- * even when its numeric epoch equals or exceeds the current one.
- *
- * R3 is preserved by the domain filter: a marker from another process's counter
- * domain is skipped, exactly as before.
- *
- * LEGACY branches (every marker lacks a `lineage` field) have no token to select
- * on, so they fall back to the CORR11 drop-restart heuristic rather than losing
- * their previous-request invalidation. CORR13/NEW-1: such a branch reports the
- * explicit `LEGACY_NO_LINEAGE_SENTINEL` identity (NOT the empty string). The
- * caller therefore admits NO legacy record on this path - the sentinel can never
- * equal the `""` a genuine legacy record parses to - which is required because a
- * restarted counter makes a superseded legacy record numerically
- * indistinguishable from the current one (cycle-16 P1-legacy).
+/** The last valid marker in this process's domain selects the lineage. Only
+ * that token's highest generation counts, even if its markers are interleaved.
  */
 export function currentLineageGeneration(entries: unknown[], domain: string): CurrentLineageGeneration | null {
-  const markers: { lineage: string; generation: number }[] = [];
+  const highest = new Map<string, number>();
+  let lastLineage = "";
+  let legacyEpoch: number | null = null;
   for (const raw of entries) {
-    if (raw === null || typeof raw !== "object") continue;
-    const entry = raw as { type?: unknown; customType?: unknown; data?: unknown };
-    if (entry.type !== "custom" || entry.customType !== REQUEST_GENERATION_CUSTOM_TYPE) continue;
-    const data = entry.data as { version?: unknown; generation?: unknown; domain?: unknown; lineage?: unknown } | null;
-    if (data === null || typeof data !== "object") continue;
-    if (data.version !== 1) continue;
-    // CORR10/NEW-1: a marker from a DIFFERENT counter domain says nothing about
-    // this process's request boundaries.
-    if (typeof data.domain !== "string" || data.domain !== domain) continue;
-    if (typeof data.generation !== "number" || !Number.isSafeInteger(data.generation)) continue;
-    markers.push({
-      lineage: typeof data.lineage === "string" ? data.lineage : "",
-      generation: data.generation,
-    });
+    const entry = asRecord(raw);
+    if (entry?.type !== "custom" || entry.customType !== REQUEST_GENERATION_CUSTOM_TYPE) continue;
+    const data = asRecord(entry.data);
+    if (data?.version !== 1 || typeof data.domain !== "string" || data.domain !== domain) continue;
+    const { lineage, generation } = data;
+    if (typeof generation !== "number" || !Number.isSafeInteger(generation)) continue;
+
+    // Without tokens, a rise advances the cursor, a drop restarts it, and an
+    // equal epoch is a duplicate. A tokenless last marker confers no identity.
+    if (generation !== legacyEpoch) legacyEpoch = generation;
+    lastLineage = typeof lineage === "string" ? lineage : "";
+    if (!lastLineage) continue;
+    const previous = highest.get(lastLineage);
+    if (previous === undefined || generation > previous) highest.set(lastLineage, generation);
   }
-  if (markers.length === 0) return null;
-  // The LAST domain-matched marker names the current lineage.
-  const lineage = markers[markers.length - 1].lineage;
-  if (lineage === "") {
-    // Pure-legacy branch: no token identity exists, so keep the CORR11 numeric
-    // drop-restart selection. CORR13/NEW-1: report the EXPLICIT legacy sentinel
-    // rather than `""`, so `""` is never used as an identity token and a
-    // superseded legacy record (parsed lineage `""`) cannot compare equal.
-    const generation = legacyDropRestartGeneration(markers.map((marker) => marker.generation));
-    return generation === null ? null : { lineage: LEGACY_NO_LINEAGE_SENTINEL, generation };
-  }
-  // Token lineage: the maximum epoch among markers sharing the CURRENT token.
-  // A superseded registration's token is never equal to it, so its markers
-  // cannot contribute a maximum.
-  let generation: number | null = null;
-  for (const marker of markers) {
-    if (marker.lineage !== lineage) continue;
-    if (generation === null || marker.generation > generation) generation = marker.generation;
-  }
-  return generation === null ? null : { lineage, generation };
+  if (legacyEpoch === null) return null;
+  return lastLineage ? { lineage: lastLineage, generation: highest.get(lastLineage)! }
+    : { lineage: LEGACY_NO_LINEAGE_SENTINEL, generation: legacyEpoch };
 }
 
 /**
@@ -348,19 +246,9 @@ export function provenanceBelongsToCurrentGeneration(
   latestGeneration: number | null,
   currentLineage?: string,
 ): boolean {
-  if (latestGeneration === null) return false;
-  if (record.requestEpoch !== latestGeneration) return false;
-  if (currentLineage !== undefined) {
-    // CORR12/NEW-1: a version-2 record carries its registration token; a
-    // version-1 legacy record (or one with a malformed token) parses as `""`.
-    // CORR13/NEW-1: the only lineage that is never a live token is the explicit
-    // `LEGACY_NO_LINEAGE_SENTINEL`, so an exact match is required and `""` can
-    // never match it. This is what keeps a SUPERSEDED registration's legacy
-    // record out after a same-process reload.
-    const recordLineage = typeof record.lineage === "string" ? record.lineage : "";
-    if (recordLineage !== currentLineage) return false;
-  }
-  return true;
+  if (latestGeneration === null || record.requestEpoch !== latestGeneration) return false;
+  const recordLineage = typeof record.lineage === "string" ? record.lineage : "";
+  return currentLineage === undefined || recordLineage === currentLineage;
 }
 
 /**

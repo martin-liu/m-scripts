@@ -1,6 +1,8 @@
-// Extracted verbatim from session-supervisor.ts (mechanical split; no logic edits).
-/**
- * Marker prefix every protocol line starts with, at column zero.
+/** Read fields of an untrusted host object without assuming its wire format. */
+export function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === "object" ? (value as Record<string, unknown>) : undefined;
+}
+
 /**
  * The five declared statuses, in the order the protocol lists them.
  *
@@ -400,12 +402,8 @@ export interface ToolRegistrationApi {
  * Minimal event-bus shape for owner-attested wake proof AND observed-run
  * evidence.
  *
- * Two surfaces, both optional so a minimal host or test bus may omit either:
- *
- *   `request` is the narrow owner-attestation pair keyed by a caller-chosen id.
- *   A missing bus, an unsupported topic, a throwing subscriber, or a reply that
- *   never arrives all resolve to "unverified", which notifies - never to an
- *   assumption of wake ownership.
+ *   `emit` sends a correlated status request to the pi-subagents bridge. Without
+ *   a matching reply, the named run cannot be verified as a live wake owner.
  *
  *   `on` subscribes to SETTLED lifecycle topics so this extension can build a
  *   request-scoped ledger of async runs it personally WITNESSED start. The two
@@ -414,7 +412,6 @@ export interface ToolRegistrationApi {
  *   which can only make an escalation unverified - never authorize one.
  */
 export interface SupervisorEventBus {
-  request?: (topic: string, payload: unknown) => unknown;
   emit?: (topic: string, payload: unknown) => unknown;
   on?: (topic: string, listener: (event: unknown) => void) => void;
   off?: (topic: string, listener: (event: unknown) => void) => void;

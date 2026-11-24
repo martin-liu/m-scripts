@@ -2,18 +2,21 @@
 // selected canonical obligations, backend adapters and exact frontmatter.
 // These do not prove semantic equivalence, runtime loading or agent compliance.
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { readFileSync, readdirSync } from "node:fs";
 import { test } from "node:test";
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 const paths = {
   pp: "shell/config/pi/APPEND_SYSTEM.md",
+  planner: "shell/config/pi/agents/planner.md",
   po: "shell/config/pi/agents/oracle.md",
-  pf: "shell/config/pi/agents/fixer.md",
+  pw: "shell/config/pi/agents/worker.md",
   op: "shell/config/opencode-agents/orchestrator.md",
   oo: "shell/config/opencode-agents/oracle.md",
   of: "shell/config/opencode-agents/fixer.md",
   skill: "skills/agent-review/SKILL.md",
+  advisory: "skills/agent-review/references/advisory.md",
   review: "skills/agent-review/references/review.md",
   unit: "skills/agent-review/templates/reviewed_unit.md",
   xdev: "skills/xdev/SKILL.md",
@@ -188,15 +191,35 @@ function review(v, assigned, materialIds, priorIds = []) {
 }
 
 test("v2 examples parse and satisfy their distinct contracts", () => {
-  const [a, p, i] = examples(files.skill);
+  const [a, p, i] = examples(files.advisory);
   assignment(a); advisory(p); input(i);
   const [r] = examples(files.review);
   review(r, r, ["C1"]);
   assert.equal(clear(r, ["C1"]), false);
 });
 
+test("a Pi Planning handoff binds one unresolved decision; it is not a selected plan or assessment", () => {
+  const records = [...files.advisory.matchAll(/^```pi-planning-handoff\n([^`]+)\n```$/gm)];
+  assert.equal(records.length, 1);
+  const h = JSON.parse(records[0][1]);
+  keys(h, ["version", "outcome", "dependencyId", "assignmentRef", "decision", "consequence", "cheapChecks", "evidenceRefs"]);
+  assert.equal(h.version, 1); assert.equal(h.outcome, "PLANNER_NEEDED");
+  for (const k of ["dependencyId", "assignmentRef", "decision", "consequence"]) nonempty(h[k]);
+  for (const k of ["cheapChecks", "evidenceRefs"]) { array(h[k]); assert.ok(h[k].length); h[k].forEach(nonempty); }
+  assert.throws(() => advisory(h)); assert.throws(() => input(h));
+  const policy = flat(files.advisory);
+  assert.match(policy, /Only `oracle` assigned Planning may return.*instead of.*a completed plan/);
+  assert.match(policy, /reject stale, mixed, malformed or consumed handoffs/);
+  assert.match(policy, /Planner returns the ordinary plan or a concrete blocker, never a second handoff/);
+  const legacy = clone(examples(files.advisory)[1]);
+  legacy.nextActions[0].owner = "fixer"; advisory(legacy); // historical v2, not a Pi role to launch
+  for (const owner of ["worker", "planner"]) {
+    legacy.nextActions[0].owner = owner; assert.throws(() => advisory(legacy));
+  }
+});
+
 test("assignments reject ballot, shortlist, missing basis and lane mismatch", () => {
-  const [a] = examples(files.skill);
+  const [a] = examples(files.advisory);
   for (const mutate of [
     (v) => { v.request.verdict = "PASS"; },
     (v) => { v.basis.shortlist = ["A", "B"]; },
@@ -208,7 +231,7 @@ test("assignments reject ballot, shortlist, missing basis and lane mismatch", ()
 });
 
 test("intelligence rationale rejects ratification-only and anonymous advice", () => {
-  const [, p] = examples(files.skill);
+  const [, p] = examples(files.advisory);
   for (const mutate of [
     (v) => { v.authorDecisionItems[0].rationale = "Pick the parent option"; },
     (v) => { delete v.authorDecisionItems[0].rationale.frameCheck; },
@@ -225,7 +248,7 @@ test("intelligence rationale rejects ratification-only and anonymous advice", ()
 });
 
 test("input ownership keeps user and agent fields disjoint", () => {
-  const [, , i] = examples(files.skill);
+  const [, , i] = examples(files.advisory);
   const mixed = clone(i); mixed.selectedOption = "A";
   assert.throws(() => input(mixed));
   const missing = clone(i); delete missing.whyAgentCannotResolve;
@@ -310,7 +333,7 @@ const guards = {
     P12: /^Disclose inspection\/execution owners.*never claim computations.*unless independent execution was arranged/,
     P13: /^Artifact identity, access, modality capability and evidence owner are distinct.*workers do not inherit attachments/,
     P14: /^Parent-recorded criterion-level media inspection can support Oracle assessment.*that lack alone is no blocker or extra-call reason.*Explicit independent media verification requires exact access and capability/,
-    P15: /^With inaccessible media, Fixer proceeds only from independently sufficient textual\/structured requirements.*artifact-independent deterministic implementation remains allowed/,
+    P15: /^With inaccessible media, Worker proceeds only from independently sufficient textual\/structured requirements.*artifact-independent deterministic implementation remains allowed/,
     P16: /^Keep corpus claims separate: semantic item-level truth.*every claimed item before identical-scope automation.*exact-rule transformation.*population claims/,
     P17: /^Samples support discovery or sample-scoped claims, never unprocessed items.*Scripts, fixtures, presets, generated data, prior outputs and summaries are not corpus truth/,
     P18: /^A worker result or terminal operation does not close an objective.*failed prerequisites block only dependents.*On every route, completing a turn, phase, plan or readiness report is not objective completion while required in-scope work remains\. A plan\/report-only objective may complete with clearly optional or out-of-scope follow-up; never relabel required work as optional\.$/,
@@ -319,9 +342,9 @@ const guards = {
     P21: /^Inspect Reviewed\/xdev background children only on completion or transport resume, never poll.*Never revive superseded work/,
     P23: /^Ordinary Reviewed tasks durably bind logical task ID plus generation before dispatch.*material conflicts fail closed/,
     P24: /^Reviewed completion requires a clear final independent delivery assessment.*zero pending work.*Before those conditions hold, the parent must not describe the Reviewed\/xdev outcome or current snapshot as done, complete or ready; report 'implemented, unassessed', 'assessment deficient' or the exact outstanding condition\. Defined task\/transport statuses and factual completed substeps are unchanged\.$/,
-    V1: /^Before implementation, assign checks to iteration, milestone or final validation.*criterion, exact command\/scenario, inputs, owner, expected result, cost\/duration.*due point and rerun trigger.*broad builds, image creation and long integration suites normally wait.*not every edit, Fixer dispatch or Review correction.*may require an early expensive check.*Never weaken required final checks or expected outputs/,
+    V1: /^Before implementation, assign checks to iteration, milestone or final validation.*criterion, exact command\/scenario, inputs, owner, expected result, cost\/duration.*due point and rerun trigger.*broad builds, image creation and long integration suites normally wait.*not every edit, Worker dispatch or Review correction.*may require an early expensive check.*Never weaken required final checks or expected outputs/,
     V2: /^Complete the coherent implementation\/correction batch.*Do not duplicate a check across workers and parent.*deferred, not passed, waived or a blocker.*exceeds its expected duration or yields no useful progress.*bounded diagnostics.*avoid unbounded waits.*not a pass for the required check.*not child polling/,
-    I2: /^On Reviewed\/xdev, obtain or reuse source-first Oracle Planning before dependent implementation when substantive goal interpretation, architecture, strategy, decomposition or validation design remains unsettled.*Group related questions into one coherent plan.*a valid existing Oracle plan suffices, but a parent-authored design\/default alone does not settle substantive work.*routine implementations.*need no call.*not every fix\/snapshot/,
+    I2: /^On Reviewed\/xdev, obtain or reuse source-first Planning before dependent implementation when substantive goal interpretation, architecture, strategy, decomposition or validation design remains unsettled.*Group related questions into one coherent plan.*a valid existing Planning result suffices, but a parent-authored design\/default alone does not settle substantive work.*routine implementations.*need no call.*not every fix\/snapshot/,
     I3: /^Technical, implementation, strategy, architecture and ordinary product\/UI choices.*Exactly three user-owned kinds exist:.*indispensable user-only access\/fact.*genuinely incompatible product-intent/,
     I4: /^Before any user question.*actual fenced matching `USER_INPUT_REQUIRED`.*current request epoch.*Only this record permits asking, never execution or closure\. Do not defer required work behind implied or future\/conditional confirmation, readiness ratification or a go-ahead; such a dependency uses this gate just like an explicit question\.$/,
     I5: /^For ordinary indispensable blockers, finish other feasible authorized work.*ask only when no authorized work remains ready.*Initial outcome alignment follows I7 before dependent implementation/,
@@ -329,10 +352,12 @@ const guards = {
     I7: /^Initial goal clarification is one question in one user turn per objective, only for irreconcilable outcome readings after proportionate discovery and bounded intake preparation\..*at intake, before dependent implementation or long-running work.*I4 input assessment is still required.*never a menu\/questionnaire or a choice among valid implementations\..*do not reset it; only a materially replaced objective does\./,
     I8: /^Never reopen a clear goal.*neither authorizes guessing nor repeats the unchanged question.*materially new grounds or a narrower item/,
     I9: /^Only the parent emits `USER_QUESTION: <exact question>` once, verbatim/,
+  },
+  advisory: {
     A1: /^Parent preflight checks the typed core.*no requested answer, verdict, approval, preferred solution, shortlist or leaning is an input field/,
     A2: /^Supply original instructions.*without a preferred solution or shortlist.*Historical choices\/artifacts are evidence, not constraints.*Do not omit/,
     A3: /^Parent interpretations may appear only as labelled non-authoritative historical evidence.*after its own source-first framing/,
-    B1: /^Oracle independently reconstructs.*before evaluating parent conclusions.*Planning originates.*simpler\/no-change/,
+    B1: /^The assigned adviser independently reconstructs.*before evaluating parent conclusions.*Planning originates.*simpler\/no-change/,
     B2: /^For unresolved material decisions, derive decisive levers.*exclusion reasons.*beyond the parent frame.*settled work needs basis and bounded action/,
     B3: /^Planning and Review judge necessity.*never an invented|^Planning and Review judge necessity.*advice never relaxes criteria/,
     B4: /^Actions are ordered and concrete.*Every action cites a real finding or decision/,
@@ -359,7 +384,7 @@ const guards = {
   },
   xdev: {
     X1: /^Resolve one exact state locator per objective.*never overwrite an existing plan/,
-    X2: /^Resume reads the recorded locator before dispatch.*Existing records retain IDs, revisions, goal\/clarification history, validation, findings and complete Review history.*reconstruct changed anchor\/cadence\/recovery fields from authoritative instructions\/evidence.*never invent authority or reset history.*For 3\.0\/3\.1 records, retain policy-derived spent calls\/limits as history, not xdev stop authority; explicit user\/host constraints remain binding/,
+    X2: /^Resume reads the recorded locator before dispatch.*another-objective default collision stop\/escalate.*bootstrap, migration or malformed-state recovery, read `xdev\/templates\/plan_and_track\.md` and applicable versioned templates.*search matching existing plans before creation; ambiguity or unsafe migration fails closed.*Preserve IDs, revisions, goal\/clarification history, validation, findings and complete Review history; never invent authority or reset history/i,
     X5: /^Each durable semantic write increments State revision exactly once.*atomically R to N=R\+1.*Runtime-ID.*neutral/,
     X6: /^Every authorized dispatch has a pre-dispatch ledger entry.*Logical ID\/generation is identity/,
     X8: /^Todo IDs are stable and never reused.*Never silently delete\/reopen/,
@@ -367,7 +392,7 @@ const guards = {
     X10: /^Outcome is active\/delivered\/conclusively blocked\/unsuccessful.*Local results never replace Outcome.*Unsuccessful records genuinely exhausted proportionate materially distinct authorized recovery under X18\/X22, not a lifetime Review count, elapsed days, technical impossibility or lack of authorization/,
     X12: /^Baseline, sprint and final checks\/scenarios record revision, snapshot, execution owner.*material raw evidence/,
     X14: /^Before ending an active root turn, reread the exact plan.*complete todo list.*automatic resume\. A completed turn, sprint or readiness report does not establish delivered Outcome; unfinished required work or its unresolved dependencies rule out DONE\.$/,
-    X16: /^Batch consecutive sprints sharing contract, invariants or validation.*not sprint boundaries.*preserve dispatch\/finding history.*xdev has no hard lifetime delivery-Review cap; R16's ordinary Reviewed allowance does not apply\. Continue while meaningful in-scope progress or viable materially distinct authorized recovery remains\..*record criterion or defect-class improvement, decisive new evidence or a supported next recovery action against the original-outcome anchor.*Cosmetic edits, renamed findings, new snapshots, repeated commands and narrowed goals are not progress\..*A failed causal correction or recurring class requires root-cause analysis and a materially changed repair\/validation mechanism, not an unchanged retry\. Obtain or reuse grouped Oracle recovery Planning under I2 when that substantive strategy remains unsettled; then execute through the next coherent boundary without per-edit consultations\. No fresh Review without required new correction\/evidence; optional advice creates no mandatory cycle\.$/,
+    X16: /^Batch consecutive sprints sharing contract, invariants or validation.*not sprint boundaries.*preserve dispatch\/finding history.*xdev has no hard lifetime delivery-Review cap; R16's ordinary Reviewed allowance does not apply\. Continue while meaningful in-scope progress or viable materially distinct authorized recovery remains\..*record criterion or defect-class improvement, decisive new evidence or a supported next recovery action against the original-outcome anchor.*Cosmetic edits, renamed findings, new snapshots, repeated commands and narrowed goals are not progress\..*A failed causal correction or recurring class requires root-cause analysis and a materially changed repair\/validation mechanism, not an unchanged retry\. Obtain or reuse grouped recovery Planning under I2 when that substantive strategy remains unsettled; then execute through the next coherent boundary without per-edit consultations\. No fresh Review without required new correction\/evidence; optional advice creates no mandatory cycle\.$/,
     X17: /^A last\/only sprint assessment serves final whole-state assessment.*every non-closure todo satisfied/,
     X18: /^Routine active recovery needs no closure assessment.*Negative\/blocked\/unsuccessful closure.*revision-bound Oracle assessment.*Before proposing unsuccessful settlement, record supported proportionate materially distinct recovery courses, their attempted results or evidence-backed exclusions and why no viable authorized recovery remains.*finish other ready authorized work\. Review count, elapsed days, context pressure or an unchanged failed attempt do not establish exhaustion\..*identify viable materially distinct recovery or missing premise evidence as CONTINUE_REQUIRED\. It cannot prescribe unchanged repetition, waive independent delivery assessment or infer technical impossibility\.$/,
     X19: /^Before dispatch at N, atomically record candidate ID\/revision N.*Oracle reads the entire exact plan/,
@@ -406,7 +431,7 @@ test("restored any-route, material-choice, dispatch-scope and clarification duti
   assert.throws(() => assert.match(skill.replace("any route", "Review dispatches only"), anyRoute));
   // F002: parent-settled material choices compare mechanism/coupling/reversibility and stress-check.
   const p7 = rule(files.skill, "P7");
-  assert.match(p7, /including ones the parent settles by default without consulting Oracle/);
+  assert.match(p7, /including ones the parent settles by default without consulting an adviser/);
   assert.match(p7, /compare causal mechanisms, coupling and reversibility/);
   assert.match(p7, /stress-check the rationale under plausible evidence-supported changes in conditions/);
   assert.throws(() => assert.match(p7.replace(/compare causal mechanisms, coupling and reversibility/, ""),
@@ -416,14 +441,14 @@ test("restored any-route, material-choice, dispatch-scope and clarification duti
   // F003: Review submission is scoped to Review; Fixer keeps its TARGET.
   const x13 = rule(files.xdev, "X13");
   assert.match(x13, /Review adds `REVIEW_SUBMISSION v2`/);
-  assert.match(x13, /Fixer dispatches use their bounded TARGET only/);
-  assert.throws(() => assert.match(x13.replace("Fixer dispatches use their bounded TARGET only.", ""),
-    /Fixer dispatches use their bounded TARGET only\./));
+  assert.match(x13, /Worker dispatches use their bounded TARGET only/);
+  assert.throws(() => assert.match(x13.replace("Worker dispatches use their bounded TARGET only.", ""),
+    /Worker dispatches use their bounded TARGET only\./));
   // The broadening defect F003 named: Review submission imposed on every dispatch.
   const broadenedX13 = x13.replace("Review adds `REVIEW_SUBMISSION v2`,",
     "Every dispatch uses `REVIEW_SUBMISSION v2`,");
   assert.throws(() => assert.match(broadenedX13,
-    /Oracle dispatches use `ORACLE_ASSIGNMENT v2` plus the bound record their lane requires: Review adds `REVIEW_SUBMISSION v2`/));
+    /Advisory dispatches use `ORACLE_ASSIGNMENT v2` plus the bound record their lane requires: Review adds `REVIEW_SUBMISSION v2`/));
   // F004: I7's outcome-only condition cannot be broadened to valid implementation choices.
   const i7 = rule(files.skill, "I7");
   assert.match(i7, /only for irreconcilable outcome readings/);
@@ -482,7 +507,7 @@ test("validation cadence controls costly loops without waiving final evidence", 
     assert.throws(() => assert.match(text.replace(before, after), guards[file][id]),
       `${file}/${id} weakening must be detected`);
   }
-  for (const key of ["pf", "of"]) {
+  for (const key of ["pw", "of"]) {
     const s = flat(files[key]);
     for (const phrase of ["checks when due", "deferred parent-owned final checks with owner/due point",
       "never as passed or waived", "Do not change check scope, cadence, acceptance",
@@ -493,9 +518,9 @@ test("validation cadence controls costly loops without waiving final evidence", 
   assert.match(rule(files.review, "R1"), /nonblocking advice has a recorded disposition, not mandatory repair/);
 });
 
-test("outcome anchor and Oracle ownership prevent intake guessing and resume drift", () => {
+test("outcome anchor and Planning ownership prevent intake guessing and resume drift", () => {
   const checks = [
-    ["skill", "I2", "obtain or reuse source-first Oracle Planning before dependent implementation", "consult Oracle after each edit"],
+    ["skill", "I2", "obtain or reuse source-first Planning before dependent implementation", "consult Oracle after each edit"],
     ["skill", "I2", "Group related questions into one coherent plan", "Ask each question separately"],
     ["skill", "I2", "a parent-authored design/default alone does not settle substantive work", "a parent guess settles substantive work"],
     ["skill", "I6", "non-goals, observable acceptance, material assumptions", "implementation preferences"],
@@ -510,14 +535,14 @@ test("outcome anchor and Oracle ownership prevent intake guessing and resume dri
     assert.throws(() => assert.match(text.replace(before, after), guards[file][id]));
   }
   assert.match(rule(files.skill, "I5"), /Initial outcome alignment follows I7 before dependent implementation/);
-  assert.match(flat(files.skill), /actions sufficient for autonomous execution.*not a plan that depends on routine intermediate Oracle consultations/);
+  assert.match(flat(files.advisory), /actions sufficient for autonomous execution.*not a plan that depends on routine intermediate consultations/);
   assert.match(flat(files.xdev), /clear goal needs no user ratification/);
   assert.match(flat(files.pp), /original outcome\/non-goals.*before dependent long-running work/);
   for (const key of ["unit", "plan", "sprint"])
     assert.match(files[key], /[Oo]riginal-outcome anchor/);
   for (const key of ["unit", "plan"]) {
     assert.match(files[key], /Goal revision\/source history/);
-    assert.match(files[key], /[Oo]racle plan\/decisions/);
+    assert.match(files[key], /Planning result\/decisions/);
     assert.match(files[key], /3\.0/);
     assert.match(files[key], /[Rr]etain.*history|identity\/history/s);
   }
@@ -552,10 +577,8 @@ test("delivery batches preserve materiality and route-specific recovery without 
   assert.match(flat(files.review), /Real in-scope security and edge-case failures still block/);
   assert.match(flat(files.review), /optional advice; that advice neither obliges another repair cycle/);
   assert.match(files.unit, /spent dispatches \/ cumulative limit \/ explicit finite extension basis/);
-  for (const key of ["unit", "plan", "sprint"]) {
-    assert.match(files[key], /[Oo]ptional advice disposition/);
-    assert.match(files[key], /[Dd]eferred.*[Oo]wner.*[Dd]ue point/s);
-  }
+  for (const key of ["unit", "plan"]) assert.match(files[key], /[Oo]ptional advice disposition/);
+  for (const key of ["unit", "plan", "sprint"]) assert.match(files[key], /[Dd]eferred.*[Oo]wner.*[Dd]ue point/s);
   assert.match(files.plan, /Outcome:\*\* active \/ delivered \/ conclusively blocked \/ unsuccessful/);
   assert.match(flat(files.pp), /six-dispatch allowance applies only to ordinary Reviewed.*xdev has no lifetime numeric Review cap/);
 });
@@ -567,21 +590,25 @@ test("xdev continues distinct recovery, rejects cosmetic progress and preserves 
     ["xdev", "X16", "against the original-outcome anchor", "against a narrowed agent-defined outcome"],
     ["xdev", "X16", "Cosmetic edits, renamed findings, new snapshots, repeated commands and narrowed goals are not progress", "A new snapshot alone is progress"],
     ["xdev", "X16", "root-cause analysis and a materially changed repair/validation mechanism, not an unchanged retry", "another unchanged retry"],
-    ["xdev", "X16", "Obtain or reuse grouped Oracle recovery Planning under I2 when that substantive strategy remains unsettled", "Ask Oracle after every edit"],
+    ["xdev", "X16", "Obtain or reuse grouped recovery Planning under I2 when that substantive strategy remains unsettled", "Ask Oracle after every edit"],
     ["xdev", "X16", "No fresh Review without required new correction/evidence", "Review unchanged deficiencies again"],
     ["xdev", "X18", "Review count, elapsed days, context pressure or an unchanged failed attempt do not establish exhaustion", "Six Reviews establish exhaustion"],
     ["xdev", "X20", "even after many Reviews", "unless six Reviews have started"],
-    ["xdev", "X2", "retain policy-derived spent calls/limits as history, not xdev stop authority", "retain legacy limits as active xdev stop authority"],
-    ["xdev", "X2", "explicit user/host constraints remain binding", "explicit user/host constraints are discarded"],
   ];
   for (const [file, id, before, after] of checks) {
     const text = rule(files[file], id);
     assert.ok(text.includes(before), `${file}/${id} control target`);
     assert.throws(() => assert.match(text.replace(before, after), guards[file][id]));
   }
-  assert.match(flat(files.plan), /3\.0\/3\.1 plan.*complete Review history.*history, not xdev stop authority.*Explicit user\/host constraints remain binding/);
+  // Ordinary resume uses the live plan; setup-only details remain reachable on the exceptional paths.
+  assert.match(rule(files.xdev, "X3"), /Ordinary resume reads the live plan, not template prose:.*original outcome.*task generations\/status and integration.*prior findings.*next due check.*`xdev\/templates\/sprint_block.md` when creating or updating a sprint/);
+  assert.doesNotMatch(files.xdev, /non-alphanumeric|For a 3\.0\/3\.1 plan/i);
+  const setup = flat(files.plan.split("## State Locator")[0]);
+  assert.match(setup, /trim and lowercase.*non-alphanumeric characters with one hyphen.*trim leading and trailing hyphens/);
+  assert.match(setup, /reconstruct changed anchor\/cadence\/recovery fields from authoritative instructions and evidence before dependent work/);
+  assert.match(setup, /3\.0\/3\.1 plan.*retain policy-derived spent calls\/limits as history, not xdev stop authority.*Explicit user\/host constraints remain binding.*preserve the complete Review history/i);
   assert.match(flat(files.plan), /Latest coherent-boundary progress\/recovery.*criterion\/class improvement or decisive new evidence.*failed mechanism and changed repair\/validation.*viable materially distinct next action/);
-  assert.match(files.sprint, /complete dispatch history \/ inherited unit\/finding lineage/);
+  assert.match(files.plan, /Preserve complete dispatch\/finding lineage/);
   for (const key of ["plan", "sprint"])
     assert.doesNotMatch(files[key], /cumulative limit|explicit finite extension|inherited spent allowance|Spent delivery-unit allowance/);
 });
@@ -589,10 +616,13 @@ test("xdev continues distinct recovery, rejects cosmetic progress and preserves 
 test("first-principles reminders stay explicit, grounded and within role boundaries", () => {
   const reminders = [
     ["skill", /Apply first-principles thinking throughout assigned work: start from the requested outcome, verified facts and binding constraints; distinguish assumptions from facts and reason about causal mechanisms, not habit or analogy alone\./],
-    ["pp", /Use first-principles thinking throughout coordination, execution and recovery: start from the user's outcome, verified facts and binding constraints; distinguish assumptions from facts and connect actions to causal mechanisms\. Apply P7 and I2 within your role; this mindset adds no routine Oracle calls\./],
-    ...["po", "oo"].map((key) => [key, /Use first-principles thinking in every lane: start from the original outcome, verified facts and binding constraints; distinguish assumptions from facts and judge causal mechanisms rather than merely endorsing the parent's framing\. This reasoning remains within your read-only advisory role\./]),
-    ...["pf", "of"].map((key) => [key, /Use first-principles thinking throughout implementation, debugging and validation: reason from the TARGET's intended behavior, verified facts, binding constraints and causal mechanisms; within assigned scope, repair causes rather than merely hiding symptoms\. Report contradicted contract assumptions to the parent; do not change the contract or take over Planning\./]),
-    ["xdev", /Apply P7's first-principles thinking throughout xdev, including resume and recovery: anchor decisions to the original outcome, current evidence and binding constraints\. Revisit causal assumptions when evidence changes; retain supported plans under I2 rather than routinely replanning\./],
+    ["pp", /Use first-principles thinking \(P7\) in coordination, execution and recovery: choose the simplest sufficient action from the user's outcome, evidence and binding constraints\. This adds no routine advisory calls under I2\./],
+    ["planner", /Use first-principles thinking \(P7\): test the premise and causal mechanism against the simplest sufficient alternative, including no change\. User-mandated designs are binding constraints; prior advice is not\./],
+    ["po", /Use first-principles thinking \(P7\): derive expectations from original instructions and binding constraints before testing the author's conclusions against evidence\. Prefer the simplest sufficient course\./],
+    ["oo", /Use first-principles thinking in every lane: start from the original outcome, verified facts and binding constraints; distinguish assumptions from facts and judge causal mechanisms rather than merely endorsing the parent's framing\. This reasoning remains within your read-only advisory role\./],
+    ["pw", /Use first-principles thinking \(P7\): choose the simplest sufficient method within the TARGET's binding constraints\. Repair causes, not symptoms\. Report evidence contradicting the TARGET; never change scope, acceptance/],
+    ["of", /Use first-principles thinking throughout implementation, debugging and validation: reason from the TARGET's intended behavior, verified facts, binding constraints and causal mechanisms; within assigned scope, repair causes rather than merely hiding symptoms\. Report contradicted contract assumptions to the parent; do not change the contract or take over Planning\./],
+    ["xdev", /Apply P7's first-principles thinking throughout xdev: choose the simplest sufficient course from the original outcome, evidence and binding constraints\. On resume and recovery, revisit changed assumptions and reuse still-supported plans under I2\./],
   ];
   for (const [key, pattern] of reminders) {
     const text = key === "skill" ? rule(files.skill, "P7") : flat(files[key]);
@@ -611,7 +641,15 @@ test("first-principles reminders stay explicit, grounded and within role boundar
 test("first-principles balance rejects both speculative complexity and insufficient shortcuts", () => {
   const balance = /^Avoid both overengineering and oversimplification: choose the simplest sufficient solution,/;
   const preservation = /preserving required behavior, material failure handling and maintainability\./;
-  for (const key of ["pp", "po", "pf", "oo", "of", "xdev"]) {
+  // Pi role cues apply the same mandatory P7 balance; OpenCode retains its local wording.
+  for (const key of ["pp", "planner", "po", "pw", "xdev"]) {
+    const cue = flat(files[key].split(/\n\s*\n/).find((p) => p.includes("first-principles thinking")) ?? "");
+    for (const phrase of ["P7", "simplest sufficient", "binding constraints"]) {
+      assert.ok(cue.includes(phrase), `${key}: ${phrase}`);
+    }
+    assert.ok(files[key].includes("agent-review/SKILL.md"), `${key} must load P7`);
+  }
+  for (const key of ["oo", "of"]) {
     const reminder = flat(files[key].match(/^Avoid both overengineering[^\n]*\n[^\n]*/m)?.[0] ?? "");
     assert.match(reminder, balance, key);
     assert.match(reminder, preservation, key);
@@ -640,42 +678,110 @@ test("first-principles balance rejects both speculative complexity and insuffici
   assert.match(p7, /Add no abstraction, optimization, refactoring or hardening without requirements\/evidence/);
 });
 
+test("the advisory contract is bound by parents and read by advisers, not execution workers", () => {
+  const ref = paths.advisory.slice("skills/".length);
+  assert.match(flat(files.skill), /The parent reads `agent-review\/references\/advisory.md` before dispatching, integrating or reusing advice or assessments, including on resume\. Bind it in each advisory assignment; the adviser reads that exact reference in every lane\. Execution TARGETs need no advisory reference/);
+  for (const key of ["pp", "op"]) assert.ok(flat(files[key]).includes(`read and bind \`${ref}\``), key);
+  for (const key of ["planner", "po", "oo"]) assert.ok(flat(files[key]).includes(`\`agent-review/SKILL.md\` and \`${ref}\``), key);
+  assert.equal(examples(files.skill).length, 0);
+  assert.doesNotMatch(files.skill, /^```pi-planning-handoff/m);
+  for (const key of ["pw", "of"]) assert.ok(!files[key].includes(ref), key);
+});
+
 test("backend adapters require loading, bounded roles and read-only boundaries", () => {
-  for (const key of ["pp", "op", "po", "oo", "pf", "of"])
+  for (const key of ["pp", "op", "planner", "po", "oo", "pw", "of"])
     assert.match(files[key], /agent-review\/SKILL\.md/);
   for (const key of ["pp", "op"]) {
     const s = flat(files[key]);
-    assert.match(s, /Before any Oracle dispatch/);
+    assert.match(s, key === "pp" ? /Before any advisory dispatch/ : /Before any Oracle dispatch/);
     assert.match(s, /never assume the working directory is the repository/);
     assert.match(s, /ORACLE_ASSIGNMENT v2.*never a shortlist or requested verdict/);
-    assert.match(s, /Implement, self-review and validate locally without Oracle permission/);
+    assert.match(s, key === "pp"
+      ? /Integrate and self-review without adviser permission\. Validation ownership is accountability/
+      : /Implement, self-review and validate locally without Oracle permission/);
     for (const route of ["Direct", "Reviewed", "xdev"]) assert.ok(s.includes(`| ${route} |`));
   }
-  for (const key of ["po", "oo"]) {
+  for (const key of ["planner", "po"]) {
     const s = flat(files[key]);
-    assert.match(s, /Do not edit files, spawn agents/);
-    assert.match(s, /never execute it yourself/);
-    assert.match(s, /run builds\/tests\/package managers/);
-    assert.match(s, /not an enforced sandbox/);
-    assert.match(s, /whitelist is a limit, not a grant/);
-    for (const cmd of ["git diff", "git rev-parse", "jj diff", "gh pr diff", "gh api"])
-      assert.ok(s.includes(cmd));
-    assert.match(s, /oracle-review-result/);
-    assert.match(s, /oracle-input-assessment/);
-    assert.match(s, /xdev\/SKILL\.md/);
+    assert.match(s, /no shell, edits, check execution or delegation/);
+    assert.match(s, /Tool allowlists are not an OS sandbox/);
+    assert.match(s, /never execute or authorize protected effects/);
   }
-  for (const key of ["pf", "of"]) {
+  assert.match(flat(files.advisory), /Never delegate, execute validation, edit state, ask the user, approve delivery or emit lifecycle markers/);
+  const oc = flat(files.oo);
+  for (const phrase of ["Do not edit files, spawn agents", "never execute it yourself", "run builds/tests/package managers",
+    "not an enforced sandbox", "whitelist is a limit, not a grant", "git diff", "git rev-parse", "jj diff", "gh pr diff", "gh api"])
+    assert.ok(oc.includes(phrase), phrase);
+  for (const key of ["po", "oo"]) {
+    for (const phrase of ["oracle-review-result", "oracle-input-assessment", "xdev/SKILL.md"])
+      assert.ok(files[key].includes(phrase), phrase);
+  }
+  for (const key of ["pw", "of"]) {
     const s = flat(files[key]);
-    assert.match(s, /Before mutation read the entire TARGET/);
-    assert.match(s, /ordinary in-scope implementation choices/);
+    if (key === "of") {
+      assert.match(s, /Before mutation read the entire TARGET/);
+      assert.match(s, /ordinary in-scope implementation choices/);
+      assert.match(s, /Documentation lookup is limited to assigned implementation needs; no open-ended research/);
+      assert.match(s, /Never modify\/discharge todo checkboxes/);
+    } else {
+      assert.match(s, /Read the entire TARGET and exact bound `agent-review\/SKILL.md` before dependent work/);
+      assert.match(s, /choose the simplest sufficient method within the TARGET's binding constraints/);
+      assert.match(s, /read-only assignment means no edits, generated files or unrequested experiments/);
+      assert.match(s, /Never edit lifecycle records or discharge todos/);
+    }
     assert.match(s, /Never execute protected effects/);
-    assert.match(s, /Documentation lookup is limited to assigned implementation needs; no open-ended research/);
-    assert.match(s, /Never modify\/discharge todo checkboxes/);
     assert.match(s, /Do not broaden validation/);
-    for (const status of ["IMPLEMENTED_AND_VALIDATED", "INCOMPLETE_REMEDIABLE", "BLOCKED"])
+    for (const status of [key === "of" ? "IMPLEMENTED_AND_VALIDATED" : "COMPLETED", "INCOMPLETE_REMEDIABLE", "BLOCKED"])
       assert.ok(s.includes(status));
   }
-  assert.match(files.pp, /For pi dispatches, Oracle performs no shell execution/);
+  assert.match(files.pp, /Neither adviser executes shell commands or grants permission/);
+});
+
+test("the default agent answers immediate questions and delegates the whole bounded deliverable", () => {
+  const prompt = flat(files.pp.split("\n## Load policy")[0]);
+  assert.match(prompt, /You are the orchestrator, Pi's default agent, not a subagent/);
+  assert.match(prompt, /immediate answer already supported by context \| Answer directly, without a child/);
+  assert.match(prompt, /bounded deliverable: search, summary, comparison.*Dispatch `worker` on any route\. No advisory call/);
+  assert.match(prompt, /one Worker the smallest complete deliverable, not one launch per file, source or step/i);
+  assert.match(prompt, /Parallelize only when the outputs can be produced independently and checked separately, and the benefit justifies the handoff and integration cost/);
+  assert.match(prompt, /While any child owns a task, don't duplicate its work\. Do other ready, independent authorized work; otherwise follow the route's wait or recovery rule/);
+  assert.match(prompt, /verify coverage and material claims against evidence without redoing the task; integrate accepted work.*Four cited sources out of five is partial/);
+  assert.match(prompt, /fifth public source, use an authorized tool and pass the material to Worker for analysis/);
+  assert.match(prompt, /same-task follow-up, use the eligible, non-superseded Worker run by ID if supported\. Send only the gap and what it needs: new material and relevant accepted evidence, inline or at child-readable references/);
+  assert.match(prompt, /Otherwise reconcile the prior run under P21, then give a fresh Worker a P6 TARGET for just that gap\. Independent assessments always start fresh/);
+  assert.match(prompt, /Only if inline recovery is necessary, name one authorized action and its exit condition/);
+  assert.match(flat(files.pw), /Missing required coverage is not completion/);
+  assert.match(prompt, /reconcile partial work and confirm the previous writer stopped before replacement/);
+  assert.match(prompt, /next safe, separable unit goes back to Worker unless the same concrete blocker still applies/);
+  assert.match(files.pp, /^\| Direct \|.*Worker by default; parent integrates and owns validation\. No strategic Planning or final Review\./m);
+});
+
+test("Worker returns the cited deliverable even when named-source coverage is partial", () => {
+  // Guard the order and substance, not the section labels or numbering. No model call here.
+  const record = flat(files.pw.split("Return one concise record")[1]);
+  assert.match(record, /deliverable or its usable part.*summary inline.*citations.*each criterion or named source.*specific gap and next action.*what you inspected.*bulky logs.*bound reference/i);
+  assert.match(record, /TARGET asks for a file.*exact reference/i);
+});
+
+test("Pi validation accountability preserves evidence reuse and required execution", () => {
+  const text = flat(files.pp.split("## Route and execute\n")[1].split("\n## ")[0]);
+  const controls = [
+    [/Validation ownership is accountability, not mandatory personal re-execution\./,
+      [["not mandatory personal re-execution", "mandatory personal re-execution"]]],
+    [/Assign one execution owner per check; inspect bound results and apply P11 to final inputs\./,
+      [["one execution owner", "multiple execution owners"], ["inspect bound results", "accept its summary"], ["apply P11 to final inputs", "ignore final-input applicability"]]],
+    [/Rerun affected, uncertain, contradicted or explicitly independent checks—not for a parent signature or bookkeeping alone\./,
+      [["Rerun affected, uncertain, contradicted", "Skip uncertain or contradicted"], ["or explicitly independent checks", "but not independent checks"], ["not for a parent signature", "always for a parent signature"]]],
+    [/Required final checks and independent delivery assessment still apply\./,
+      [["still apply", "are waived"]]],
+  ];
+  for (const [pattern, mutations] of controls) {
+    assert.match(text, pattern);
+    for (const [before, after] of mutations) {
+      assert.ok(text.includes(before));
+      assert.throws(() => assert.match(text.replace(before, after), pattern));
+    }
+  }
 });
 
 test("pi transport preserves exact payload semantics and diagram presentation", () => {
@@ -688,6 +794,18 @@ test("pi transport preserves exact payload semantics and diagram presentation", 
     "launching unstarted work is CONTINUE, not WAIT", "start nothing else while waiting",
     "Human replies require user BLOCKED", "PI_MAX_CONTINUATIONS=0", "Measure rendered width"])
     assert.ok(s.includes(phrase));
+});
+
+test("a saved next action is recoverable, not a wake or evidence that a writer stopped", () => {
+  const transport = flat(files.pp);
+  assert.match(transport, /live TUI automatically continues/);
+  assert.match(transport, /after a cold restart, the marker and saved plan do not start a turn/);
+  assert.doesNotMatch(transport, /`provider <owner> <id> <event>`/);
+  assert.match(rule(files.skill, "P21"), /confirm it stopped.*missing dispatch receipt is not proof of termination/);
+  assert.match(rule(files.xdev, "X6"), /Attach the runtime transport ID when the launch receipt arrives/);
+  assert.match(rule(files.xdev, "X15"), /next supplied turn.*Do not replay/);
+  assert.match(rule(files.review, "R1"), /later-sprint work open and explicitly outside this assessment/);
+  assert.match(rule(files.xdev, "X24"), /Each task returns only its own lane's record/);
 });
 
 test("objective-level completion rejects premature DONE and implied confirmation stops", () => {
@@ -730,9 +848,17 @@ test("records preserve lifecycle fields and reference canonical assessment", () 
     assert.match(files[key], /schema_version:\*\* 3\.2/);
   for (const key of ["plan", "sprint"]) {
     assert.match(files[key], /agent-review\/references\/review\.md/);
-    assert.match(files[key], /oracle-review-result/);
     assert.match(files[key], /snapshot/i);
   }
+  const log = files.plan.split("## Review Coverage Log")[1].split("\n## ")[0];
+  for (const field of ["Review ID / ordinal", "covered unit/sprint IDs", "Revision / owner / snapshot", "Raw oracle-review-result / criterion evidence", "Stable findings / prior resolutions", "Parent integration / corrective batch / class strategy", "Optional advice disposition"]) assert.ok(log.includes(field), field);
+  assert.match(flat(files.sprint), /pending, or Review ID and exact Review Coverage Log entry covering this sprint/);
+  assert.match(files.plan, /Final assessment:.*exact whole-state Review Coverage Log entry, or pending.*only when scope and evidence coincide/);
+  assert.match(flat(files.sprint), /due\/deferred check names or IDs → bound schedule entries.*authorized sprint-specific differences/);
+  const schedule = files.plan.split("### Validation Strategy")[1].split("\n### ")[0];
+  for (const field of ["Check name or ID / criterion", "Exact command/scenario / inputs / expected", "Owner", "Cadence / due point", "Cost/duration", "why cheaper evidence cannot suffice if run early", "Rerun trigger / evidence applicability"]) assert.ok(schedule.includes(field), field);
+  assert.match(flat(files.plan), /Record each execution once.*exact row and raw result; retain the original revision\/snapshot and justify applicability to current inputs under P11, or rerun/);
+  assert.match(files.sprint, /Reference prior execution rows only with P11 applicability/);
   for (const field of ["State revision", "Outcome", "Execution disposition", "Task Ledger",
     "Authoritative Todo List", "Initial clarification used", "Terminal Decision Record",
     "Oracle logical task ID / generation", "Todo settlement"])
@@ -740,32 +866,29 @@ test("records preserve lifecycle fields and reference canonical assessment", () 
   assert.match(files.unit, /Initial clarification|initial clarification/);
   assert.match(files.unit, /Recurring-class\/second-deficiency changed strategy/);
   assert.match(files.xdev, /oracle-closure-assessment/);
-  for (const key of ["skill", "review", "xdev", "unit", "plan", "sprint"])
+  for (const key of ["skill", "advisory", "review", "xdev", "unit", "plan", "sprint"])
     assert.doesNotMatch(files[key], /REVIEW_READY|Verdict: PASS|Verdict: FAIL|"verdict"|"orchestratorBrief"/);
 });
 
-const piOracleFront = `---
-name: oracle
-description: Decision adviser, strategic technical advisor, and read-only code reviewer.
-tools: read, grep, find, ls, bash, contact_supervisor
+const piAdviserFront = (name, description) => `---
+name: ${name}
+description: ${description}
+tools: read, grep, find, ls, contact_supervisor
+acceptanceRole: read-only
 skills: agent-review
 async: true
-model: gpt-6.2-sol
-thinking: xhigh
 advertise: true
 systemPromptMode: replace
 inheritProjectContext: true
 inheritGlobalContext: false
 inheritSkills: true
 ---`;
-const piFixerFront = `---
-name: fixer
-description: Bounded implementation specialist for clear, assigned work.
+const piWorkerFront = `---
+name: worker
+description: Delivers bounded research, summaries, investigation, implementation and validation.
 tools: read, grep, find, ls, bash, edit, write, resolve-library-id, query-docs, contact_supervisor
 skills: agent-review
 async: true
-model: DeepSeek-V4.1-Flash
-thinking: max
 advertise: true
 systemPromptMode: replace
 inheritProjectContext: true
@@ -801,35 +924,91 @@ ${editing ? `  - action: edit
     resource: "*"
     effect: allow
 ---`;
-test("Pi registers both GPT-6.2 models and uses Sol for Oracle", () => {
+test("configured Pi reasoning models support their advertised inputs and effort levels", () => {
   const models = JSON.parse(read("shell/config/pi/models.json")).providers.litellm.models;
-  const previousSol = models.find((model) => model.id === "gpt-6.1-sol");
-  assert.ok(previousSol);
-  for (const [id, name] of [["gpt-6.2-astra", "GPT-6.2 Astra"], ["gpt-6.2-sol", "GPT-6.2 Sol"]]) {
+  for (const [id, name] of [["gpt-6.2-astra", "GPT-6.2 Astra"], ["gpt-6.2-sol", "GPT-6.2 Sol"], ["gpt-6.1-terra", "GPT-6.1 Terra"]]) {
     const matching = models.filter((model) => model.id === id);
     assert.equal(matching.length, 1, `${id} must be registered exactly once`);
-    assert.deepEqual(matching[0], { ...previousSol, id, name });
+    assert.deepEqual(matching[0], { id, name, api: "openai-responses", reasoning: true,
+      thinkingLevelMap: { off: null, minimal: null, low: "low", medium: "medium", high: "high", xhigh: "xhigh", max: "max" },
+      contextWindow: 320000, maxTokens: 32000, input: ["text", "image"] });
   }
-  const oracleModel = files.po.match(/^model: (.+)$/m)[1];
-  assert.equal(oracleModel, "gpt-6.2-sol");
-  assert.ok(models.some((model) => model.id === oracleModel));
 });
 
-test("all backend frontmatter remains byte-identical", () => {
+test("Pi selects registered Terra for the parent and keeps worker model pins", () => {
+  const settings = JSON.parse(read("shell/config/pi/settings.json"));
+  const models = JSON.parse(read("shell/config/pi/models.json")).providers.litellm.models;
+  assert.equal(settings.defaultProvider, "litellm");
+  assert.equal(settings.defaultModel, "gpt-6.1-terra");
+  assert.equal(settings.defaultThinkingLevel, "max");
+  assert.equal(settings.subagents.disableBuiltins, true);
+  for (const [key, model, thinking] of [
+    ["planner", "gpt-6.2-astra", "xhigh"], ["po", "gpt-6.2-sol", "xhigh"], ["pw", "DeepSeek-V4.1-Flash", "max"],
+  ]) {
+    assert.equal(files[key].match(/^model: (.+)$/m)[1], model);
+    assert.equal(files[key].match(/^thinking: (.+)$/m)[1], thinking);
+    assert.ok(models.some((entry) => entry.id === model));
+  }
+});
+
+test("Pi exposes three child roles and uses role names throughout its active prompts and shared skills", () => {
+  const dir = "shell/config/pi/agents/";
+  const settings = JSON.parse(read("shell/config/pi/settings.json")).subagents;
+  const definitions = readdirSync(new URL(`../${dir}`, import.meta.url)).filter((f) => f.endsWith(".md"));
+  // Only the exact retained definition may be hidden. Retirement removes both it and the override.
+  const retained = definitions.includes("fixer.md");
+  assert.deepEqual(settings.agentOverrides ?? {}, retained ? { fixer: { advertise: false } } : {});
+  if (retained) assert.equal(createHash("sha256").update(read(dir + "fixer.md")).digest("hex"),
+    "fd1e1310ea7e345b581e40db124a15091061a367ba4b14a8b30a3e7ac53502dc");
+  const active = definitions.filter((f) => settings.agentOverrides?.[f.slice(0, -3)]?.advertise !== false);
+  assert.deepEqual(active.sort(), ["oracle.md", "planner.md", "worker.md"]);
+  const sources = [paths.pp, ...active.map((f) => dir + f)];
+  for (const root of ["skills/agent-review/", "skills/xdev/"]) {
+    for (const f of readdirSync(new URL(`../${root}`, import.meta.url), { recursive: true }))
+      if (f.endsWith(".md")) sources.push(root + f);
+  }
+  for (const path of sources) {
+    const text = read(path).replace(/^---\n[\s\S]*?\n---\n/, (header) =>
+      path.startsWith(dir) ? header.replace(/^model: .*$/m, "") : header);
+    assert.doesNotMatch(text, /(?<![a-z0-9])(?:fixers?|coordinators?|terra|sol|astra|deepseek)(?![a-z0-9])/i, path);
+  }
+});
+
+test("Pi routes by the decision needed, not by difficulty or the name of a wire record", () => {
+  const parent = flat(files.pp);
+  assert.match(parent, /Reuse supported Planning or consult `oracle`.*affordable observation.*give `worker` the check/);
+  assert.match(parent, /consequential strategic choice still unresolved after proportionate checks \| `oracle` recommends escalation; you dispatch `planner`/);
+  assert.match(parent, /fresh `oracle` in the assigned lane\. Even a difficult Review stays with Oracle.*A known repair goes to Worker/);
+  assert.match(parent, /Oracle's task is complete; Planning is not.*one linked Planner task before launch.*without Oracle ratification/);
+  assert.match(parent, /Omit `model`/);
+  assert.match(parent, /Keep Worker async: its foreground runtime lacks the declared documentation tools/);
+  assert.match(parent, /reuse supported plans and bounded results under their recorded role, lane, assignment and generation.*previously consumed handoffs/);
+  assert.match(parent, /prior run is terminal or cancelled and stopped.*same lane and a linked new generation under P21; preserve lineage, findings and Review expenditure/);
+  assert.match(parent, /An Input-looking reply from Planning is wrong-lane, not contact permission/);
+  assert.match(flat(files.skill), /OpenCode's `oracle` serves all four/);
+  assert.match(files.planner, /Accept only the Planning lane of `ORACLE_ASSIGNMENT v2`/);
+  assert.deepEqual(files.planner.match(/`oracle-[\w-]+`/g), ["`oracle-advisory-result`"]);
+  assert.deepEqual(files.po.match(/`oracle-[\w-]+`/g), ["`oracle-advisory-result`", "`oracle-review-result`", "`oracle-input-assessment`", "`oracle-closure-assessment`"]);
+});
+
+test("backend roles have the expected discovery metadata and tool boundaries", () => {
   const expected = {
-    po: piOracleFront, pf: piFixerFront, op: ocParentFront,
+    planner: piAdviserFront("planner", "Read-only Planning specialist for exceptional unresolved strategic choices."),
+    po: piAdviserFront("oracle", "Read-only adviser for ordinary Planning and independent Review, Input and Closure assessments."),
+    pw: piWorkerFront, op: ocParentFront,
     oo: permissionFront("Decision adviser, strategic technical advisor, and read-only code reviewer.", "litellm/gpt-6.1-sol#max", false),
     of: permissionFront("Bounded implementation specialist for clear, assigned work.", "litellm/DeepSeek-V4.1-Flash#max", true),
   };
-  for (const [key, value] of Object.entries(expected))
-    assert.equal(files[key].match(/^---\n[\s\S]*?\n---/)[0], value);
+  for (const [key, value] of Object.entries(expected)) {
+    const header = files[key].match(/^---\n[\s\S]*?\n---/)[0];
+    // Pi pins are tested separately; changing models cannot change the role contract.
+    assert.equal(key.startsWith("p") ? header.replace(/^(?:model|thinking): .*\n/gm, "") : header, value);
+  }
 });
 
-test("backend worker bodies remain consistent except documented shell wording", () => {
-  const body = (s) => s.replace(/^---\n[\s\S]*?\n---\n/, "").trim();
-  assert.equal(body(files.pf), body(files.of));
-  const normalize = (s) => flat(body(s)).replace(
-    "Shell is for READ-ONLY inspection only, forbidden before bootstrap and unless the bound parent contract expressly permits inspection. The whitelist is a limit, not a grant:",
-    "Shell is forbidden before bootstrap and unless the bound parent contract expressly permits inspection. The whitelist is a limit, not a grant. Only these commands are allowed:");
-  assert.equal(normalize(files.po), normalize(files.oo));
+test("OpenCode retains its execution role, original completion record and all four advisory lanes", () => {
+  assert.match(files.of, /You are Fixer\. Implement the complete assigned TARGET/);
+  assert.match(files.of, /`IMPLEMENTED_AND_VALIDATED`, `INCOMPLETE_REMEDIABLE` or `BLOCKED`/);
+  for (const lane of ["Planning returns its bounded target", "Review returns exactly one", "Input assessment returns only", "Closure reads the entire exact plan"])
+    assert.ok(files.oo.includes(lane), lane);
 });

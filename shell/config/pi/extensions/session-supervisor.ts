@@ -88,15 +88,16 @@ import type { DeclaredStatus, ReadonlySessionView, SupervisorApi, SupervisorCont
 
 export { AFPLAY_PATH, BRIDGE_CUSTOM_TYPE, BRIDGE_HEADER, DEFAULT_MAX_CONTINUATIONS, HARD_MAX_CONTINUATIONS, NOTIFICATION_SOUND, OSC_NOTIFY, OSC_NOTIFY_UNVERIFIED_ESCALATION, OSC_NOTIFY_UNVERIFIED_WAIT, PROVENANCE_CUSTOM_TYPE, REPAIR_CUSTOM_TYPE, REPAIR_HEADER, REQUEST_GENERATION_CUSTOM_TYPE, SUBAGENT_RPC_READY_TOPIC, SUBAGENT_RPC_REPLY_PREFIX, SUBAGENT_RPC_REQUEST_TOPIC, SUBAGENT_RPC_VERSION, WAIT_BRIDGE_NOT_READY_RETRIES, WAIT_BRIDGE_NOT_READY_RETRY_MS, WAIT_RECHECK_MS, WAIT_VERIFICATION_MS, resolveMaxContinuations, sanitizeOscField } from "./session-supervisor/protocol.ts";
 export type { DeclaredStatus, ReadonlySessionView, SupervisorApi, SupervisorContext, SupervisorEventBus, SupervisorHandlerResult, TerminalInputHandler, ToolRegistrationApi } from "./session-supervisor/protocol.ts";
-import { markerProblemFor, readDeclaredMarker, isToolCallPart, messageText, finalNonBlankLine, isAssistantMessage, isFenceDecorated, isIndentedCodeLine, protocolLine, declaredStatusOf, countProtocolLines, mentionsQuotedStatus, lineDeclares, isGenuineQueuedWork, MARKER_PROBLEM_NOTICE } from "./session-supervisor/marker.ts";
+import { markerProblemFor, readDeclaredMarker, messageText, isGenuineQueuedWork, MARKER_PROBLEM_NOTICE } from "./session-supervisor/marker.ts";
+import type { DeclaredMarker } from "./session-supervisor/marker.ts";
 import { mintLineageToken, sessionUuid, taskOccurrenceEnvelope } from "./session-supervisor/ids.ts";
-import { currentRuntimeInstanceId, defaultReadFile, defaultStatSize, isAbsolutePath, readJsonArtifact, readTranscriptTail, runtimeInstanceId, transcriptConfirmsDeliveryEither, worstCaseTaskRowBytes } from "./session-supervisor/transcript.ts";
+import { currentRuntimeInstanceId, defaultReadFile, deliveredUserTexts, isAbsolutePath, readJsonArtifact, readTranscriptTail, worstCaseTaskRowBytes } from "./session-supervisor/transcript.ts";
 import type { ObservedRun, ProvenanceRecord, ReadFile } from "./session-supervisor/transcript.ts";
 export { sessionUuid, taskOccurrenceEnvelope };
 
 // Re-exported so existing consumers (and the test suite) keep importing these off the
 // extension entry point after they moved into `session-supervisor/transcript.ts`.
-export { currentRuntimeInstanceId, defaultReadFile, defaultStatSize, isAbsolutePath, readJsonArtifact, readTranscriptTail, setRuntimeInstanceIdForTests, transcriptConfirmsDelivery, transcriptConfirmsDeliveryEither, worstCaseTaskRowBytes, TRANSCRIPT_ROW_WORST_CASE_BYTES_PER_CODE_UNIT, TRANSCRIPT_TAIL_BYTES } from "./session-supervisor/transcript.ts";
+export { currentRuntimeInstanceId, defaultReadFile, isAbsolutePath, readJsonArtifact, readTranscriptTail, setRuntimeInstanceIdForTests, transcriptConfirmsDelivery, transcriptConfirmsDeliveryEither, worstCaseTaskRowBytes, TRANSCRIPT_ROW_WORST_CASE_BYTES_PER_CODE_UNIT, TRANSCRIPT_TAIL_BYTES } from "./session-supervisor/transcript.ts";
 export type { ObservedRun, ProvenanceRecord, ReadFile } from "./session-supervisor/transcript.ts";
 export { markerProblemFor, readDeclaredMarker, isToolCallPart, messageText, finalNonBlankLine, isAssistantMessage, isFenceDecorated, isIndentedCodeLine, protocolLine, declaredStatusOf, countProtocolLines, mentionsQuotedStatus, lineDeclares, isDocumentationLine, isProseMenu, splitAroundSeparators, MENU_BOUNDARY, isGenuineQueuedWork, MARKER_PROBLEM_NOTICE } from "./session-supervisor/marker.ts";
 export type { DeclaredMarker } from "./session-supervisor/marker.ts";
@@ -321,11 +322,8 @@ interface AgentBeforeSettleLike {
 /**
  * A wake-proof reference parsed out of a WAIT payload.
  *
- * Recognized forms, each a `STATUS:WAIT` payload naming work that will wake this
- * session:
- *
- *   subagent <id> <event>          - a pi-subagents async run
- *   provider <owner> <id> <event>  - a provider-owned pending item
+ * The installed host can verify `subagent <id> <event>` through the pi-subagents
+ * bridge. It has no provider wake-proof adapter.
  *
  * Anything else is an UNVERIFIED claim. Parsing is deliberately syntactic: this
  * extension never classifies English prose, because rejecting a WAIT for using
@@ -339,6 +337,7 @@ import {
   parseUserInputAssessment,
   userQuestionLines,
 } from "./session-supervisor/wake.ts";
+import type { WakeProof, BlockedDeclaration } from "./session-supervisor/wake.ts";
 export type { WakeProof, BlockedDeclaration, UserInputAssessment } from "./session-supervisor/wake.ts";
 export {
   parseWakeProof,
@@ -359,6 +358,7 @@ import {
   waitEventIsStartForm,
   LEGACY_NO_LINEAGE_SENTINEL,
 } from "./session-supervisor/provenance.ts";
+import type { ProvenanceIndex } from "./session-supervisor/provenance.ts";
 export type { ObservedRunEvidence, ProvenanceIndex, CurrentLineageGeneration } from "./session-supervisor/provenance.ts";
 export {
   readObservedRunEvidence,
@@ -377,7 +377,6 @@ import {
   rpcReplyIsBridgeNotReady,
   sessionIdentity,
   sessionTranscriptPath,
-  replyProvesWake,
   ownerStateIsTerminal,
 } from "./session-supervisor/rpc-verify.ts";
 export { rpcReplyProvesCurrentOwner, rpcReplyIsBridgeNotReady } from "./session-supervisor/rpc-verify.ts";
@@ -442,7 +441,7 @@ export function buildRepairEntry(reason: string): {
   const content = [
     REPAIR_HEADER,
     `Rejected claim: ${reason}`,
-    "The attempted user escalation is unverified. Do not wait for a technical option selection. Proceed on a defensible ordinary authorized default, or request bounded Oracle Planning advice/user-input assessment as appropriate. Missing assessment evidence grants no authorization. Keep protected effects blocked and finish independent authorized work. Do not duplicate work whose verified wake owner already exists.",
+    "The attempted user escalation is unverified. Do not wait for a technical option selection. Use a defensible authorized default for routine choices. Use oracle for unsettled strategy. Use planner only on a valid oracle handoff, an explicit user request for planner, or a still-applicable recorded escalation. A genuinely indispensable user dependency needs an Oracle Input assessment. Missing assessment evidence grants no authorization. Keep protected effects blocked and finish independent authorized work. Do not duplicate work whose verified wake owner already exists.",
   ].join("\n");
   return {
     type: "custom_message",
@@ -975,13 +974,12 @@ export function registerSessionSupervisor(
     const store = ownedStore;
     if (store === null || store.sessionId !== currentSessionId) return;
     if (currentSessionFile.length === 0) return;
-    const tail = readTranscriptTail(currentSessionFile);
+    const claimed = [...tasks.values()].filter((task) => task.occurrenceId !== undefined);
+    if (!claimed.length) return;
+    const delivered = deliveredUserTexts(readTranscriptTail(currentSessionFile));
     let changed = false;
-    for (const task of [...tasks.values()]) {
-      if (task.occurrenceId === undefined) continue;
-      const expectedPrompt = taskFiringPrompt(task);
-      const legacyPrompt = legacyTaskFiringPrompt(task);
-      if (!transcriptConfirmsDeliveryEither(tail, expectedPrompt, legacyPrompt)) continue;
+    for (const task of claimed) {
+      if (!delivered.has(taskFiringPrompt(task)) && !delivered.has(legacyTaskFiringPrompt(task))) continue;
       if (task.intervalMs !== undefined) {
         const advanced = advanceDuePast(task.intervalMs, task.nextRunAtMs, now());
         // `advanced` is only usable when it is the EXACT cursor. `advanceDuePast`
@@ -2054,30 +2052,6 @@ export function registerSessionSupervisor(
   };
 
   /**
-   * Ask a PROVIDER owner whether it still owns pending work.
-   *
-   * Providers attest through a narrow documented synchronous request pair; only
-   * the named owner's channel is consulted. A missing bus, a throwing
-   * subscriber, or a reply that never arrives all resolve to null (unverified),
-   * never to an assumption of wake ownership.
-   */
-  const askProviderOwner = (proof: WakeProof & { kind: "provider" }, ctx: SupervisorContext): unknown => {
-    const bus = api.events;
-    if (bus === undefined || typeof bus.request !== "function") return null;
-    try {
-      return bus.request(`session-supervisor:wake-proof:v1:${proof.owner}`, {
-        version: 1,
-        id: proof.id,
-        owner: proof.owner,
-        session: sessionIdentity(ctx),
-      });
-    } catch {
-      // A throwing subscriber is exactly the unsupported case.
-      return null;
-    }
-  };
-
-  /**
    * Query the pi-subagents RPC bridge for CURRENT owner state of one run.
    *
    * This uses the plugin's real correlated transport: a versioned request is
@@ -2202,13 +2176,6 @@ export function registerSessionSupervisor(
     }
 
     const identity = sessionIdentity(ctx);
-
-    // A provider owner attests through its own narrow request pair.
-    if (proof.kind === "provider") {
-      if (replyProvesWake(askProviderOwner(proof, ctx), proof, identity)) return;
-      waitTimer = schedule(settleUnverified, WAIT_VERIFICATION_MS);
-      return;
-    }
 
     // A subagent WAIT: ask the live RPC bridge about the EXACT run. The reply is
     // asynchronous, so the bound is enforced by a racing window timer rather
@@ -2457,13 +2424,7 @@ export function registerSessionSupervisor(
     if (!provenanceBelongsToSession(provenance, runId, identity)) return false;
     const run = observedRuns.get(runId);
     if (run === undefined) return false;
-    // A completed run is not a PENDING wake owner: it will not wake this parent.
-    if (inspectObservedRun(run).completed) return false;
-    // R8-3: neither is a run that reached a terminal state WITHOUT succeeding.
-    // A `failed`/`stopped`/`interrupted` run can no longer wake anyone, so
-    // excluding only `completed` left a dead run able to suppress decision
-    // repair. Read the authoritative on-disk state (the same source
-    // `inspectObservedRun` uses) rather than inferring from `completed` alone.
+    // A completed or failed run cannot wake the parent; this needs only the status, not the reply.
     const state = observedRunDiskState(run);
     if (state !== null && ownerStateIsTerminal(state)) return false;
     // Current liveness must have been attested by the bridge itself.
@@ -2485,22 +2446,10 @@ export function registerSessionSupervisor(
     else currentOwnerRuns.delete(runId);
   };
   /**
-   * The verification facts an observed run yields on demand.
-   *
-   * `completed` is `status.json.state === "complete"`; the process exit code is
-   * never consulted. `result` is the text of the authoritative output file, from
-   * which the assessment and the question line are parsed.
-   */
-  const inspectObservedRun = (run: ObservedRun): ObservedRunEvidence => {
-    if (run.asyncDir === null) return { asyncDir: null, resultPath: null, result: null, completed: false };
-    return readObservedRunEvidence(run.asyncDir, readFile);
-  };
-
-  /**
    * R8-3: the authoritative on-disk `status.json` state for an observed run, or
    * null when it cannot be read.
    *
-   * Read from the SAME `status.json` that backs `inspectObservedRun`, so the
+   * Read from the SAME `status.json` that backs `readObservedRunEvidence`, so the
    * terminal judgement uses one consistent source of truth. Returns the raw
    * state string; the caller decides terminality. A run with no async dir or an
    * unreadable status yields null (the caller treats that as "cannot establish"
@@ -2558,17 +2507,12 @@ export function registerSessionSupervisor(
     if (run.asyncDir === null) {
       return { verified: false, reason: "the observed run exposes no result artifact" };
     }
-    const evidence = inspectObservedRun(run);
+    const evidence = readObservedRunEvidence(run, readFile, env.readFile);
     if (!evidence.completed) {
-      return { verified: false, reason: "the referenced Oracle run did not complete successfully" };
+      return { verified: false, reason: "no matching completed run in the witnessed Oracle's status" };
     }
     if (evidence.result === null) {
-      return {
-        verified: false,
-        reason: evidence.truncated
-          ? "the referenced Oracle run's result artifact could not be read in full (oversize or incomplete)"
-          : "the referenced Oracle run has no readable result",
-      };
+      return { verified: false, reason: "no complete terminal Oracle reply in the retained child transcript" };
     }
 
     const assessment = parseUserInputAssessment(evidence.result);
@@ -2877,13 +2821,13 @@ export function registerSessionSupervisor(
    * the only runnable message. The flag is set unconditionally; the entry is the
    * load-bearing part.
    *
-   * Returns null when the boundary cannot carry entries, so the caller can
-   * notify with the cause that applies to ITS path.
+   * `undefined` leaves an existing continuation alone. `null` means there is
+   * no way to supply the bridge, so the caller must notify instead.
    */
   const proposeContinuation = (
     boundary: AgentBeforeSettleLike,
     entry: BridgeEntry,
-  ): SupervisorHandlerResult | null => {
+  ): SupervisorHandlerResult | null | undefined => {
     // Step (3): real queued messages already own the next request. Pi continues
     // on `hasQueuedMessages()` regardless of what this handler returns, so
     // appending our bridge would deliver a SECOND, redundant prompt alongside

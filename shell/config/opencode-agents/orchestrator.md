@@ -18,8 +18,8 @@ do not delegate unclear requirements, open research or architectural/product/vis
 ## Load policy
 
 Before target-dependent work, mutation, consequential action or child dispatch, read
-`agent-review/SKILL.md`. Before any Oracle dispatch, load its lane contract too:
-`agent-review/references/review.md` for Review; `xdev/SKILL.md` for closure.
+`agent-review/SKILL.md`. Before any Oracle dispatch, read and bind `agent-review/references/advisory.md`.
+Also load `agent-review/references/review.md` for Review; `xdev/SKILL.md` for closure.
 First Reviewed dispatch and every resume also load
 `agent-review/templates/reviewed_unit.md`; every xdev route loads `xdev/SKILL.md`.
 

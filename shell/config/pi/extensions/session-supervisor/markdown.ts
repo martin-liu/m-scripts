@@ -504,7 +504,7 @@ interface BlockParser {
     /** True when this line created a fresh paragraph (its first content line). */
     paragraphStarted: boolean[];
     /** One entry per FENCED code block, in opener order. */
-    fences: { open: number; end: number; closerLine: number | null }[];
+    fences: { open: number; end: number; closerLine: number | null; documentLevel: boolean }[];
     /** Set while a fenced closer is being finalized, so the fence records its closer. */
     closingFence: boolean;
   };
@@ -631,7 +631,7 @@ function finalizeBlock(p: BlockParser, block: BlockNode, lineNumber: number): vo
   block.sourcepos[1] = [lineNumber, p.lastLineLength];
   switch (block.type) {
     case "document":
-      removeLinkReferenceDefinitions(p, block);
+      removeLinkReferenceDefinitions(block);
       break;
     case "list": {
       let item = block.firstChild;
@@ -672,6 +672,7 @@ function finalizeBlock(p: BlockParser, block: BlockNode, lineNumber: number): vo
         p.trace.closingFence = false;
         p.trace.fences.push({
           open: block.sourcepos[0][0],
+          documentLevel: block.parent === p.doc,
           end: closerLine === null ? block.sourcepos[1][0] : closerLine - 1,
           closerLine,
         });
@@ -719,10 +720,10 @@ function closeUnmatchedBlocks(p: BlockParser): void {
  * paragraph no longer owns its lines, so ownership must read the tree AFTER
  * this runs.
  */
-function removeLinkReferenceDefinitions(p: BlockParser, tree: BlockNode): void {
+function removeLinkReferenceDefinitions(tree: BlockNode): void {
   const emptyNodes: BlockNode[] = [];
-  walkBlocks(tree, (node, entering) => {
-    if (!entering || node.type !== "paragraph") return;
+  for (const node of walkBlocks(tree)) {
+    if (node.type !== "paragraph") continue;
     let content = node.stringContent ?? "";
     let hasReferenceDefs = false;
     while (content.length > 0 && content.charCodeAt(0) === 91 /* [ */) {
@@ -735,55 +736,20 @@ function removeLinkReferenceDefinitions(p: BlockParser, tree: BlockNode): void {
     }
     node.stringContent = content;
     if (hasReferenceDefs && isBlank(content)) emptyNodes.push(node);
-  });
+  }
   for (const node of emptyNodes) unlinkBlock(node);
 }
 
 /**
- * Pre-order block walk with an entering/exiting flag.
- *
- * ITERATIVE, with an explicit stack. The block tree's depth is bounded only by
- * the input's nesting, and a recursive walk consumed one JavaScript stack frame
- * per level: a deeply nested message (thousands of `> ` levels) overflowed the
- * finite call stack with `RangeError: Maximum call stack size exceeded` before
- * marker extraction returned. That threw out of `readDeclaredMarker`, out of
- * `handleBeforeSettle`, and out of the settlement path, so a genuine printed
- * CONTINUE stopped silently with no bridge and no notice. The traversal must
- * therefore never depend on the host's call-stack depth.
- *
- * Order is preserved EXACTLY as the former recursion emitted it: `visit(node,
- * true)` pre-order, then each child in `firstChild..next` order, then
- * `visit(node, false)`. A frame's exit is scheduled BEFORE its children are
- * pushed, and the children are pushed in REVERSE so they pop forward, keeping
- * the entering/exiting sequence identical for every consumer.
+ * Iterative preorder: a deeply quoted message must not consume the JS call stack.
+ * Push siblings in reverse so they are visited in document order.
  */
-function walkBlocks(
-  root: BlockNode,
-  visit: (node: BlockNode, entering: boolean) => void,
-): void {
-  // `entering` distinguishes the two passes over a frame. Children are gathered
-  // into a reusable scratch array only to reverse them; no recursion, no
-  // host-stack use regardless of nesting depth.
-  const stack: Array<{ node: BlockNode; entering: boolean }> = [
-    { node: root, entering: true },
-  ];
-  while (stack.length > 0) {
-    const frame = stack.pop() as { node: BlockNode; entering: boolean };
-    const node = frame.node;
-    if (frame.entering) {
-      visit(node, true);
-      // Schedule this node's exit to run AFTER every descendant.
-      stack.push({ node, entering: false });
-      const children: BlockNode[] = [];
-      for (let child = node.firstChild; child !== null; child = child.next) {
-        children.push(child);
-      }
-      for (let i = children.length - 1; i >= 0; i -= 1) {
-        stack.push({ node: children[i], entering: true });
-      }
-    } else {
-      visit(node, false);
-    }
+function* walkBlocks(root: BlockNode) {
+  const stack = [root];
+  while (stack.length) {
+    const node = stack.pop()!;
+    yield node;
+    for (let child = node.lastChild; child !== null; child = child.prev) stack.push(child);
   }
 }
 
@@ -1216,37 +1182,11 @@ export type LineStructure = {
   paragraphStart: boolean[];
 };
 
-/** The deepest block whose source span covers `line` (1-based), or null. */
-function innermostBlockAtLine(root: BlockNode, line: number): BlockNode | null {
-  let best: BlockNode | null = null;
-  let bestDepth = -1;
-  walkBlocks(root, (node, entering) => {
-    if (!entering) return;
-    const startLine = node.sourcepos[0][0];
-    const endLine = node.sourcepos[1][0];
-    if (startLine <= line && line <= endLine) {
-      let depth = 0;
-      for (let n: BlockNode | null = node; n !== null; n = n.parent) depth += 1;
-      if (depth > bestDepth) {
-        bestDepth = depth;
-        best = node;
-      }
-    }
-  });
-  return best;
-}
-
-/**
- * Derive the per-line structure from ONE transcription of the reference block
- * parser. Every consumer reads this single result, so the container model cannot
- * be implemented twice and drift again.
- */
-export function lineStructure(text: string): LineStructure {
-  const normalized = text.replace(/\r\n?/g, "\n");
+/** Parse once; consumers can use the fence trace without computing ownership for every line. */
+function parseDocument(text: string) {
   const p = makeParser();
-  const lines = normalized.split(reLineEnding);
-  let len = lines.length;
-  if (normalized.charCodeAt(normalized.length - 1) === 10 /* \n */) len -= 1;
+  const lines = text.split(reLineEnding);
+  const len = lines.length - (text.endsWith("\n") || text.endsWith("\r") ? 1 : 0);
   for (let i = 0; i < len; i++) incorporateLine(p, lines[i]);
   let closing: BlockNode | null = p.tip;
   while (closing !== null) {
@@ -1254,11 +1194,27 @@ export function lineStructure(text: string): LineStructure {
     finalizeBlock(p, closing, len);
     closing = above;
   }
+  return { lines, p };
+}
+
+/** Actual document-level fenced blocks, excluding quoted, nested, inline and indented examples. */
+export function* documentFences(text: string) {
+  const { lines, p } = parseDocument(text);
+  for (const fence of p.trace.fences) {
+    if (!fence.documentLevel) continue;
+    const info = lines[fence.open - 1].trimStart().replace(/^(`+|~+)/, "").trim();
+    yield { info, body: lines.slice(fence.open, fence.end).join("\n"), closed: fence.closerLine !== null };
+  }
+}
+
+/** Derive per-line ownership and fence membership from the same block parser. */
+export function lineStructure(text: string): LineStructure {
+  const { lines, p } = parseDocument(text);
   const doc = p.doc;
 
   const inside = new Array<boolean>(lines.length).fill(false);
   const topLevel = new Array<boolean>(lines.length).fill(false);
-  const paragraphStart = new Array<boolean>(lines.length).fill(false);
+  const paragraphStart = lines.map((_, i) => p.trace.paragraphStarted[i] === true);
   const changes = new Map<number, boolean>();
 
   // Fence membership from each fenced block's CONTENT range. An opener line is
@@ -1269,20 +1225,13 @@ export function lineStructure(text: string): LineStructure {
   for (const fence of p.trace.fences) {
     changes.set(fence.open - 1, true);
     if (fence.closerLine !== null) changes.set(fence.closerLine - 1, false);
-    for (let lineNo = fence.open + 1; lineNo <= fence.end; lineNo += 1) {
-      if (lineNo - 1 < inside.length) inside[lineNo - 1] = true;
-    }
+    inside.fill(true, fence.open, fence.end);
   }
 
-  // Structural ownership from the FINALIZED tree, plus the parse-time
-  // paragraph-start fact.
-  for (let index = 0; index < lines.length; index += 1) {
-    paragraphStart[index] = p.trace.paragraphStarted[index] === true;
-    const block = innermostBlockAtLine(doc, index + 1);
-    topLevel[index] =
-      block !== null && block.type === "paragraph" && block.parent !== null &&
-      block.parent.type === "document";
+  // Paragraphs are leaves. Only direct children of the finalized document
+  // can own top-level lines; their (1-based, inclusive) spans are disjoint.
+  for (let block = doc.firstChild; block !== null; block = block.next) {
+    if (block.type === "paragraph") topLevel.fill(true, block.sourcepos[0][0] - 1, block.sourcepos[1][0]);
   }
-
   return { changes, inside, topLevel, paragraphStart };
 }

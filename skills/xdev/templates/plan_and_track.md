@@ -2,17 +2,20 @@
 **schema_version:** 3.2
 Lifecycle authority: `xdev/SKILL.md`; shared policy: `agent-review/SKILL.md`;
 Review authority: `agent-review/references/review.md`.
-For a 3.0/3.1 plan, retain identity/revisions/goal/clarification, validation, findings and
-complete Review history under X2. Reconstruct anchor/cadence/recovery facts from authoritative
-sources; retain policy-derived spent calls/limits as history, not xdev stop authority.
-Explicit user/host constraints remain binding.
+Setup notes (do not copy into live state):
+When creating a default locator, trim and lowercase the objective slug, replace each run
+of non-alphanumeric characters with one hyphen, then trim leading and trailing hyphens.
+For migration or malformed-state recovery, reconstruct changed anchor/cadence/recovery
+fields from authoritative instructions and evidence before dependent work. For a 3.0/3.1
+plan, retain policy-derived spent calls/limits as history, not xdev stop authority.
+Explicit user/host constraints remain binding; preserve the complete Review history (X2).
 
 ## State Locator
 - **Objective identity:**
 - **Resolved state file:** {exact path}
 
 ## Task Ledger
-| Logical task ID | Role/lane | Runtime transport ID | Generation | Scope | Status | Supersedes | Integration | Durable terminal result/evidence | Replacement reason |
+| Logical task ID | Role/lane | Runtime transport ID | Generation | Scope and assignment ref | Status | Supersedes | Integration / linked next task | Durable terminal result/evidence | Replacement reason |
 |---|---|---|---|---|---|---|---|---|---|
 
 ## Authoritative Todo List
@@ -34,7 +37,7 @@ evidence-backed unmet/blocked work.
 - **Next action and owner:**
 - **Pending tasks:** {ledger references or none}
 - **Integration:** {unit reference}
-- **Validation:** {evidence reference}
+- **Validation:** {due/deferred check names or IDs and evidence refs; outstanding checks are pending}
 - **Final Review:** {pending or result reference}
 
 ## Coherent Baseline
@@ -53,7 +56,7 @@ evidence-backed unmet/blocked work.
 - **Scope / allowed files / exclusions:**
 - **Intended behavior / expected outputs:**
 - **Authoritative basis:**
-- **Oracle plan/decisions / reconsideration triggers:**
+- **Planning result/decisions / reconsideration triggers:**
 - **Design / risk boundaries:**
 - **First working end-to-end slice / coherent delivery-unit boundaries:**
 - **Normal, boundary/error and regression/invariant cases:**
@@ -64,18 +67,20 @@ evidence-backed unmet/blocked work.
 
 ### Validation Strategy
 - **Final-validation execution owner:**
-| Check / criterion | Exact command/scenario / inputs / expected | Owner | Cadence / due point | Cost/duration | Rerun trigger / evidence applicability |
+Schedule each required deterministic check or faithful scenario once. Deferred checks stay pending with their owner and due point, never PASS.
+
+| Check name or ID / criterion | Exact command/scenario / inputs / expected | Owner | Cadence / due point | Cost/duration / why cheaper evidence cannot suffice if run early | Rerun trigger / evidence applicability |
 |---|---|---|---|---|---|
-- **Deferred checks / owner / due point:** {pending, never PASS}
-- **Indispensable early costly checks:** {decision and why cheap evidence cannot suffice, or none}
-- **Required deterministic commands/checks:**
-- **Faithful scenario/integration evidence:**
+
 - **Corpus claim class / claimed and automation scopes / exact rules / mismatches:**
 - **Semantic truth:** {parent contextual item-level baseline}
 - **Mechanical expectation:** {exact rule/invariant/fixture basis}
 - **Population support:** {defined population and independent method/exhaustive evidence}
 
 ### Baseline Validation Evidence
+Record each execution once. Sprint and final evidence may reference its exact row and raw result;
+retain the original revision/snapshot and justify applicability to current inputs under P11, or rerun.
+
 | Revision | Execution snapshot / current applicability | Owner | Command/scenario/inputs / duration | Expected | Actual | PASS/FAIL/BLOCKED | Exit | Material raw reference |
 |---|---|---|---|---|---|---|---|---|
 
@@ -83,11 +88,13 @@ evidence-backed unmet/blocked work.
 {Use `xdev/templates/sprint_block.md`; preserve historical snapshot bindings.}
 
 ## Review Coverage Log
-- **Stable outcome / inherited dispatch/finding lineage:** {history, not a lifetime Review allowance}
-| Dispatch ordinal | Stable outcome / covered unit/sprint IDs | Revision/owner | Snapshot | Raw oracle-review-result | Findings/resolutions / optional advice disposition |
-|---|---|---|---|---|---|
+Record each assessment once; an exact reference to an existing sprint assessment suffices. Preserve complete dispatch/finding lineage, not a lifetime Review allowance.
+
+| Review ID / ordinal | Stable outcome / covered unit/sprint IDs | Revision / owner / snapshot | Raw oracle-review-result / criterion evidence | Stable findings / prior resolutions | Parent integration / corrective batch / class strategy / progress ref | Optional advice disposition (accept/defer/reject with rationale) |
+|---|---|---|---|---|---|---|
+
 - **Latest coherent-boundary progress/recovery:** {criterion/class improvement or decisive new
-  evidence; failed mechanism and changed repair/validation; Oracle plan/trigger when needed;
+  evidence; failed mechanism and changed repair/validation; Planning result/trigger when needed;
   viable materially distinct next action versus original-outcome anchor, with evidence refs}
 
 ## Final Validation Evidence
@@ -95,8 +102,7 @@ evidence-backed unmet/blocked work.
 |---|---|---|---|---|---|---|---|---|
 
 ## Final Whole-State Review
-- **Revision / owner / snapshot:**
-- **Canonical result / criterion evidence / findings / prior resolutions:**
+- **Final assessment:** {exact whole-state Review Coverage Log entry, or pending; reuse a covering sprint only when scope and evidence coincide}
 - **Covering delivery-unit eligibility and todo reconciliation:** {authoritative reference;
   record independent facts only where final scope differs}
 - **Remaining authorized actions / blockers:** {evidence or none}

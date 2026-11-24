@@ -6,11 +6,10 @@ Lifecycle: `xdev/SKILL.md`; Review: `agent-review/references/review.md`.
 - **Task ledger:** {logical ID/generation}
 - **Scope / allowed files:**
 - **Target/baseline / authoritative basis / original-outcome anchor:**
-- **Oracle plan/decisions / first working end-to-end path / delivery-unit ID:**
+- **Planning result/decisions / first working end-to-end path / delivery-unit ID:**
 - **Assumptions / out-of-scope:**
-- **Required validation commands/scenarios/inputs and owner:** {reference shared schedule}
-- **Due checks / cadence / cost / rerun triggers:**
-- **Deferred milestone/final checks / owner / due point:** {pending, not PASS}
+- **Validation:** {due/deferred check names or IDs → bound schedule entries. Record only authorized
+  sprint-specific differences; deferred checks stay pending with their scheduled owner and due point. Reference prior execution rows only with P11 applicability.}
 - **Expected results / material cases/invariants:**
 | Criterion ID/materiality | Observable acceptance | Todo IDs | Result/evidence |
 |---|---|---|---|
@@ -33,11 +32,4 @@ Lifecycle: `xdev/SKILL.md`; Review: `agent-review/references/review.md`.
 - **Mode eligibility facts / remaining authorized actions / blockers:**
 
 #### Independent Assessment
-{One result per covered unit; batch under `xdev/SKILL.md`, not per sprint.}
-- **Covered sprint IDs:**
-- **Review ID / complete dispatch history / inherited unit/finding lineage:**
-- **Review revision / owner / snapshot:**
-- **`oracle-review-result` reference:** {v2 canonical bound result}
-- **Criterion evidence / stable findings / prior resolutions:**
-- **Parent integration/disposition / corrective batch / class-level strategy / progress/recovery evidence:**
-- **Optional advice disposition:** {accept/defer/reject with rationale; no mandatory loop}
+- **Assessment:** {pending, or Review ID and exact Review Coverage Log entry covering this sprint}

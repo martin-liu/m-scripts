@@ -1,12 +1,12 @@
 # Independent Review assessment
 
-This file alone owns Review. Load `agent-review/SKILL.md` first.
+This file alone owns Review. Load `agent-review/SKILL.md` first; Review dispatch and assessment also require `agent-review/references/advisory.md`.
 Review judges evidence and gives concrete corrections/decisions; it is not a permission
 ballot or an intermediate micro-assessment. The parent owns delivery.
 
 ## Modes and eligibility
 
-- **R1** DELIVERY requires the exact complete unit, contract and immutable snapshot; passing criterion-level execution or faithful static/scenario evidence; integrated non-superseded results; no pending scoped implementation, correction or integration; all required validation passing on that snapshot, including explicitly justified unchanged-input applicability under P11; resolved/revalidated prior blocking findings and no known material in-scope defect; nonblocking advice has a recorded disposition, not mandatory repair. xdev also requires its todo reconciliation, with only the designated Review-action todo open.
+- **R1** DELIVERY requires the exact complete unit, contract and immutable snapshot; passing criterion-level execution or faithful static/scenario evidence; integrated non-superseded results; no pending scoped implementation, correction or integration; all required validation passing on that snapshot, including explicitly justified unchanged-input applicability under P11; resolved/revalidated prior blocking findings and no known material in-scope defect; nonblocking advice has a recorded disposition, not mandatory repair. xdev also requires complete todo reconciliation, with only the designated Review-action todo open for the unit being assessed. Leave later-sprint work open and explicitly outside this assessment; it still counts at final closure.
 - **R2** STATIC/DESIGN requires identified sources/design scope, authoritative criteria and reviewer evidence, not implementation or passing delivery checks. It is optional, non-gating and once per coherent unit across snapshots/generations; never return to it or substitute it for delivery assessment.
 - **R3** BLOCKED_REVIEW requires all feasible checks run, authoritative blocked-check evidence and no viable authorized in-scope remedy. It is explicit non-delivery, always has blocking findings and never relaxes readiness, authorization or xdev closure. Never use it to discover remedies or spend a slot early.
 - **R4** Incomplete/remediable work returns to authorized repair, discovery or decision advice, not user contact. Advice cannot waive acceptance, validation, snapshot identity or independent delivery assessment.

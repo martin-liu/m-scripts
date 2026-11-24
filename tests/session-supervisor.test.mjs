@@ -62,6 +62,7 @@ const realTopics = await (async () => {
     try {
       const loaded = await import(candidate);
       return {
+        sharedDir: dirname(candidate),
         asyncStarted: loaded.SUBAGENT_ASYNC_STARTED_EVENT,
         childStatus: loaded.SUBAGENT_CHILD_STATUS_EVENT,
       };
@@ -3204,8 +3205,7 @@ function armed(modOverride = mod, env = {}) {
  * The bus is attached to the same `pi` object the factory closed over, which is
  * how a real host injects `api.events` before registration.
  */
-function armedWithBus(reply, rpc) {
-  const bus = makeBus(reply, rpc);
+function armedWithBus(bus) {
   const pi = makePi();
   pi.events = bus;
   // A SYNCHRONOUS scheduler: the deferred notice runs inside the settle call, so
@@ -3264,9 +3264,6 @@ const IDLE_UI = { ...UI, isIdle: () => true };
 /**
  * A fake owner event bus.
  *
- * `reply(topic, request)` answers a PROVIDER owner's synchronous `request` pair;
- * returning `undefined` models a provider that never answers.
- *
  * `rpc(request)` answers a pi-subagents RPC request: it receives the emitted
  * request envelope and returns the `data` payload for a SUCCESSFUL correlated
  * reply (or `null` to model an owner that never answers). The bus wraps it in
@@ -3279,20 +3276,14 @@ const IDLE_UI = { ...UI, isIdle: () => true };
  * delivered synchronously, so a settle's RPC round-trip completes inside the
  * test without real timers.
  */
-function makeBus(reply, rpc = () => null) {
-  const requests = [];
+function makeBus(rpc = () => null) {
   const rpcRequests = [];
   const listeners = new Map();
   const subscriptions = [];
   const bus = {
-    requests,
     rpcRequests,
     listeners,
     subscriptions,
-    request(topic, payload) {
-      requests.push({ topic, ...payload });
-      return reply ? reply(topic, payload) : undefined;
-    },
     on(topic, listener) {
       subscriptions.push(topic);
       const list = listeners.get(topic) ?? [];
@@ -3307,11 +3298,6 @@ function makeBus(reply, rpc = () => null) {
         const index = current.indexOf(listener);
         if (index >= 0) current.splice(index, 1);
       };
-    },
-    off(topic, listener) {
-      const list = listeners.get(topic) ?? [];
-      const index = list.indexOf(listener);
-      if (index >= 0) list.splice(index, 1);
     },
     /** Emit an event to every subscriber of `topic`, synchronously. */
     emit(topic, event) {
@@ -3436,7 +3422,7 @@ function armedRpcWait({ runId = "3c1", state = "running", rpc, observe = true } 
   // use SESSION_FILE (which `sessionCtx` also uses).
   const sessionFile = SESSION_FILE;
   const responder = rpc ?? (() => rpcTargetedReply(runId, state));
-  const bus = makeBus(undefined, responder);
+  const bus = makeBus(responder);
   const pi = makePi();
   pi.events = bus;
   const pending = [];
@@ -3558,10 +3544,9 @@ test("a well-formed CONTINUE is never a resource-limited stop", async () => {
 });
 
 test("WAIT never continues, and its silence must be EARNED by wake proof", async () => {
-  // The fixture names a subagent run, but this registration has no event bus, so
-  // no owner can attest that the run exists. An unverifiable claim must not
-  // suppress the user, and it must never propose a continuation either.
-  const { pi, flush } = armedWithBus(() => undefined);
+  // The fixture names a subagent run, but no owner answers the RPC request.
+  // The unverified claim must neither suppress the notice nor start another turn.
+  const { pi, flush } = armedWithBus(makeBus());
   const capture = captureStdout();
   try {
     assert.equal(await proposes(pi, [assistant(WAIT)]), undefined);
@@ -3678,11 +3663,7 @@ test("a throwing or unsupported event bus is unverified, not silent", async () =
   for (const events of [
     undefined,
     {},
-    {
-      request() {
-        throw new Error("no such owner");
-      },
-    },
+    { on: () => () => {}, emit() { throw new Error("bridge unavailable"); } },
   ]) {
     const { pi, flush } = armedWithBus(events);
     const capture = captureStdout();
@@ -3696,30 +3677,8 @@ test("a throwing or unsupported event bus is unverified, not silent", async () =
   }
 });
 
-test("a provider-owned automatic wake proof keeps WAIT silent", async () => {
-  const { pi, bus, flush } = armedWithBus((topic, request) => ({
-    session: SESSION_FILE,
-    id: request.id,
-    pending: true,
-    willWake: true,
-  }));
-  const capture = captureStdout();
-  try {
-    const marker = assistant("Waiting on the job.\n\nSTATUS:WAIT provider queue build-42 complete");
-    pi.emit("agent_settled", settleEvent(), {
-      ...UI,
-      sessionFile: SESSION_FILE,
-      sessionManager: sessionView([marker]),
-    });
-    flush();
-    assert.deepEqual(capture.chunks, []);
-  } finally {
-    capture.restore();
-  }
-});
-
-test("an unsupported provider WAIT is unverified but never disturbed", async () => {
-  const { pi, bus, flush } = armedWithBus(() => ({ session: SESSION_FILE, id: "build-42", pending: true }));
+test("a provider WAIT has no adapter on the Pi bus and never silences the notice", () => {
+  const { pi, bus, flush } = armedWithBus(makeBus());
   const capture = captureStdout();
   try {
     const marker = assistant("Waiting.\n\nSTATUS:WAIT provider queue build-42 complete");
@@ -3729,10 +3688,9 @@ test("an unsupported provider WAIT is unverified but never disturbed", async () 
       sessionManager: sessionView([marker]),
     });
     flush();
-    // `willWake` is absent, so the installed automatic wake path is NOT attested.
     assert.deepEqual(capture.chunks, [OSC_UNVERIFIED_WAIT]);
-    // The extension must not cancel, resume, or otherwise touch the provider's work.
-    assert.equal(bus.requests.length, 1);
+    assert.equal(mod.parseWakeProof("provider queue build-42 complete"), null);
+    assert.deepEqual(bus.rpcRequests, [], "unsupported work is never queried as a subagent");
   } finally {
     capture.restore();
   }
@@ -3745,7 +3703,7 @@ test("new input, session change, and shutdown cancel a pending WAIT check", asyn
     ["session_tree", (pi) => pi.emit("session_tree", {})],
   ]) {
     const [label, act] = supersede;
-    const { pi, bus, flush } = armedWithBus(() => null);
+    const { pi, flush } = armedWithBus(makeBus());
     const capture = captureStdout();
     try {
       pi.emit("agent_settled", settleEvent(), sessionCtx([assistant(WAIT)]));
@@ -4910,43 +4868,28 @@ const PARENT_SESSION = sessionFileFor(PARENT_UUID);
 const OTHER_UUID = "cccccccc-9999-8888-7777-666666666666";
 const OTHER_SESSION = sessionFileFor(OTHER_UUID);
 
-/**
- * A fake filesystem: an async dir laid out the way a real run writes it
- * (`status.json` + `outputFile`), with the run's final structured result.
- *
- * The result always ends in the same fenced json block a real Oracle result
- * would carry; callers override `statusOver`/`result` to model each failure.
- */
-function makeAsyncDir({
-  dir,
-  state = "complete",
-  result,
-  outputName = "output-0.log",
-  exitCode = state === "complete" ? 0 : 1,
-} = {}) {
-  const outputFile = `${dir}/${outputName}`;
+/** Native single-run status, mixed progress log, and role-labelled Pi child records. */
+function makeAsyncDir({ dir, state = "complete", result = "", exitCode = state === "complete" ? 0 : 1 }) {
+  const runId = dir.split("/").at(-1);
+  const run = { asyncDir: dir, runId, sessionUuid: PARENT_UUID };
+  const outputFile = `${dir}/output-0.log`;
+  const transcriptPath = `${dir}/artifacts/${runId}_oracle_transcript.jsonl`;
   const status = {
-    runId: dir,
-    state,
-    outputFile,
-    sessionFile: PARENT_SESSION,
-    sessionId: PARENT_SESSION,
+    runId, state, mode: "single", sessionId: PARENT_SESSION, outputFile,
+    steps: [{ agent: "oracle", status: state, transcriptPath }],
     processTerminal: { instances: [{ exitCode }] },
-    outputs: {},
   };
+  const record = (message, sourceEventType = "message_end") => JSON.stringify({
+    version: 1, recordType: "message", source: "async", runId, agent: "oracle", childIndex: 0,
+    sourceEventType, role: message.role, message,
+  }) + "\n";
+  const initial = record({ role: "user", content: "Assess the dependency." }, "initial_prompt");
+  const reply = record({ role: "assistant", stopReason: "stop", content: [{ type: "text", text: result }] });
   const files = new Map([
-    [`${dir}/status.json`, JSON.stringify(status)],
-    [outputFile, result ?? ""],
+    [`${dir}/status.json`, JSON.stringify(status)], [outputFile, result], [transcriptPath, initial + reply],
   ]);
-  return {
-    dir,
-    outputFile,
-    status,
-    files,
-    readFile(path) {
-      return files.has(path) ? files.get(path) : null;
-    },
-  };
+  return { dir, run, outputFile, transcriptPath, status, initial, reply, record, files,
+    readFile: (path) => files.get(path) ?? null };
 }
 
 /**
@@ -4957,9 +4900,14 @@ function makeAsyncDir({
  * while Oracle's artifact carries only the assessment. The `question` here is
  * the assessment's own `question` field, which the parent's line must match.
  */
-function oracleResult({ dependencyId = "dep-1", question = "Which of the three options?", outcome = "USER_INPUT_REQUIRED", version = 1, extraAssessments = [], kind = "product-intent" } = {}) {
+function oracleResult({ extraAssessments = [], ...overrides } = {}) {
+  const assessment = {
+    version: 1, outcome: "USER_INPUT_REQUIRED", dependencyId: "dep-1", kind: "product-intent",
+    dependency: "The requested outcomes are mutually exclusive.", question: "Which of the three options?",
+    whyAgentCannotResolve: "The supplied criteria do not distinguish these outcomes.", ...overrides,
+  };
   const blocks = [
-    `\`\`\`oracle-input-assessment\n${JSON.stringify({ version, dependencyId, outcome, kind, question })}\n\`\`\``,
+    `\`\`\`oracle-input-assessment\n${JSON.stringify(assessment)}\n\`\`\``,
     ...extraAssessments.map((record) => `\`\`\`oracle-input-assessment\n${JSON.stringify(record)}\n\`\`\``),
   ].join("\n\n");
   return `${blocks}\n`;
@@ -4976,11 +4924,10 @@ function armedObserved({
   uuid = PARENT_UUID,
   sessionFile = sessionFileFor(uuid),
   runs = [],
-  reply = () => undefined,
   rpc = () => null,
   budget = undefined,
 } = {}) {
-  const bus = makeBus(reply, rpc);
+  const bus = makeBus(rpc);
   const dirs = runs.map((run) => run.asyncDir).filter((dir) => dir !== undefined && dir !== null);
   const filesystem = new Map();
   for (const dir of dirs) {
@@ -5065,6 +5012,27 @@ test("a verified user escalation notifies once and never continues", async () =>
   }
 });
 
+for (const [label, toolText, finalText, mayAsk] of [
+  ["advisory contract example plus real answer", readFileSync(new URL("../skills/agent-review/references/advisory.md", import.meta.url), "utf8"), oracleResult(), true],
+  ["assessment only in a tool result", oracleResult(), "The parent can resolve this from the supplied criteria.", false],
+]) {
+  test(`contact uses only the terminal Oracle reply: ${label}`, async () => {
+    const dir = makeAsyncDir({ dir: "/async/input", result: finalText });
+    const tool = dir.record({ role: "toolResult", toolName: "read", content: [{ type: "text", text: toolText }] });
+    dir.files.set(dir.transcriptPath, dir.initial + tool + dir.reply);
+    dir.files.set(dir.outputFile, [toolText, finalText].join("\n").split("\n").filter((line) => line.trim()).join("\n"));
+    const { pi, ctx } = armedObserved({ runs: [{ runId: "input", agent: "oracle", asyncDir: dir }] });
+    const capture = captureStdout();
+    try {
+      const result = await handlerFor(pi, "agent_before_settle")(
+        boundaryEvent([assistant(BLOCKED_USER("input", "dep-1"))]), ctx,
+      );
+      assert.equal(result?.continue, mayAsk ? undefined : true);
+      assert.deepEqual(capture.chunks, mayAsk ? [OSC_NOTIFY] : []);
+    } finally { capture.restore(); }
+  });
+}
+
 // --- 2. An agent-decision Oracle result cannot authorize a user question ------ -
 
 test("an Oracle result that recommends an agent decision cannot authorize a user question", async () => {
@@ -5093,7 +5061,21 @@ test("an Oracle result that recommends an agent decision cannot authorize a user
   }
 });
 
-// --- 3. Wrong provenance: fabricated id, wrong session, previous epoch --------
+// --- 3. Wrong provenance: wrong role, fabricated id, wrong session, previous epoch --------
+
+test("a witnessed Planner cannot supply Oracle Input proof, even with an otherwise valid record", async () => {
+  const dir = makeAsyncDir({ dir: "/async/planning", result: oracleResult() });
+  const { pi, ctx } = armedObserved({ runs: [{ runId: "planning", agent: "planner", asyncDir: dir }] });
+  const capture = captureStdout();
+  try {
+    const result = await handlerFor(pi, "agent_before_settle")(
+      boundaryEvent([assistant(BLOCKED_USER("planning", "dep-1"))]), ctx,
+    );
+    assert.equal(result?.continue, true);
+    assert.match(result.entries.at(-1).content, /not launched as Oracle/);
+    assert.deepEqual(capture.chunks, []);
+  } finally { capture.restore(); }
+});
 
 test("a fabricated run id cannot authorize a question", async () => {
   const dir = makeAsyncDir({ dir: "/async/oracle-3", result: oracleResult({ dependencyId: "dep-1" }) });
@@ -5194,7 +5176,7 @@ test("started, stopping, stopped alone, failed, cancelled, and missing results a
   ];
   for (const [label, over] of cases) {
     const dir = makeAsyncDir({
-      dir: `/async/oracle-${label}`,
+      dir: "/async/oracle-x",
       state: over.state,
       result: oracleResult({ dependencyId: "dep-1" }),
     });
@@ -5216,8 +5198,8 @@ test("started, stopping, stopped alone, failed, cancelled, and missing results a
 
   // A COMPLETED run whose output file is missing entirely is NOT a pending wake
   // owner, so this stays on the ordinary repair path: unverified, and repaired.
-  const missing = makeAsyncDir({ dir: "/async/oracle-missing", result: "" });
-  missing.files.delete(missing.outputFile);
+  const missing = makeAsyncDir({ dir: "/async/oracle-m", result: oracleResult() });
+  missing.files.delete(missing.transcriptPath);
   const { pi, ctx } = armedObserved({ runs: [{ runId: "oracle-m", agent: "oracle", asyncDir: missing }] });
   const capture = captureStdout();
   try {
@@ -5253,7 +5235,7 @@ test("F4 coverage: an incomplete TERMINAL run with no pending wake owner is reje
   ];
   for (const [label, over] of cases) {
     const dir = makeAsyncDir({
-      dir: `/async/oracle-term-${label.length}-${over.state}`,
+      dir: "/async/oracle-term",
       state: over.state,
       exitCode: over.exitCode,
       result: oracleResult({ dependencyId: "dep-1" }),
@@ -5300,9 +5282,15 @@ test("an Oracle Review result, an absent record, duplicates, a wrong dependency,
     ["zero question lines", oracleResult({ dependencyId: "dep-1" }), parentBlockedMessage("oracle-a", "dep-1", { questionLines: [] })],
     ["two question lines", oracleResult({ dependencyId: "dep-1" }), parentBlockedMessage("oracle-a", "dep-1", { questionLines: ["Which of the three options?", "Or this one?"] })],
     ["a wrong record version", oracleResult({ dependencyId: "dep-1", version: 2 }), BLOCKED_USER("oracle-a", "dep-1")],
+    ...Object.entries({
+      "unknown ownership kind": { kind: "strategy" }, "missing dependency": { dependency: undefined },
+      "blank rationale": { whyAgentCannotResolve: "  " }, "mixed agent fields": { selectedOption: "use A" },
+      "unbound extra field": { permissionGranted: true }, "string version": { version: "1" },
+    }).map(([label, fields]) => [label, oracleResult(fields), BLOCKED_USER("oracle-a", "dep-1")]),
+    ["host attestation alone", '```acceptance-report\n{"manualNotes":["complete"]}\n```', BLOCKED_USER("oracle-a", "dep-1")],
   ];
   for (const [label, result, parent] of cases) {
-    const dir = makeAsyncDir({ dir: `/async/oracle-a-${label.length}`, result });
+    const dir = makeAsyncDir({ dir: "/async/oracle-a", result });
     const { pi, ctx } = armedObserved({ runs: [{ runId: "oracle-a", agent: "oracle", asyncDir: dir }] });
     const capture = captureStdout();
     try {
@@ -5394,6 +5382,7 @@ test("an ungated BLOCKED yields one repair bridge and no notification", async ()
     assert.equal(result.entries[0].customType, mod.REPAIR_CUSTOM_TYPE);
     assert.deepEqual(capture.chunks, [], "a successful proposal stays silent");
     assert.match(result.entries[0].content, /Do not wait for a technical option selection/);
+    assert.match(result.entries[0].content, /Use oracle for unsettled strategy\. Use planner only on a valid oracle handoff, an explicit user request for planner, or a still-applicable recorded escalation/);
     assert.match(result.entries[0].content, /Missing assessment evidence grants no authorization/);
   } finally {
     capture.restore();
@@ -5518,7 +5507,7 @@ test("a BLOCKED naming a still-running Oracle keeps its wake owner once the brid
   // it does, the child owns the automatic wake and a premature BLOCKED must NOT
   // spawn a second continuation - the same rule as before, now on current-owner
   // evidence rather than mere ledger membership.
-  const dir = makeAsyncDir({ dir: "/async/pending", state: "running", result: oracleResult({ dependencyId: "dep-1" }) });
+  const dir = makeAsyncDir({ dir: "/async/oracle-p", state: "running", result: oracleResult({ dependencyId: "dep-1" }) });
   const { pi, ctx } = armedObserved({
     runs: [{ runId: "oracle-p", agent: "oracle", asyncDir: dir }],
     rpc: () => rpcTargetedReply("oracle-p", "running"),
@@ -5545,7 +5534,7 @@ test("ledger membership alone no longer suppresses a repair continuation", async
   // The S2 semantic change: a run witnessed START but NOT confirmed current by
   // the bridge is not a wake owner, so a premature BLOCKED proceeds on the
   // ordinary repair path rather than being silently absorbed.
-  const dir = makeAsyncDir({ dir: "/async/pending", state: "running", result: oracleResult({ dependencyId: "dep-1" }) });
+  const dir = makeAsyncDir({ dir: "/async/oracle-q", state: "running", result: oracleResult({ dependencyId: "dep-1" }) });
   const { pi, ctx } = armedObserved({
     runs: [{ runId: "oracle-q", agent: "oracle", asyncDir: dir }],
     rpc: () => null,
@@ -5797,18 +5786,14 @@ test("parseUserInputAssessment accepts version 1 only and exactly one record", (
   const parsed = mod.parseUserInputAssessment(good);
   assert.equal(parsed.dependencyId, "dep-1");
   assert.equal(parsed.outcome, "USER_INPUT_REQUIRED");
-  // The version may also be the string "1".
-  assert.notEqual(mod.parseUserInputAssessment(oracleResult({ version: "1" })), null);
-  // A `json oracle-input-assessment` info string is an accepted equivalent.
-  assert.notEqual(
-    mod.parseUserInputAssessment("```json oracle-input-assessment\n{\n  \"version\": 1,\n  \"outcome\": \"USER_INPUT_REQUIRED\",\n  \"dependencyId\": \"dep-1\",\n  \"question\": \"Which?\"\n}\n```"),
-    null,
-  );
-  // A bare ```json fence carrying the assessment shape is the compatibility path.
-  assert.notEqual(
-    mod.parseUserInputAssessment("```json\n{\n  \"version\": 1,\n  \"outcome\": \"USER_INPUT_REQUIRED\",\n  \"dependencyId\": \"dep-1\",\n  \"question\": \"Which?\"\n}\n```"),
-    null,
-  );
+  // The semantic record uses the JSON number 1, not a coerced version string.
+  assert.equal(mod.parseUserInputAssessment(oracleResult({ version: "1" })), null);
+  for (const kind of ["authorization", "access", "fact", "product-intent"]) {
+    assert.equal(mod.parseUserInputAssessment(oracleResult({ kind })).kind, kind);
+  }
+  for (const info of ["json oracle-input-assessment", "json"]) {
+    assert.deepEqual(mod.parseUserInputAssessment(good.replace("```oracle-input-assessment", "```" + info)), parsed);
+  }
   // A bare ```json fence with an unrelated object is NOT an assessment.
   assert.equal(mod.parseUserInputAssessment("```json\n{\n  \"verdict\": \"PASS\"\n}\n```"), null);
   // An AGENT_DECISION record is NOT a user-input assessment on EITHER fence form.
@@ -5843,18 +5828,8 @@ test("parseUserInputAssessment counts tagged and bare records together", () => {
   // F2: a valid TAGGED assessment plus a competing BARE-JSON assessment is TWO
   // records and therefore ambiguous - the two formats are counted TOGETHER, not
   // selected between by a ternary.
-  const tagged = "```oracle-input-assessment\n" + JSON.stringify({
-    version: 1,
-    outcome: "USER_INPUT_REQUIRED",
-    dependencyId: "dep-1",
-    question: "Which?",
-  }) + "\n```";
-  const bare = "```json\n" + JSON.stringify({
-    version: 1,
-    outcome: "USER_INPUT_REQUIRED",
-    dependencyId: "dep-2",
-    question: "Or this?",
-  }) + "\n```";
+  const tagged = oracleResult({ dependencyId: "dep-1", question: "Which?" });
+  const bare = oracleResult({ dependencyId: "dep-2", question: "Or this?" }).replace("```oracle-input-assessment", "```json");
   assert.equal(mod.parseUserInputAssessment(`${tagged}\n\n${bare}`), null, "tagged + competing bare is ambiguous");
   assert.equal(mod.parseUserInputAssessment(`${bare}\n\n${tagged}`), null, "order does not matter");
   // Two bare assessments are ambiguous.
@@ -5870,15 +5845,38 @@ test("parseUserInputAssessment counts tagged and bare records together", () => {
   );
   // A single `json oracle-input-assessment` fence must not be double-counted.
   assert.notEqual(
-    mod.parseUserInputAssessment("```json oracle-input-assessment\n" + JSON.stringify({
-      version: 1,
-      outcome: "USER_INPUT_REQUIRED",
-      dependencyId: "dep-1",
-      question: "Which?",
-    }) + "\n```"),
+    mod.parseUserInputAssessment(tagged.replace("```oracle-input-assessment", "```json oracle-input-assessment")),
     null,
     "one physical fence is one candidate even though it matches both tags",
   );
+});
+
+test("contact needs an actual Input return, not a different lane or a documented example", async () => {
+  const input = oracleResult().trimEnd();
+  const closure = '```oracle-closure-assessment\n{"conclusion":"CONTINUE_REQUIRED"}\n```';
+  const handoff = `\`\`\`pi-planning-handoff\n${JSON.stringify({
+    version: 1, outcome: "PLANNER_NEEDED", dependencyId: "dep-1", assignmentRef: "planning/g1",
+    decision: "Choose a migration path", consequence: "Changes compatibility", cheapChecks: ["Both paths pass the compatibility check"], evidenceRefs: ["compatibility results"],
+  })}\n\`\`\``;
+  for (const [label, result] of [
+    ["Planning handoff alone", handoff],
+    ["Planning handoff then Input", `${handoff}\n\n${input}`],
+    ["Input then Planning handoff", `${input}\n\n${handoff}`],
+    ["Input then JSON-prefixed handoff", `${input}\n\n${handoff.replace("```pi-", "```json pi-")}`],
+    ["closure tag", input.replace("oracle-input-assessment", "json oracle-closure-assessment")],
+    ["host tag", input.replace("oracle-input-assessment", "json acceptance-report")],
+    ["two semantic returns", `${closure}\n\n${input}`],
+    ["inline opener", `For example: ${input}`],
+    ["fenced example", `~~~~markdown\n${input}\n~~~~`],
+    ["indented example", input.split("\n").map(line => "    " + line).join("\n")],
+    ["list example", `- Example:\n\n${input.split("\n").map(line => "  " + line).join("\n")}`],
+    ["unterminated second Input", `${input}\n\n${input.slice(0, -3)}`],
+  ]) {
+    const dir = makeAsyncDir({ dir: "/async/input", result });
+    const { pi, ctx } = armedObserved({ runs: [{ runId: "input", agent: "oracle", asyncDir: dir }] });
+    const outcome = await handlerFor(pi, "agent_before_settle")(boundaryEvent([assistant(BLOCKED_USER("input", "dep-1"))]), ctx);
+    assert.equal(outcome?.continue, true, `${label}: repair, not contact`);
+  }
 });
 
 test("userQuestionLines excludes fenced examples and indented code", () => {
@@ -5971,108 +5969,81 @@ test("the result is read by scanning the whole artifact, and a trailing bare jso
   }
 });
 
-test("readObservedRunEvidence uses state=complete, not the process exit code", () => {
-  // The pinned real shape: completion is `status.json.state === "complete"`;
-  // there is NO boolean success field, and the process exit code is separate.
-  const completed = makeAsyncDir({ dir: "/async/e-1", state: "complete", result: "r\n" });
-  const evidence = mod.readObservedRunEvidence("/async/e-1", completed.readFile);
-  assert.equal(evidence.completed, true, "state=complete is the completion fact");
-  assert.equal(evidence.resultPath, completed.outputFile);
-
-  // A NON-`complete` state is rejected regardless of its exit code: a stopped
-  // run carries exit code 1 in this fixture, but the state is what decides.
-  const stopped = makeAsyncDir({ dir: "/async/e-2", state: "stopped", result: "r\n" });
-  assert.equal(stopped.status.processTerminal.instances[0].exitCode, 1, "a stopped run is exit 1 here");
-  assert.equal(mod.readObservedRunEvidence("/async/e-2", stopped.readFile).completed, false);
-
-  // Completion comes from `state`, NEVER the exit status: `state: complete` with
-  // a NONZERO exit code still counts as complete.
-  const completeNonzero = makeAsyncDir({ dir: "/async/e-nz", state: "complete", result: "r\n", exitCode: 7 });
-  assert.equal(
-    mod.readObservedRunEvidence("/async/e-nz", completeNonzero.readFile).completed,
-    true,
-    "state=complete wins over a nonzero exit code",
-  );
-
-  // A missing async dir yields the honest empty shape.
-  const absent = mod.readObservedRunEvidence("/async/does-not-exist", () => null);
-  assert.deepEqual(absent, { asyncDir: "/async/does-not-exist", resultPath: null, result: null, completed: false });
-
-  // A malformed status.json is not evidence either.
-  const broken = (path) => (path === "/async/e-3/status.json" ? "{not json" : null);
-  assert.equal(mod.readObservedRunEvidence("/async/e-3", broken).completed, false);
-});
-
-test("an oversize or short-read result artifact yields unusable evidence (fail closed)", () => {
-  // F3: a truncated prefix cannot prove whole-result uniqueness, so an oversized
-  // file must FAIL CLOSED rather than expose a usable prefix.
-  const dir = makeAsyncDir({ dir: "/async/oversize", state: "complete", result: oracleResult({ dependencyId: "dep-1" }) });
-  const oversized = (path) =>
-    path === "/async/oversize/status.json"
-      ? dir.files.get(path)
-      : path.endsWith("output-0.log")
-        ? "prefix with one assessment"
-        : null;
-  const evidence = mod.readObservedRunEvidence(
-    "/async/oversize",
-    oversized,
-    () => 2 * 1024 * 1024 + 1,
-  );
-  assert.equal(evidence.result, null, "an oversize artifact exposes no result");
-  assert.equal(evidence.completed, true, "the completion fact is still reported");
-  assert.equal(evidence.truncated, true, "oversize is a distinct diagnostic");
-
-  // A SHORT read (fewer bytes than the file holds) is equally unusable.
-  const shortDir = makeAsyncDir({ dir: "/async/short", state: "complete", result: "one assessment only" });
-  const short = mod.readObservedRunEvidence(
-    "/async/short",
-    (path) => (path === "/async/short/status.json" ? shortDir.files.get(path) : "only part"),
-    () => 4096,
-  );
-  assert.equal(short.result, null, "a short read exposes no result");
-  assert.equal(short.truncated, true, "a short read is a truncated read");
-
-  // A normal-size file, read whole, still verifies.
-  const normal = makeAsyncDir({ dir: "/async/normal", state: "complete", result: oracleResult({ dependencyId: "dep-1" }) });
-  const normalEvidence = mod.readObservedRunEvidence(
-    "/async/normal",
-    normal.readFile,
-    () => normal.files.get(normal.outputFile).length,
-  );
-  assert.equal(normalEvidence.result, normal.files.get(normal.outputFile), "a whole read is usable");
-  assert.equal(normalEvidence.truncated, undefined, "a whole read is not truncated");
-});
-
-test("the production reader fails closed on a real oversize artifact", () => {
-  // Exercise the real `defaultReadFile` against a real file: a >2 MiB artifact
-  // whose PREFIX holds a perfectly valid assessment must still be unusable, so
-  // no prefix can authorize an escalation.
-  const root = mkdtempSync(join(tmpdir(), "supervisor-oversize-"));
-  try {
-    const dir = join(root, "run");
-    mkdirSync(dir);
-    const outputFile = join(dir, "output-0.log");
-    const status = {
-      runId: dir,
-      state: "complete",
-      outputFile,
-      sessionFile: PARENT_SESSION,
-      sessionId: PARENT_SESSION,
-      processTerminal: { instances: [{ exitCode: 0 }] },
-      outputs: {},
-    };
-    writeFileSync(join(dir, "status.json"), JSON.stringify(status));
-    // A valid assessment in the PREFIX, padded past the 2 MiB cap.
-    const prefix = oracleResult({ dependencyId: "dep-1" });
-    writeFileSync(outputFile, prefix + "\n" + "x".repeat(2 * 1024 * 1024 + 16));
-
-    const evidence = mod.readObservedRunEvidence(dir);
-    assert.equal(evidence.completed, true, "completion is still reported");
-    assert.equal(evidence.result, null, "an oversize artifact exposes no usable prefix");
-    assert.equal(evidence.truncated, true, "oversize is diagnosed distinctly");
-  } finally {
-    rmSync(root, { recursive: true, force: true });
+test("only the witnessed completed single Oracle step supplies a reply, independent of process exit", () => {
+  const dir = makeAsyncDir({ dir: "/async/native", result: oracleResult(), exitCode: 7 });
+  const inspect = () => mod.readObservedRunEvidence(dir.run, dir.readFile, dir.readFile);
+  assert.equal(inspect().result, oracleResult());
+  const step = dir.status.steps[0];
+  for (const change of [
+    { state: "stopped" }, { runId: "other" }, { sessionId: OTHER_SESSION }, { mode: "chain" },
+    { steps: [step, step] }, { steps: [{ ...step, agent: "fixer" }] }, { steps: [{ ...step, status: "running" }] },
+    { steps: [{ ...step, transcriptError: "disk full" }] }, { steps: [{ ...step, transcriptPath: undefined }] },
+  ]) {
+    dir.files.set(`${dir.dir}/status.json`, JSON.stringify({ ...dir.status, ...change }));
+    assert.equal(inspect().result, null, JSON.stringify(change));
   }
+  dir.files.set(`${dir.dir}/status.json`, "{broken");
+  assert.equal(inspect().completed, false);
+  dir.files.delete(`${dir.dir}/status.json`);
+  assert.equal(inspect().completed, false);
+});
+
+test("an earlier Oracle ask never substitutes for an unusable or superseding final record", () => {
+  const dir = makeAsyncDir({ dir: "/async/terminal", result: oracleResult() });
+  const row = JSON.parse(dir.reply);
+  const inspect = (last) => {
+    dir.files.set(dir.transcriptPath, dir.initial + dir.reply + last);
+    return mod.readObservedRunEvidence(dir.run, dir.readFile, dir.readFile).result;
+  };
+  for (const change of [
+    { version: 2 }, { source: "sync" }, { runId: "other" }, { agent: "fixer" }, { childIndex: 1 },
+    { recordType: "truncated" }, { sourceEventType: "message_update" }, { role: "toolResult" },
+    { message: { ...row.message, role: "toolResult" } }, { message: { ...row.message, stopReason: "length" } },
+    { message: { ...row.message, errorMessage: "error" } },
+    { message: { ...row.message, content: [...row.message.content, { type: "toolCall" }] } },
+    { message: { ...row.message, content: [{ type: "thinking", thinking: oracleResult() }] } },
+  ]) assert.equal(inspect(JSON.stringify({ ...row, ...change }) + "\n"), null, JSON.stringify(change));
+  for (const damaged of ["{incomplete", "{bad json}\n", dir.reply.trimEnd(), "\n"]) assert.equal(inspect(damaged), null);
+  const mixed = [{ type: "text", text: oracleResult() }, { type: "text", text: '```acceptance-report\n{}\n```' }];
+  const result = inspect(dir.record({ ...row.message, content: mixed }));
+  assert.equal(result, mixed.map((part) => part.text).join("\n"));
+  assert.equal(mod.parseUserInputAssessment(result), null, "no host stripping or last-text-part selection");
+});
+
+test("the installed pi-subagents writer retains a complete, attributable terminal reply", { skip: !realTopics }, async () => {
+  const { createChildTranscriptWriter } = await import(join(realTopics.sharedDir, "child-transcript.js"));
+  const root = mkdtempSync(join(tmpdir(), "supervisor-native-"));
+  try {
+    const dir = makeAsyncDir({ dir: root });
+    writeFileSync(join(root, "status.json"), JSON.stringify(dir.status));
+    const writer = createChildTranscriptWriter({ transcriptPath: dir.transcriptPath, runId: dir.run.runId,
+      agent: "oracle", childIndex: 0, source: "async", cwd: root });
+    writer.writeInitialUserMessage("Assess the dependency.");
+    const end = (message) => writer.writeChildEvent({ type: "message_end", message });
+    end({ role: "toolResult", toolName: "read", content: [{ type: "text", text: oracleResult() }] });
+    assert.equal(mod.readObservedRunEvidence(dir.run).result, null);
+    end({ role: "assistant", stopReason: "stop", content: [{ type: "text", text: oracleResult() }] });
+    assert.equal(writer.getError(), undefined);
+    assert.equal(mod.readObservedRunEvidence(dir.run).result, oracleResult());
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("the production reader bounds the terminal record, not the preceding tool history", () => {
+  const root = mkdtempSync(join(tmpdir(), "supervisor-tail-"));
+  try {
+    const dir = makeAsyncDir({ dir: root, result: oracleResult() });
+    mkdirSync(dirname(dir.transcriptPath));
+    for (const [path, value] of dir.files) writeFileSync(path, value);
+    const large = "x".repeat(2 * 1024 * 1024);
+    const tool = dir.record({ role: "toolResult", content: [{ type: "text", text: large }] });
+    writeFileSync(dir.transcriptPath, dir.initial + tool + dir.reply);
+    assert.equal(mod.readObservedRunEvidence(dir.run).result, oracleResult(), "history can exceed the cap");
+    const row = JSON.parse(dir.reply);
+    appendFileSync(dir.transcriptPath, dir.record({ ...row.message, content: [{ type: "text", text: oracleResult() + large }] }));
+    const evidence = mod.readObservedRunEvidence(dir.run);
+    assert.equal(evidence.completed, true);
+    assert.equal(evidence.result, null, "an oversized final record cannot authorize with its prefix or suffix");
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
 test("sessionUuid normalizes a session FILE PATH and a bare UUID to the same value", () => {
@@ -6164,7 +6135,7 @@ function fakeClockHarness({ runId = "oracle-1", states = () => "running", entrie
       });
     }
   };
-  const baseBus = makeBus(undefined, (request) => {
+  const baseBus = makeBus((request) => {
     // CORR10/NEW-2: an `envelope` responder returns a FULL reply envelope, so a
     // test can drive an error reply (e.g. `no_active_session`) that the
     // success-wrapping `makeBus` rpc responder cannot produce. It is emitted
@@ -6875,7 +6846,7 @@ test("D2: session identity is read through the REAL context (sessionManager)", a
   // provenance never matched and every genuine WAIT was rejected. This context
   // models the host faithfully: sessionManager accessors, no direct fields.
   const sessionFile = sessionFileFor(PARENT_UUID);
-  const bus = makeBus(undefined, () => rpcSnapshot("oracle-1", "running"));
+  const bus = makeBus(() => rpcSnapshot("oracle-1", "running"));
   const pi = makePi();
   pi.events = bus;
   const timers = [];
@@ -6940,7 +6911,7 @@ test("D2: session identity is read through the REAL context (sessionManager)", a
 test("D2: an ABSENT identity still fails closed (never a match)", () => {
   // Fail-closed control: with no identity reachable at all, provenance cannot
   // bind and the WAIT must be reported unverified rather than silently trusted.
-  const bus = makeBus(undefined, () => rpcSnapshot("oracle-1", "running"));
+  const bus = makeBus(() => rpcSnapshot("oracle-1", "running"));
   const pi = makePi();
   pi.events = bus;
   const timers = [];
@@ -8226,7 +8197,7 @@ test("CORR11/NEW-1 (R4): the R9-2 non-continuing scope gate is unchanged by the 
   // same-UUID NON-CONTINUING startups. A `startup` resets the counter (writes a
   // NEW, LOWER lineage) and inherits nothing; a genuine BLOCKED escalation on
   // that branch still runs through decision repair, exactly as R9-2 requires.
-  const dir = makeAsyncDir({ dir: "/async/oracle-corr11", result: oracleResult({ dependencyId: "dep-1" }) });
+  const dir = makeAsyncDir({ dir: "/async/oracle-1", result: oracleResult({ dependencyId: "dep-1" }) });
   const files = new Map(dir.files);
   // A witness registration crosses a request boundary, then a stale HIGHER
   // same-domain generation from an earlier registration is present in the
@@ -8267,7 +8238,7 @@ test("CORR12/NEW-1: a superseded registration's numerically equal epoch cannot r
   //   and the SAME escalation is silently ACCEPTED. With an explicit lineage
   //   token the old record belongs to A's token, is NOT admitted, and the repair
   //   STILL fires.
-  const dir = makeAsyncDir({ dir: "/async/oracle-corr12", result: oracleResult({ dependencyId: "dep-1" }) });
+  const dir = makeAsyncDir({ dir: "/async/oracle-1", result: oracleResult({ dependencyId: "dep-1" }) });
   const files = new Map(dir.files);
   const b = () => boundaryEvent([assistant(BLOCKED_USER("oracle-1", "dep-1"))]);
 
@@ -8331,6 +8302,11 @@ test("CORR12/NEW-1: the lineage token excludes a numerically equal superseded ep
     current,
     { lineage: "ln-B", generation: 1 },
     "the LAST marker's lineage is current; its generation is the max within that lineage",
+  );
+  assert.deepEqual(
+    mod.currentLineageGeneration([marker(7, "ln-B"), marker(30, "ln-A"), marker(3, "ln-B"), null], domain),
+    { lineage: "ln-B", generation: 7 },
+    "interleaved markers still use the maximum for the last valid token, not merely the last epoch",
   );
   const restored = [...mod.restoreProvenance(entries).values()];
   assert.equal(restored.length, 1, "the record is still parsed");
@@ -8460,7 +8436,7 @@ test("CORR13: a pre-CORR12 (legacy) branch reload does not resurrect superseded 
   // was then silently ACCEPTED (`undefined`) instead of repaired. With the
   // explicit `LEGACY_NO_LINEAGE_SENTINEL`, no legacy record is admissible and the
   // repair STILL fires after the reload.
-  const dir = makeAsyncDir({ dir: "/async/oracle-corr13", result: oracleResult({ dependencyId: "dep-1" }) });
+  const dir = makeAsyncDir({ dir: "/async/oracle-1", result: oracleResult({ dependencyId: "dep-1" }) });
   const files = new Map(dir.files);
   const b = () => boundaryEvent([assistant(BLOCKED_USER("oracle-1", "dep-1"))]);
 
@@ -9771,7 +9747,7 @@ test("R8-2: a valid escalation is not falsely repaired after a reload", async ()
   // `STATUS:BLOCKED user` escalation that verified BEFORE the reload was
   // re-classified as unknown and forced through decision repair. That is a FALSE
   // repair on genuine user-owned dependency evidence.
-  const dir = makeAsyncDir({ dir: "/async/oracle-r82", result: oracleResult({ dependencyId: "dep-1" }) });
+  const dir = makeAsyncDir({ dir: "/async/oracle-1", result: oracleResult({ dependencyId: "dep-1" }) });
   const files = new Map(dir.files);
   // First load: observe the run so provenance is PERSISTED to the branch.
   const first = fakeClockHarness({ states: () => "complete", files });
@@ -9814,7 +9790,7 @@ test("R8-3: a FAILED child cannot suppress repair via stale owner evidence", asy
   // cached, cross an activity boundary, then present a BLOCKED naming that run
   // while its on-disk state is `failed`. The escalation must NOT be silenced by
   // the stale owner - it must be repaired.
-  const dir = makeAsyncDir({ dir: "/async/oracle-r83", state: "failed", result: oracleResult({ dependencyId: "dep-1" }) });
+  const dir = makeAsyncDir({ dir: "/async/oracle-1", state: "failed", result: oracleResult({ dependencyId: "dep-1" }) });
   const files = new Map(dir.files);
   const h = fakeClockHarness({ states: () => "running", files });
   h.observeStart("oracle-1", "oracle", dir.dir);
@@ -10093,7 +10069,7 @@ test("R9-2: restoration is continue-scope only; a non-continuing session_start r
   // removed, is restored. This is the exact collision the defect needs; without
   // the intervening boundary the generation gate alone masks it.
   const build = () => {
-    const dir = makeAsyncDir({ dir: "/async/oracle-r92", result: oracleResult({ dependencyId: "dep-1" }) });
+    const dir = makeAsyncDir({ dir: "/async/oracle-1", result: oracleResult({ dependencyId: "dep-1" }) });
     const files = new Map(dir.files);
     const first = fakeClockHarness({ states: () => "complete", files });
     first.pi.emit("input", { type: "input", text: "go", source: "interactive" }, first.ctx);
@@ -11568,6 +11544,29 @@ test("FEATURE3 A3: an already-delivered OLD-envelope occurrence still reconciles
     false,
     "an empty tail does not confirm",
   );
+});
+
+test("one reconciliation settles current and legacy claims without clearing an assistant echo", async () => {
+  const h = feature3Harness();
+  try {
+    h.sessionStart(PARENT_UUID);
+    h.pi.sendUserMessage = () => {}; // Decide independently which receipts reached the transcript.
+    for (const id of ["a", "b", "c"]) await schedule(h, { id, prompt: "same text", delayMs: 0 });
+    h.advance(0);
+    const [a, b, c] = persistedTasks(h);
+    assert.ok([a, b, c].every((task) => task.occurrenceId));
+    const rows = [
+      transcriptRow("user", mod.taskFiringPrompt(a)),
+      transcriptRow("user", mod.legacyTaskFiringPrompt(b)),
+      transcriptRow("assistant", mod.taskFiringPrompt(c)),
+    ];
+    writeFileSync(h.sessionFileFor(PARENT_UUID), rows.map((row) => JSON.stringify(row)).join("\n"));
+    h.settle(PARENT_UUID);
+    assert.deepEqual(persistedTasks(h), [c]);
+    assert.equal(h.attempts(), 3, "reconciliation never resends an occurrence");
+  } finally {
+    h.dispose();
+  }
 });
 
 test("FEATURE3 A4: neither accepted rendering admits prefix, quoted, or appended rows", () => {

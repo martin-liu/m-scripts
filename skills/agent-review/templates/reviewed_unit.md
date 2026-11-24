@@ -27,7 +27,7 @@ schema_version: 3.1
 ## Target
 - Intended behavior/output, authoritative basis, allowed scope/exclusions:
 - Criterion IDs/materiality/observable expectations; cases/invariants:
-- Oracle plan/decisions and reconsideration triggers; first working end-to-end slice:
+- Planning result/decisions and reconsideration triggers; first working end-to-end slice:
 - Required validation commands/scenarios/evidence and execution owner:
 | Check / criterion | Command/scenario / inputs / expected | Owner | Cadence / due point | Cost/duration | Rerun trigger / evidence applicability |
 |---|---|---|---|---|---|
@@ -46,7 +46,7 @@ schema_version: 3.1
 - Known defects/residual risk; authorized next action:
 
 ## Tasks
-| Logical task ID | Generation | Status | Runtime transport ref | Scope | Integration | Durable result |
+| Logical task ID | Generation | Status | Runtime transport ref | Role + lane/TARGET, scope and assignment ref | Integration / linked next task | Durable result |
 |---|---|---|---|---|---|---|
 
 ## Assessments and correction
@@ -59,7 +59,7 @@ schema_version: 3.1
 - Optional advice disposition / rationale (accept/defer/reject; no mandatory repair cycle):
 
 ## Decisions
-| ID | Oracle-derived course / historical parent choice reference | Selection | Rationale | Trigger |
+| ID | Adviser-derived course / historical parent choice reference | Selection | Rationale | Trigger |
 |---|---|---|---|---|
 ```
 

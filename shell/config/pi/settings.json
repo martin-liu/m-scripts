@@ -1,6 +1,6 @@
 {
   "defaultProvider": "litellm",
-  "defaultModel": "DeepSeek-V4.1-Flash",
+  "defaultModel": "gpt-6.1-terra",
   "defaultThinkingLevel": "max",
   "defaultProjectTrust": "ask",
   "enableAnalytics": false,
@@ -12,18 +12,26 @@
     "npm:@ff-labs/pi-fff"
   ],
   "subagents": {
-    "disableBuiltins": true
+    "disableBuiltins": true,
+    "agentOverrides": {
+      "fixer": { "advertise": false }
+    }
   },
   "theme": "dracula",
+  "retry": {
+    "maxRetries": 6,
+    "baseDelayMs": 5000,
+    "maxAgentDelayMs": 60000
+  },
   "compaction": {
     "enabled": true,
     "reserveTokens": 64000,
     "keepRecentTokens": 40000
   },
-  "lastChangelogVersion": "1.5.2",
+  "lastChangelogVersion": "1.6.0",
   "hideThinkingBlock": true,
   "extensionChangelogVersions": {
-    "{\"source\":\"npm:pi-subagents\",\"scope\":\"user\"}": "0.88.0",
-    "{\"source\":\"npm:pi-web-access\",\"scope\":\"user\"}": "0.47.0"
+    "{\"source\":\"npm:pi-subagents\",\"scope\":\"user\"}": "0.90.0",
+    "{\"source\":\"npm:pi-web-access\",\"scope\":\"user\"}": "0.48.0"
   }
 }

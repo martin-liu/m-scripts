@@ -1,6 +1,5 @@
-import { closeSync, openSync, readFileSync, readSync, statSync } from "node:fs";
-import { join } from "node:path";
-import { MAX_RESULT_ARTIFACT_BYTES } from "./protocol.ts";
+import { closeSync, fstatSync, openSync, readSync, statSync } from "node:fs";
+import { asRecord, MAX_RESULT_ARTIFACT_BYTES } from "./protocol.ts";
 import { taskOccurrenceEnvelope } from "./ids.ts";
 
 /**
@@ -13,21 +12,6 @@ import { taskOccurrenceEnvelope } from "./ids.ts";
 
 /** One injected read function so tests can supply a fixture map. */
 export type ReadFile = (path: string) => string | null;
-
-/**
- * The size of a file, or null when it cannot be stat-ed.
- *
- * Injected alongside `readFile` so a test can model an artifact whose declared
- * size disagrees with what the reader returned (a short read) without needing a
- * real multi-megabyte fixture.
- */
-export function defaultStatSize(path: string): number | null {
-  try {
-    return statSync(path).size;
-  } catch {
-    return null;
-  }
-}
 
 /** The most-recent bytes of a session transcript read for confirmation. */
 export const TRANSCRIPT_TAIL_BYTES = 512 * 1024;
@@ -85,22 +69,22 @@ export function worstCaseTaskRowBytes(taskId: string, prompt: string): number {
  * FAIL-CLOSED: any error resolves to null (no confirmation), so an unreadable
  * transcript can never fabricate a commit.
  */
-export function readTranscriptTail(path: string): string | null {
+export function readTranscriptTail(path: string, maxBytes = TRANSCRIPT_TAIL_BYTES): string | null {
   let fd: number | null = null;
   try {
-    const size = statSync(path).size;
+    fd = openSync(path, "r");
+    const size = fstatSync(fd).size;
     if (size <= 0) return "";
-    const length = Math.min(size, TRANSCRIPT_TAIL_BYTES);
+    const length = Math.min(size, maxBytes);
     const start = size - length;
     const buffer = Buffer.alloc(length);
-    fd = openSync(path, "r");
     let offset = 0;
     while (offset < length) {
       const read = readSync(fd, buffer, offset, length - offset, start + offset);
       if (read <= 0) break;
       offset += read;
     }
-    if (offset < length) return null;
+    if (offset < length || fstatSync(fd).size !== size) return null;
     return buffer.toString("utf8");
   } catch {
     return null;
@@ -115,45 +99,33 @@ export function readTranscriptTail(path: string): string | null {
   }
 }
 
-/**
- * Whether a transcript tail contains a `role: "user"` row carrying `envelope`.
- *
- * Correlation requires BOTH the exact envelope string AND `role: "user"`: an
- * assistant message that merely echoes the envelope text (a quoted example, a
- * restatement) MUST NOT confirm delivery. Rows are the host's persisted JSONL
- * entries (`{type:"message", message:{role, content:[{type:"text",text}]}}`);
- * a line that does not parse, or carries no text, is skipped rather than
- * interpreted. `expected` is the COMPLETE generated firing text. The match is an
- * EXACT equality, not a substring or prefix test: the correlation envelope is
- * only the first line of `taskFiringPrompt`, so accepting a prefix (or any
- * `includes` match) would let a row that merely echoes the envelope - a truncated
- * or partially persisted line, or unrelated prose quoting it - settle a claim.
- * That would advance an interval or delete a one-shot without proof the full
- * reminder ever reached the model.
+/** Index nonempty user text parts from one bounded tail. The caller matches
+ * whole firing prompts against these, never substrings or assistant echoes.
  */
-export function transcriptConfirmsDelivery(transcript: string | null, expected: string): boolean {
-  if (transcript === null || transcript.length === 0 || expected.length === 0) return false;
+export function deliveredUserTexts(transcript: string | null): Set<string> {
+  const texts = new Set<string>();
+  if (!transcript) return texts;
   for (const line of transcript.split("\n")) {
-    if (line.length === 0) continue;
+    if (!line) continue;
     let entry: unknown;
     try {
       entry = JSON.parse(line);
     } catch {
-      continue; // a partial tail line cannot confirm anything
+      continue; // the first row in a bounded tail may be incomplete
     }
-    if (entry === null || typeof entry !== "object") continue;
-    const message = (entry as { message?: unknown }).message;
-    if (message === null || typeof message !== "object") continue;
-    if ((message as { role?: unknown }).role !== "user") continue;
-    const content = (message as { content?: unknown }).content;
-    if (!Array.isArray(content)) continue;
-    for (const part of content) {
-      if (part === null || typeof part !== "object") continue;
-      const text = (part as { text?: unknown }).text;
-      if (typeof text === "string" && text === expected) return true;
+    const message = asRecord(asRecord(entry)?.message);
+    if (message?.role !== "user" || !Array.isArray(message.content)) continue;
+    for (const part of message.content) {
+      const text = asRecord(part)?.text;
+      if (typeof text === "string" && text.length > 0) texts.add(text);
     }
   }
-  return false;
+  return texts;
+}
+
+/** Require the complete firing prompt, not just its correlation envelope. */
+export function transcriptConfirmsDelivery(transcript: string | null, expected: string): boolean {
+  return deliveredUserTexts(transcript).has(expected);
 }
 
 /**
@@ -174,7 +146,8 @@ export function transcriptConfirmsDeliveryEither(
   current: string,
   legacy: string,
 ): boolean {
-  return transcriptConfirmsDelivery(transcript, current) || transcriptConfirmsDelivery(transcript, legacy);
+  const delivered = deliveredUserTexts(transcript);
+  return delivered.has(current) || delivered.has(legacy);
 }
 
 /**
@@ -233,7 +206,7 @@ export function readJsonArtifact(path: string, readFile: ReadFile): Record<strin
 }
 
 /** True for an absolute POSIX path; the async dir layout is always absolute. */
-export function isAbsolutePath(path: string | null): path is string {
+export function isAbsolutePath(path: unknown): path is string {
   return typeof path === "string" && path.startsWith("/");
 }
 
