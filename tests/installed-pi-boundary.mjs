@@ -160,6 +160,45 @@ async function checkInstalled() {
       assert.deepEqual(Array.from(catalog?.matchAll(/<name>([^<]+)<\/name>/g) ?? [], m => m[1]), roles);
       assert.deepEqual(errors, []);
     });
+    await test('direct async Worker keeps the native deadline or accepts a longer budget with a checkpoint', async () => {
+      const { flattenSubagentToolOptions } = await sub('extension/subagent-options');
+      const { resolveSingleAgentLaunchTimeout } = await sub('runs/foreground/subagent-executor');
+      const { loadConfig } = await sub('extension/config');
+      const { timeoutMs: configTimeout } = loadConfig();
+      const worker = agents.find(a => a.name === 'worker');
+      assert.equal(worker.defaultAsync, true);
+      assert.equal(worker.defaultTimeoutMs, undefined);
+      for (const [options, minutes] of [[{}, 30], [{ timeoutMs: 60 * 60_000, checkpointBeforeDeadlineMs: 5 * 60_000 }, 60]]) {
+        const input = { agent: 'worker', task: 'Run the assigned check and return the result.', async: true, options };
+        assert.equal(await parent.extensionRunner.emitToolCall({ type: 'tool_call', toolName: 'subagent', toolCallId: 'budget', input }), undefined);
+        const params = flattenSubagentToolOptions(input);
+        assert.deepEqual(resolveSingleAgentLaunchTimeout(params, params.async, configTimeout), { timeoutMs: minutes * 60_000 });
+        assert.equal(params.checkpointBeforeDeadlineMs, options.checkpointBeforeDeadlineMs);
+      }
+    });
+    await test('an owned async Worker timeout requests one parent turn, not a parent abort', async () => {
+      const { default: registerNotify } = await sub('runs/background/notify');
+      const state = { currentSessionId: 'test-parent', completionOwnerId: 'test-owner' };
+      const sent = [];
+      // Real native notifier; capture the host request instead of starting a model turn.
+      const notifier = registerNotify({ events: { on: () => () => {} }, isHeld: () => false,
+        sendMessage(message, options) { sent.push({ message, options }); } }, state);
+      const result = { sessionId: state.currentSessionId, completionOwnerId: state.completionOwnerId,
+        id: 'worker-timeout', agent: 'worker', mode: 'single', state: 'failed', success: false,
+        timedOut: true, exitCode: 1, error: 'Subagent timed out after 1800000ms.' };
+      try {
+        assert.equal(await notifier.deliver({ ...result, completionOwnerId: 'other-owner' }), false);
+        assert.equal(sent.length, 0);
+        assert.equal(await notifier.deliver(result), true);
+        assert.equal(await notifier.deliver(result), true);
+        assert.equal(sent.length, 1, 'duplicate result must not start a second recovery');
+        const [{ message, options }] = sent;
+        assert.equal(options.triggerTurn, true);
+        assert.equal(message.customType, 'subagent-notify');
+        assert.deepEqual(message.details.runs.map(r => [r.runId, r.status]), [[result.id, 'failed']]);
+        assert.ok(message.content.includes(result.error));
+      } finally { notifier.dispose(); }
+    });
     await test('direct tool-call guard: fresh assignments bound, legacy direct/child slot blocked, retained-ID management untouched', async () => {
       const { flattenSubagentToolOptions } = await sub('extension/subagent-options');
       const dispatch = (input, toolName = 'subagent') => parent.extensionRunner.emitToolCall({ type: 'tool_call', toolName, toolCallId: 'sample', input });

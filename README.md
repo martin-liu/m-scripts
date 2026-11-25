@@ -66,6 +66,12 @@ wait is not proof that the child stopped. Automatic continuation has no turn-cou
 cap by default; `PI_MAX_CONTINUATIONS=0` disables it. Neither a wake nor a status
 grants authorization.
 
+The default Worker deadline is 30 minutes for the whole run, not 30 minutes of inactivity.
+For a known long check, the parent can set `options.timeoutMs` and request a handoff before
+expiry with `options.checkpointBeforeDeadlineMs`. In `pi -p`, the host's separate wait for
+background work also defaults to 30 minutes. A longer child deadline does not extend that
+wait; the plugin's global `timeoutMs` in `~/.pi/agent/extensions/subagent/config.json` does.
+
 After a cold restart, reopen the intended session and give it a turn to resume from
 the exact xdev plan. The plan preserves what to do; it does not launch Pi or replay
 the last command. The parent reconciles outstanding runs before dispatching again.

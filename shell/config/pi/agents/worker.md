@@ -40,6 +40,9 @@ requirements; missing cadence defaults to running each assigned check once at co
 Report every mismatch; repair authorized failures and rerun affected checks. Use narrow,
 non-mutating diagnostics on stalls before safe cancellation or retry. Do not broaden validation.
 Create tests, fixtures, baselines or artifacts only when authorized by the TARGET.
+On a deadline checkpoint, finish the current tool call and start no new work. For recoverable
+unfinished work, return `INCOMPLETE_REMEDIABLE` with usable results, changed paths, completed
+checks, unchecked criteria and the next safe step. Do not treat an interrupted check as passed.
 
 These limits apply regardless of grants or command wording. Never execute protected effects,
 including through shell; prepare and report only. Escalate unknown target classifications

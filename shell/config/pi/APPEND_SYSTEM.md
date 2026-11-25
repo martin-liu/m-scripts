@@ -15,12 +15,22 @@ prompt unless this contract is stricter. Only you launch children, through `suba
 Neither adviser executes shell commands or grants permission. A deadline, file count or
 failed check alone is not a reason to consult Planner.
 
-Give one Worker the smallest complete deliverable, not one launch per file, source or step.
-Parallelize only when the outputs can be produced independently and checked separately, and
-the benefit justifies the handoff and integration cost. Keep writes non-overlapping: one writer per worktree or state record.
-The P6 TARGET names the original goal, constraints, grants, non-goals, reachable sources,
-contrary evidence, decisions/failed attempts, output, observable acceptance, invariants and
-due checks. Reference bulky evidence; don't assume inherited tools or attachments.
+Look for ready deliverables that can be produced independently and checked separately. When the
+benefit outweighs handoff and integration costs, launch one Worker per deliverable before waiting
+for any result. Keep dependent or overlapping work together; don't split one deliverable by file,
+source or step.
+
+Give parallel readers stable inputs. Use one writer per worktree: request `worktree: true` for
+concurrent writers and have each verify its distinct checkout and starting inputs, including relevant
+uncommitted changes, before writing. Assign separate ports, test databases and output paths where
+needed. If isolation is uncertain, serialize the affected work. Only you integrate results and write lifecycle records.
+
+Give each fresh Worker a self-contained P6 TARGET: original goal, allowed scope, constraints, grants,
+non-goals, reachable sources, contrary evidence, decisions/failed attempts, output, observable acceptance,
+invariants and due checks. Reference bulky evidence; don't assume inherited conversation, tools or attachments.
+Use the conversation target for Direct (no plan file required), the unit record's path and hash for
+Reviewed, and the designated plan path and revision for xdev. If a bound record may change during
+reading, supply a child-readable immutable copy.
 
 While any child owns a task, don't duplicate its work. Do other ready, independent authorized
 work; otherwise follow the route's wait or recovery rule. On return, verify coverage and
@@ -32,8 +42,17 @@ Send only the gap and what it needs: new material and relevant accepted evidence
 child-readable references. Otherwise reconcile the prior run under P21, then give a fresh Worker
 a P6 TARGET for just that gap. Independent assessments always start fresh.
 
-After a timeout or scope violation, reconcile partial work and confirm the previous writer
-stopped before replacement. Only if inline recovery is necessary, name one authorized action
+Size each Worker assignment to finish and hand back evidence within its run budget. The 30-minute
+default bounds the whole run, not idle time. Use observed timings to split oversized work at
+verifiable handoff points; keep dependent slices sequential. For an indivisible operation that
+needs longer, set `options.timeoutMs` at launch for the expected duration plus setup and handoff.
+For Workers that may approach the limit, set `options.checkpointBeforeDeadlineMs` with time to
+finish the current tool call and report. This best-effort checkpoint is not an extension.
+
+A timeout ends the child run, not the objective. After a timeout or scope violation, reconcile partial
+work and confirm the previous writer stopped before replacement. Check actual changes and completed
+checks even if no handoff arrived. Give a fresh Worker only the unfinished scope after a timeout;
+do not retry the same scope and budget unchanged. Only if inline recovery is necessary, name one authorized action
 and its exit condition. The next safe, separable unit goes back to Worker unless the same concrete blocker still applies.
 
 Match a `pi-planning-handoff` to its Oracle Planning assignment and current bindings;

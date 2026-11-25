@@ -737,13 +737,32 @@ test("backend adapters require loading, bounded roles and read-only boundaries",
   assert.match(files.pp, /Neither adviser executes shell commands or grants permission/);
 });
 
-test("the default agent answers immediate questions and delegates the whole bounded deliverable", () => {
+test("Pi launches independent Workers before waiting, but not at the expense of isolation or context", () => {
+  const prompt = flat(files.pp.split("\n## Load policy")[0]);
+  assert.match(prompt, /ready deliverables that can be produced independently and checked separately\. When the benefit outweighs handoff and integration costs, launch one Worker per deliverable before waiting for any result/);
+  assert.match(prompt, /Keep dependent or overlapping work together; don't split one deliverable by file, source or step/);
+  assert.match(prompt, /Give parallel readers stable inputs\. Use one writer per worktree: request `worktree: true` for concurrent writers and have each verify its distinct checkout and starting inputs, including relevant uncommitted changes, before writing/);
+  assert.match(prompt, /Assign separate ports, test databases and output paths where needed\. If isolation is uncertain, serialize the affected work\. Only you integrate results and write lifecycle records/);
+  assert.match(prompt, /Give each fresh Worker a self-contained P6 TARGET: [^.]*due checks\. Reference bulky evidence; don't assume inherited conversation, tools or attachments/);
+  assert.match(prompt, /conversation target for Direct \(no plan file required\), the unit record's path and hash for Reviewed, and the designated plan path and revision for xdev\. If a bound record may change during reading, supply a child-readable immutable copy/);
+});
+
+test("Worker budgets cover a verifiable slice; a checkpoint or timeout does not close the objective", () => {
+  const parent = flat(files.pp), worker = flat(files.pw);
+  assert.match(parent, /30-minute default.*whole run, not idle time/);
+  assert.match(parent, /split oversized work at verifiable handoff points/);
+  assert.match(parent, /indivisible.*options\.timeoutMs.*expected duration plus setup and handoff/);
+  assert.match(parent, /options\.checkpointBeforeDeadlineMs.*best-effort.*not an extension/);
+  assert.match(parent, /timeout ends the child run, not the objective.*confirm the previous writer stopped before replacement/);
+  assert.match(parent, /only the unfinished scope.*do not retry the same scope and budget unchanged/);
+  assert.match(worker, /deadline checkpoint.*start no new work.*INCOMPLETE_REMEDIABLE.*unchecked criteria/);
+});
+
+test("the default agent answers immediate questions and delegates bounded work without duplication", () => {
   const prompt = flat(files.pp.split("\n## Load policy")[0]);
   assert.match(prompt, /You are the orchestrator, Pi's default agent, not a subagent/);
   assert.match(prompt, /immediate answer already supported by context \| Answer directly, without a child/);
   assert.match(prompt, /bounded deliverable: search, summary, comparison.*Dispatch `worker` on any route\. No advisory call/);
-  assert.match(prompt, /one Worker the smallest complete deliverable, not one launch per file, source or step/i);
-  assert.match(prompt, /Parallelize only when the outputs can be produced independently and checked separately, and the benefit justifies the handoff and integration cost/);
   assert.match(prompt, /While any child owns a task, don't duplicate its work\. Do other ready, independent authorized work; otherwise follow the route's wait or recovery rule/);
   assert.match(prompt, /verify coverage and material claims against evidence without redoing the task; integrate accepted work.*Four cited sources out of five is partial/);
   assert.match(prompt, /fifth public source, use an authorized tool and pass the material to Worker for analysis/);
