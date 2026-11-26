@@ -5,7 +5,7 @@ Lifecycle: `xdev/SKILL.md`; Review: `agent-review/references/review.md`.
 #### Contract
 - **Task ledger:** {logical ID/generation}
 - **Scope / allowed files:**
-- **Target/baseline / authoritative basis / original-outcome anchor:**
+- **Target/baseline / authoritative basis / original-outcome anchor:** {reference the current finish line; sprint checks do not redefine it}
 - **Planning result/decisions / first working end-to-end path / delivery-unit ID:**
 - **Assumptions / out-of-scope:**
 - **Validation:** {due/deferred check names or IDs → bound schedule entries. Record only authorized

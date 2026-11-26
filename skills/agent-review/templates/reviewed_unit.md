@@ -3,7 +3,7 @@
 Create/adopt before first dispatch; reread on resume. Carry facts and references, not
 duplicated product files/logs or an approval artifact. Bind dispatches to this record's
 exact path and byte hash; use an immutable copy if it may change during reading.
-Shared policy is `agent-review/SKILL.md`; Review is `agent-review/references/review.md`.
+Shared policy is `agent-review/references/execution.md` and `agent-review/references/coordination.md`; Review is `agent-review/references/review.md`.
 xdev uses `xdev/templates/plan_and_track.md`.
 
 ```markdown
@@ -19,13 +19,13 @@ schema_version: 3.1
 - Dependency/input-assessment/reply references:
 
 ## Original basis
-- Verbatim original request, later constraints and exact grants:
+- Original request, later constraints and exact grants (verbatim if permitted, otherwise exact permitted reference and operative limits):
 - Assumptions/defaults and reconsideration triggers:
 - Authoritative sources/raw evidence/contrary evidence/access limits:
 - Material undecided questions; historical parent choices/artifacts, not constraints:
 
 ## Target
-- Intended behavior/output, authoritative basis, allowed scope/exclusions:
+- Requested deliverable and finish line (working outcome or readiness for a named decision), authoritative basis, allowed scope/exclusions:
 - Criterion IDs/materiality/observable expectations; cases/invariants:
 - Planning result/decisions and reconsideration triggers; first working end-to-end slice:
 - Required validation commands/scenarios/evidence and execution owner:

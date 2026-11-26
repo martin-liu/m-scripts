@@ -3,6 +3,7 @@
 // Uses installed packages read-only; set PI_SDK_ROOT / PI_NPM_MODULES for nonstandard installs.
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import { registerHooks } from 'node:module';
 import { homedir, tmpdir } from 'node:os';
@@ -14,6 +15,7 @@ const self = fileURLToPath(import.meta.url), repo = resolve(dirname(self), '..')
 const json = path => JSON.parse(fs.readFileSync(path, 'utf8'));
 const load = path => import(pathToFileURL(path).href);
 const roles = ['oracle', 'planner', 'worker'];
+const expectedPiVersion = '1.6.1';
 const args = process.argv.slice(2);
 const strict = args.includes('--strict-retirement');
 const inside = args[0] === '--isolated';
@@ -38,7 +40,7 @@ function runIsolated() {
   assert.equal(typeof registerHooks, 'function', 'Requires Node with module.registerHooks');
   const sdk = sdkRoot(), modules = fs.realpathSync(process.env.PI_NPM_MODULES ?? join(homedir(), '.pi/agent/npm/node_modules'));
   const src = join(repo, 'shell/config/pi');
-  for (const [root, name, version] of [[sdk, '@earendil-works/pi-coding-agent', '1.6.0'], [join(modules, 'pi-subagents'), 'pi-subagents', '0.90.0']]) {
+  for (const [root, name, version] of [[sdk, '@earendil-works/pi-coding-agent', expectedPiVersion], [join(modules, 'pi-subagents'), 'pi-subagents', '0.90.0']]) {
     const pkg = json(join(root, 'package.json'));
     assert.equal(`${pkg.name}@${pkg.version}`, `${name}@${version}`, `Unsupported installed boundary; requires ${name}@${version}`);
   }
@@ -47,7 +49,7 @@ function runIsolated() {
     const pkg = json(join(modules, spec.slice(4), 'package.json'));
     return `${pkg.name}@${pkg.version}`;
   });
-  console.log(`Pi 1.6.0; ${packages.join(', ')}; ${process.version}; ${strict ? 'strict retirement' : 'retained compatibility (NOT retirement)'}`);
+  console.log(`Pi ${expectedPiVersion}; ${packages.join(', ')}; ${process.version}; ${strict ? 'strict retirement' : 'retained compatibility (NOT retirement)'}`);
   const root = fs.realpathSync(fs.mkdtempSync(join(tmpdir(), 'pi-boundary-')));
   try {
     const cfg = join(root, 'config'), cwd = join(root, 'project'), home = join(root, 'home'), temp = join(root, 'tmp');
@@ -90,7 +92,7 @@ async function checkInstalled() {
   registerHooks({ resolve: (name, ctx, next) => aliases[name] ? { url: pathToFileURL(aliases[name]).href, shortCircuit: true } : next(name, ctx) });
   const { loadHostPiCodingAgent, createDefaultChildSessionFactory } = await sub('runs/shared/child-session');
   const pi = await loadHostPiCodingAgent();
-  assert.equal(pi.VERSION, '1.6.0');
+  assert.equal(pi.VERSION, expectedPiVersion);
   const { AuthStorage } = await load(join(sdk, 'dist/core/auth-storage.js'));
   const offlineRuntime = () => pi.ModelRuntime.create({ credentials: AuthStorage.inMemory(), allowModelNetwork: false });
   const settings = json(join(cfg, 'settings.json')), provider = settings.defaultProvider;
@@ -145,20 +147,66 @@ async function checkInstalled() {
   const errors = [];
   const { session: parent } = await pi.createAgentSession({ cwd, agentDir: cfg, sessionManager: pi.SessionManager.inMemory(cwd), modelRuntime: runtime, model: parentModel });
   const contracts = new Map();
+  const reviewRoot = join(cfg, 'skills/agent-review');
+  const bindings = ['SKILL.md', ...['execution', 'coordination', 'advisory', 'review'].map(s => `references/${s}.md`)]
+    .map(s => fs.realpathSync(join(reviewRoot, s))).map(path => `${path} sha256=${createHash('sha256').update(fs.readFileSync(path)).digest('hex')}`);
+  const reviewTask = `Review lane: assess the fixture unit using only these bound policies:\n${bindings.join('\n')}`;
   try {
     await parent.bindExtensions({ mode: 'print', onError: e => errors.push(e) });
     const extensions = parent.resourceLoader.getExtensions();
     assert.deepEqual(extensions.errors, []);
     assert.ok(extensions.extensions.some(e => e.resolvedPath === join(cfg, 'extensions/worker-launch.ts')), 'Launch guard not loaded');
     await test('default parent: serialized identity, actual advertised roster and verbatim caller quotation', async () => {
+      assert.equal(parent.thinkingLevel, settings.defaultThinkingLevel, 'Parent SDK session must honor the configured thinking level');
       const instructions = await wire(parent, quote, [quote]);
       assert.ok(instructions.includes(fs.readFileSync(join(cfg, 'APPEND_SYSTEM.md'), 'utf8').trim()),
         'Managed orchestrator prompt missing or truncated in serialized instructions');
       assert.ok(parentIdentity.test(instructions), 'Missing default parent identity in serialized instructions');
       assert.ok(!instructions.includes('<active_agent '), 'Parent identified as a child');
+      assert.ok(instructions.includes('The managed parent and Worker prompts suffice for ordinary Direct work unless a binding instruction requires more.') &&
+        !instructions.includes('You are Worker.'), 'Wrong core for a cold Direct parent');
+      for (const file of ['execution.md', 'coordination.md']) {
+        assert.ok(!instructions.includes(fs.readFileSync(join(reviewRoot, 'references', file), 'utf8').trim()), `${file} was injected in full`);
+      }
       const catalog = instructions.match(/<advertised_subagents>([\s\S]*?)<\/advertised_subagents>/)?.[1];
       assert.deepEqual(Array.from(catalog?.matchAll(/<name>([^<]+)<\/name>/g) ?? [], m => m[1]), roles);
       assert.deepEqual(errors, []);
+    });
+    await test('a loader-only parent can enable subagent and preflight one async rename Worker', async () => {
+      const previous = parent.getActiveToolNames();
+      try {
+        parent.setActiveToolsByName([...new Set([...previous.filter(n => n !== 'subagent'), 'subagents_enable'])]);
+        const tool = name => parent.agent.state.tools.find(t => t.name === name);
+        assert.ok(!tool('subagent'));
+        const enabled = await tool('subagents_enable').execute('enable', {});
+        assert.deepEqual(enabled.details.enabled, ['subagent']);
+        assert.ok(tool('subagent'));
+        const { flattenSubagentToolOptions } = await sub('extension/subagent-options');
+        const input = { agent: 'worker', task: 'Rename the local oldName to newName and check its references.' };
+        assert.equal(await parent.extensionRunner.emitToolCall({ type: 'tool_call', toolName: 'subagent', toolCallId: 'rename', input }), undefined);
+        const result = await lookup('worker', flattenSubagentToolOptions(input));
+        assert.ok(result.ok, result.message);
+        assert.equal(result.contract.agent.name, 'worker');
+        assert.equal(agents.find(a => a.name === 'worker').defaultAsync, true);
+      } finally { parent.setActiveToolsByName(previous); }
+    });
+    await test('formal Review binds managed paths without selecting a same-named project skill', async () => {
+      const shadowDir = join(cwd, '.agents/skills/agent-review'), shadow = join(shadowDir, 'SKILL.md');
+      fs.mkdirSync(shadowDir, { recursive: true });
+      fs.writeFileSync(shadow, '---\nname: agent-review\ndescription: Disposable project collision fixture.\n---\nProject fixture body.\n', { flag: 'wx' });
+      const { resolveSkillsWithFallback } = await sub('agents/skills');
+      assert.deepEqual(resolveSkillsWithFallback(['agent-review'], cwd, cwd).resolved.map(s => s.path), [shadow]);
+      const { flattenSubagentToolOptions } = await sub('extension/subagent-options');
+      const input = { agent: 'oracle', task: reviewTask };
+      assert.equal(await parent.extensionRunner.emitToolCall({ type: 'tool_call', toolName: 'subagent', toolCallId: 'review', input }), undefined);
+      const result = await lookup('oracle', flattenSubagentToolOptions(input));
+      assert.ok(result.ok, result.message);
+      assert.deepEqual(result.contract.skills.resolved, []);
+      contracts.set('review', result.contract);
+      const body = fs.readFileSync(join(reviewRoot, 'SKILL.md'), 'utf8');
+      for (const [ref, marker] of [['execution', '**P7**'], ['coordination', '**I4**'], ['advisory', 'ORACLE_ASSIGNMENT v2'], ['review', 'REVIEW_SUBMISSION v2']]) {
+        assert.ok(body.includes(`agent-review/references/${ref}.md`) && fs.readFileSync(join(reviewRoot, `references/${ref}.md`), 'utf8').includes(marker), ref);
+      }
     });
     await test('direct async Worker keeps the native deadline or accepts a longer budget with a checkpoint', async () => {
       const { flattenSubagentToolOptions } = await sub('extension/subagent-options');
@@ -209,7 +257,9 @@ async function checkInstalled() {
         assert.deepEqual(flat, { agent: role, task: quote, agentScope: 'user', context: 'fresh', agentContract: { version: 1 } });
         const result = await lookup(role, flat);
         assert.ok(result.ok, result.message); assert.equal(result.contract.agent.filePath, join(cfg, 'agents', `${role}.md`));
-        assert.equal(result.contract.tools.fanoutAuthorized, false); contracts.set(role, result.contract);
+        assert.equal(result.contract.tools.fanoutAuthorized, false);
+        assert.ok(!result.contract.skills.requested.includes('agent-review'), `${role}: ordinary launches must not select the Review skill`);
+        contracts.set(role, result.contract);
       }
       for (const tool of ['subagent', 'subagent_launch']) assert.equal((await dispatch({ agent: 'fixer', task: quote }, tool))?.block, true, tool);
       const resume = { action: 'resume', id: 'synthetic-retained-id', message: quote };
@@ -224,8 +274,9 @@ async function checkInstalled() {
   const { buildRunnerChildLaunch } = await sub('runs/background/runner-child-launch');
   const { buildEffectiveSystemPrompt } = await sub('runs/shared/effective-system-prompt');
   const { evaluateChildToolDiagnostic } = await sub('runs/shared/child-runtime-config');
-  for (const role of roles) for (const mode of ['foreground', 'runner']) await test(`${role}/${mode}: serialized child identity, boundary and caller guidance`, async () => {
-    const c = contracts.get(role), agent = agents.find(a => a.name === role);
+  const cases = [...roles.flatMap(role => ['foreground', 'runner'].map(mode => ({ role, mode }))), { role: 'oracle', mode: 'runner', review: true }];
+  for (const { role, mode, review } of cases) await test(`${role}/${mode}${review ? '/Review' : ''}: serialized child identity, boundary and caller guidance`, async () => {
+    const c = contracts.get(review ? 'review' : role), agent = agents.find(a => a.name === role), task = review ? reviewTask : quote;
     assert.ok(c, `No guarded ${role} contract`);
     const runner = mode === 'runner';
     if (runner) process.env.PI_SUBAGENT_CHILD = '1'; else delete process.env.PI_SUBAGENT_CHILD;
@@ -237,7 +288,7 @@ async function checkInstalled() {
         // SDK session, register native steer/followUp and invoke its child prompt port.
         session.prompt = async prompt => {
           try {
-            assert.equal(prompt, `Task: ${quote}`);
+            assert.equal(prompt, `Task: ${task}`);
             const expected = [prompt], queued = [];
             for (const action of ['steer', 'follow_up']) {
               await guide(action);
@@ -253,7 +304,14 @@ async function checkInstalled() {
             assert.deepEqual([...missing].sort(), role === 'worker' && !runner ? ['query-docs', 'resolve-library-id'] : []);
             const instructions = await wire(session, prompt, expected, queued);
             assert.ok(instructions.includes(`<active_agent name="${role}"/>`) && new RegExp(`You are ${role}\\b`, 'i').test(instructions), 'Missing child identity');
-            assert.ok(!parentIdentity.test(instructions), 'Parent-only instructions leaked into a child');
+            const roleBody = fs.readFileSync(join(cfg, 'agents', `${role}.md`), 'utf8').replace(/^---\n[\s\S]*?\n---\s*/, '').trim();
+            assert.ok(instructions.includes(roleBody), `${role}/${mode}: managed role body missing or truncated`);
+            assert.ok(!parentIdentity.test(instructions) && !instructions.includes('You, not Worker, submit now'), 'Parent-only instructions leaked into a child');
+            assert.ok(instructions.includes('agent-review/references/execution.md'));
+            assert.ok(!instructions.includes('Load before advisory dispatch or bounded implementation') && !instructions.includes('REVIEW_SUBMISSION v2'), 'Unbound Review trigger or protocol was injected');
+            assert.ok(!instructions.includes('Project fixture body.'), 'Project skill body became policy');
+            if (role === 'oracle') assert.match(instructions, /Only for a formal Review, also read `agent-review\/SKILL\.md`/);
+            else assert.doesNotMatch(instructions, /(?:read|bound) `agent-review\/SKILL\.md`/i);
             assert.ok(instructions.includes('You are a child subagent, not the parent orchestrator.') && instructions.includes('Do not propose or run subagents.'), 'Missing native anti-fanout instructions');
             assert.equal(`${session.model.provider}/${session.model.id}:${session.thinkingLevel}`, c.model);
             inspected = true;
@@ -270,11 +328,11 @@ async function checkInstalled() {
       if (runner) {
         const systemPrompt = buildEffectiveSystemPrompt({ agent, resolvedSkills: c.skills.resolved, cwd });
         const launch = buildRunnerChildLaunch({ ...agent, ...opts, agent: role, systemPrompt }, { ...opts, id, flatIndex: 0 }, { sessionEnabled: false, model: c.model });
-        result = await runChildSession({ factory, launch, prompt: `Task: ${quote}`, registerSteer: fn => {
+        result = await runChildSession({ factory, launch, prompt: `Task: ${task}`, registerSteer: fn => {
           guide = async mode => assert.equal((await fn({ id: mode, source: 'steer-action', mode, message: quote })).state, 'queued');
         } });
       } else {
-        result = await runSync(cwd, agents, role, quote, { ...opts, runId: id, preferredModelProvider: provider, availableModels,
+        result = await runSync(cwd, agents, role, task, { ...opts, runId: id, preferredModelProvider: provider, availableModels,
           childSessionFactory: factory, onChildSession: port => { guide = mode => port[mode === 'steer' ? 'steer' : 'followUp'](quote); } });
       }
       if (failure) throw failure;

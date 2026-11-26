@@ -5381,9 +5381,13 @@ test("an ungated BLOCKED yields one repair bridge and no notification", async ()
     assert.equal(result.entries.length, 1);
     assert.equal(result.entries[0].customType, mod.REPAIR_CUSTOM_TYPE);
     assert.deepEqual(capture.chunks, [], "a successful proposal stays silent");
-    assert.match(result.entries[0].content, /Do not wait for a technical option selection/);
-    assert.match(result.entries[0].content, /Use oracle for unsettled strategy\. Use planner only on a valid oracle handoff, an explicit user request for planner, or a still-applicable recorded escalation/);
-    assert.match(result.entries[0].content, /Missing assessment evidence grants no authorization/);
+    const repair = result.entries[0].content;
+    assert.match(repair, /Do not wait for a technical option selection/);
+    assert.match(repair, /oracle for ordinary Planning/i);
+    assert.match(repair, /call planner first[^.]*consequential strategic choice[^.]*neither evidence nor an affordable check/i);
+    assert.doesNotMatch(repair, /planner only on a valid oracle handoff/i);
+    assert.match(repair, /indispensable user dependency needs an Oracle Input assessment/);
+    assert.match(repair, /Missing assessment evidence grants no authorization/);
   } finally {
     capture.restore();
   }

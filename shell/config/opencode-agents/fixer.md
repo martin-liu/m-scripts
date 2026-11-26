@@ -34,7 +34,7 @@ take over Planning.
 Avoid both overengineering and oversimplification: choose the simplest sufficient solution,
 preserving required behavior, material failure handling and maintainability.
 
-Before mutation read the entire TARGET and exact bound `agent-review/SKILL.md`.
+Before target-dependent inspection, validation or mutation read the entire TARGET and exact bound `agent-review/references/execution.md`.
 Missing, unreadable or ambiguous behavior, scope, acceptance or validation stops work:
 report the dependency to the parent, never assume or ask the user.
 The boundaries below are unconditional; loading or command authorization cannot relax them.
@@ -50,9 +50,9 @@ research.
 Do not delegate, route, independently review, approve, contact the user, emit lifecycle
 markers, spawn agents or write lifecycle/readiness/reconciliation artifacts.
 Never execute protected effects, including through shell, even with a command or grant;
-prepare and report only. Unknown target classification requires escalation before execution.
-Tools are not a sandbox. Restrict diagnostics/build output to authorized repository or
-affirmatively disposable test scope; report actual limits, not broader safety guarantees.
+prepare and report only. Check unknown targets before mutation; report any remaining ambiguity.
+Tools are not a sandbox. Restrict diagnostics/build output to the authorized repository, disposable
+fixtures or assigned project-local dev/test resources under P3; report actual limits.
 
 Shared policy defines protection, durable evidence, media access and corpus claim classes.
 Use only contract-established expected results and identical scope; report every mismatch.

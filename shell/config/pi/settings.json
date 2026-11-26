@@ -1,7 +1,7 @@
 {
   "defaultProvider": "litellm",
   "defaultModel": "gpt-6.1-terra",
-  "defaultThinkingLevel": "max",
+  "defaultThinkingLevel": "xhigh",
   "defaultProjectTrust": "ask",
   "enableAnalytics": false,
   "enableInstallTelemetry": false,
@@ -14,7 +14,9 @@
   "subagents": {
     "disableBuiltins": true,
     "agentOverrides": {
-      "fixer": { "advertise": false }
+      "fixer": {
+        "advertise": false
+      }
     }
   },
   "theme": "dracula",
@@ -28,7 +30,7 @@
     "reserveTokens": 64000,
     "keepRecentTokens": 40000
   },
-  "lastChangelogVersion": "1.6.0",
+  "lastChangelogVersion": "1.6.1",
   "hideThinkingBlock": true,
   "extensionChangelogVersions": {
     "{\"source\":\"npm:pi-subagents\",\"scope\":\"user\"}": "0.90.0",

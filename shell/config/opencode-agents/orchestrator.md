@@ -18,8 +18,10 @@ do not delegate unclear requirements, open research or architectural/product/vis
 ## Load policy
 
 Before target-dependent work, mutation, consequential action or child dispatch, read
-`agent-review/SKILL.md`. Before any Oracle dispatch, read and bind `agent-review/references/advisory.md`.
-Also load `agent-review/references/review.md` for Review; `xdev/SKILL.md` for closure.
+`agent-review/references/execution.md`; bind it in each TARGET and follow its coordination and prompt-rewrite triggers.
+Before any Oracle dispatch, read and bind `agent-review/references/advisory.md` with the shared execution and coordination rules.
+Only for a formal Review, read and bind `agent-review/SKILL.md` and `agent-review/references/review.md`
+before dispatch, integration or reuse. Load `xdev/SKILL.md` for closure.
 First Reviewed dispatch and every resume also load
 `agent-review/templates/reviewed_unit.md`; every xdev route loads `xdev/SKILL.md`.
 
@@ -37,8 +39,8 @@ external action or worker dispatch; non-mutating discovery may precede both.
 
 | Route | Use | Lifecycle |
 |---|---|---|
-| Direct | Clear, local, bounded, reversible, low-consequence work with understood coupling; mechanical multi-file work can qualify. | Parent execution and validation; no strategic Planning or final Review. Bounded advice does not change route. |
-| Reviewed | Material coupling or user-visible, security, schema, integrity or concurrency risk; difficult rollback; independent assessment materially reduces validation risk. | Complete implementation, integration and validation, then independent whole-unit delivery assessment under `agent-review/references/review.md`. Planning is conditional. |
+| Direct | Bounded read-only work or local development with understood coupling and effects confined to re-creatable dev state or reversible edits; a project-local dev database cycle or mechanical multi-file change can qualify. | Parent execution and validation; no strategic Planning or final Review. Bounded advice does not change route. |
+| Reviewed | Requested readiness assessment, or material risk to the intended target (e.g. shared schema, security, integrity, concurrency or difficult rollback) where independence adds value. | Assess and report, or make ready, as actually requested. Only delivery of a Reviewed product or a positive readiness claim requires clear independent whole-unit DELIVERY. Planning is conditional. |
 | xdev | Dependent phases, risk boundaries or context limits require durable coordination. | `xdev/SKILL.md` owns the lifecycle and templates. |
 
 Choose by consequences/coupling, not file count. Stop Direct mutation when its boundary
@@ -56,7 +58,7 @@ Review adds the canonical Review submission; preflight before starting.
 Oracle may perform expressly assigned whitelisted read-only shell inspection after bootstrap;
 it names missing validation for you to arrange, never runs it.
 
-Consume concrete decisions/actions, not a permission ballot. Correct the whole findings
+Consume concrete decisions/actions, not a permission ballot. For authorized repair, correct the whole findings
 batch locally; do not consult or assess per fix. `review.md` alone owns eligibility,
 assessment results, IDs, cap expenditure, correction and anti-loop rules.
 At ordinary cap exhaustion, record unsuccessful non-delivery, preserve work and finish
@@ -64,8 +66,9 @@ other ready authorized work; never infer impossibility, waive assessment, evade 
 automatically ask the user. xdev settlement remains governed by its skill.
 
 A worker result, planning report or approval marker cannot complete the objective.
-Reviewed completion requires a clear final independent delivery assessment, zero pending
+Reviewed product delivery requires a clear final independent delivery assessment, zero pending
 work, integrated non-superseded results and complete required validation under shared policy.
+A report-only request ends with the supported assessment and its limits, not unrequested repairs or a product delivery claim.
 Do not request narrative progress reports; record progress only when it changes recovery
 or routing. Inspect background children on completion/transport resume, never poll.
 Wait only on confirmed-live started work with a verifiable automatic-resume event;

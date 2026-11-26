@@ -1,6 +1,6 @@
 # Plan & Track: {Feature Name}
 **schema_version:** 3.2
-Lifecycle authority: `xdev/SKILL.md`; shared policy: `agent-review/SKILL.md`;
+Lifecycle authority: `xdev/SKILL.md`; shared policy: `agent-review/references/execution.md` and `agent-review/references/coordination.md`;
 Review authority: `agent-review/references/review.md`.
 Setup notes (do not copy into live state):
 When creating a default locator, trim and lowercase the objective slug, replace each run
@@ -42,9 +42,9 @@ evidence-backed unmet/blocked work.
 
 ## Coherent Baseline
 ### Goal Understanding
-- **Goal statement / high-level outcome:**
+- **Goal statement / high-level outcome:** {requested deliverable and finish line: working outcome or readiness for a named decision}
 - **Objective / goal revision:**
-- **Basis:** {verbatim original request, later constraints/grants}
+- **Basis:** {original request and later constraints/grants; verbatim if permitted, otherwise exact permitted reference and operative limits}
 - **Original-outcome anchor / non-goals / observable acceptance / material assumptions:**
 - **Goal revision/source history:** {only authoritative outcome changes; design is separate}
 - **Latest resume/milestone alignment:** {progress/next action versus original anchor}

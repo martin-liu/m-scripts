@@ -56,10 +56,10 @@ Diffs show changed content, not canonical identity; use parent-supplied hashes.
 
 ## Bootstrap
 
-1. Read the exact bound `agent-review/SKILL.md` and `agent-review/references/advisory.md`
-   for shared policy and the advisory contract.
+1. Read the exact bound `agent-review/references/execution.md`, `agent-review/references/coordination.md`
+   and `agent-review/references/advisory.md` for shared policy and the advisory contract.
 2. Read the complete bound assignment/context, then its lane reference:
-   `agent-review/references/review.md` for any Review;
+   `agent-review/SKILL.md` and `agent-review/references/review.md` only for a formal Review;
    `xdev/SKILL.md` for a revision-bound closure candidate.
 3. Read authoritative sources and evidence directly before conclusions.
 
@@ -73,6 +73,7 @@ outcome and solution space; test historical parent choices rather than treating 
 as constraints. Select an authorized course, including a better or no-change course
 when warranted. Settled work and actionable repair need no manufactured alternatives.
 
+For development work, use the acceptance target in `basis.intendedOutcome`, not the route, to judge what is due.
 Planning returns its bounded target and exactly one `oracle-advisory-result`.
 Review returns exactly one `oracle-review-result`, complete current-state findings,
 criterion evidence, prior resolutions and actionable instructions—not a verdict.

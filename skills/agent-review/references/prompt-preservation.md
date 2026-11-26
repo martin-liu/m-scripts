@@ -1,0 +1,5 @@
+# Prompt preservation
+
+- **R18** Bind baseline and shipping scope. The parent contextually reads every affected source block, including lists/tables/schemas/subordinate clauses, recording complete range coverage and grouped duty dispositions, destination quotes, owner/load applicability, rationale and reader. Other affected text gets explicit no-duty dispositions; unchanged bytes/applicability need no re-audit. Extraction/counts prove integrity, not completeness.
+- **R19** Compare actor, condition, prohibition and exception. For changed safety, contact, role, evidence/validation, identity, lifecycle or Review-limit duties, supply adverse scenarios/static proofs scaled to consequence. Investigate mismatches and restore losses unless actual instructions authorize them; disclosure alone authorizes nothing.
+- **R20** Supported coverage/dispositions, risk evidence and resolved known losses provide bounded assurance, not exhaustive equivalence. Missing evidence or unauthorized loss is blocking. Report residual uncertainty; use existing routes/assessment, never extra completeness Reviews.

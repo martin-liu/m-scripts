@@ -7,6 +7,8 @@ logical task/generation and route. `state` binds context path/hash, root/base, p
 snapshot, integration, pending work and history. Lane-specific details are additional
 bound records, not a second choice prompt.
 
+For development work, use `basis.intendedOutcome` for the finish line: `working: <observable outcome and context>` or `readiness: <candidate and decision>`. Derive it from the original instructions and binding policy, not from the route, lane or Review mode. Keep permission in `basis.authorizations`; a request to assess does not authorize repair. For older assignments, use the target if clear from the bound basis; report a material conflict instead of silently changing it. Supply original instructions/grants verbatim where permitted, otherwise by exact permitted reference with their operative limits; a reference grants no read access.
+
 ```json
 {
   "version": 2,
@@ -17,8 +19,8 @@ bound records, not a second choice prompt.
   },
   "policyRefs": ["<exact readable policy path + hash>"],
   "basis": {
-    "originalInstructions": ["<verbatim request and later instructions>"],
-    "intendedOutcome": "<requested outcome>",
+    "originalInstructions": ["<permitted verbatim request and later instructions, or exact permitted references>"],
+    "intendedOutcome": "working: the app starts against the freshly migrated dev database.",
     "userConstraints": [], "authorizations": [],
     "sources": ["<authoritative readable source + hash>"],
     "observations": [], "contraryEvidence": [], "gaps": [],
@@ -56,8 +58,9 @@ disclose whose evidence you inspected, and never claim future or unverified resu
 - **B3** Planning and Review judge necessity and warranted better approaches, including costs, risks, reversibility, causal mechanism and what would favor the submitted course. Keep criterion defects separate from acceptable-but-improvable author decisions; advice never relaxes criteria, satisfied criteria never silence advice, and neither expands scope or authorization.
 - **B4** Actions are ordered and concrete: name files/edits or exact checks when evidence permits, with observable executable/scenario/static predicates and owners. Every action cites a real finding or decision; never “ask an adviser again”, vague categories or approval of future bytes.
 
-**Pi-only exceptional Planning handoff.** Only `oracle` assigned Planning may return the
-following single fenced record *instead of* a completed plan, when the strategic choice
+**Pi-only strategic Planning.** Only the orchestrator dispatches `planner`. For a first call, put the strategic choice in `basis.openQuestions` of the normal Planning assignment; explain the consequence and why existing evidence or an affordable check cannot decide it. No Oracle handoff is needed. On referral, retain the raw handoff and pass Oracle's exact unresolved question. In both cases, pass the permitted original instructions/grants (or exact permitted references and operative limits), original and contrary evidence and material failed attempts. Record one linked Planner task before launch and retain the raw result. Use Planner's plan without Oracle ratification; don't reopen unchanged decisions. Planner returns the ordinary plan or a concrete blocker, never a second handoff.
+
+Only `oracle` assigned Planning may return the following single fenced record *instead of* a completed plan, when the strategic choice
 remains unresolved after proportionate checks and choosing wrongly materially affects the
 outcome. Give the decision, the consequence and what further reasoning could change. Bind
 `assignmentRef` to the originating assignment's exact path/hash or verbatim inline identity
@@ -71,9 +74,7 @@ for checks an evidence-backed explanation of why none can discriminate. Use exac
 This is neither a selected plan nor an action to launch an agent. It cannot accompany any
 other return or authorize implementation, contact, closure or delivery. Match the actual
 role/lane and exact current assignment; reject stale, mixed, malformed or consumed handoffs.
-Only the orchestrator dispatches. Record its linked Planner task and the raw result; a handoff
-alone leaves Planning outstanding. Planner returns the ordinary plan or a concrete blocker,
-never a second handoff. All other lanes and OpenCode retain their existing contracts.
+A handoff alone leaves Planning outstanding. All other lanes and OpenCode retain their existing contracts.
 
 Completed Planning returns a bounded target, original-outcome/non-goal alignment, premise judgment,
 assumptions, acceptance/evidence, validation commands/owners/cadence and costly-check triggers,
