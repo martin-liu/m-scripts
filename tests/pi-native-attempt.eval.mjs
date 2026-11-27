@@ -17,7 +17,7 @@ const digest = b => createHash('sha256').update(b).digest('hex');
 const same = (actual, expected, why) => assert.ok(isDeepStrictEqual(actual, expected), why); // never print rejected bytes
 const pins = {
   baseline: ['40854d9470d2ef0b9521c690705a676acac2bbd8ca9a32002f95a704a549427a', '38cae65e9ee7979aa52de7b0a60d08b0f7941053188967ce6a75322feb3d3e79', '5c58a2da940460143197b6e0a52c5f9ce5a776adf85be92a440bd2bee7c9bac4', 'e1d2fd622aeafce6919210b194cbec637642fad953e62121ff923ac295e7ef90'],
-  candidate: ['152796b2923b6c260d80e8314207703fa546e58d5c1db2f946e6031906c28493', '41899e4f2d898e0002d834989f9e36bd3dc39ce42d5d8b1f4d68b9a06461820b', '9bf488d179c61e267c88386fb2f9c8b22710afd2092274e9eabbdf3a699db2ec', '94b7dcf3346355172671e009bef55df533433db8b7018640ed6aa03eda9098c7'],
+  candidate: ['ec8171f97fcdec02e20893e7230b3815c9bf2952d627469a9dfe6f6bac101324', '9e32b184656c88ce62b34c285551292b0efef11e7f8e952d9c5c3d90ae8500ad', 'f6a9650f5dae23a7d332f9a591b316db630d09557a2e8fe84823a015bf848541', '72a61505ce8eb3e494095ede8de8b40714cf5581455f537d8245ecc302ac3cad'],
 };
 function boundPolicy(dir, arm) {
   const root = fs.realpathSync(dir); let i = 0;
@@ -138,9 +138,11 @@ async function main(args) {
         : c.id === 'proposal-scope' ? ['read_source', { path: 'proposal.md' }]
         : c.id === 'launch-rejected' ? ['subagent', { ...f.messages[2].tool_calls[0].function.arguments, options: { toolBudget: { hard: 4, block: '*' } } }]
         : c.id === 'launch-uncertain' ? ['lookup_child', {}]
-        : c.service && c.cold ? ['subagent', { agent: 'worker', task: serviceTasks.read }]
-        : c.service === 'write' ? (c.grant === 'production' ? ['replace_summary', {}] : ['subagent', { agent: 'oracle', task: serviceTasks.input }])
+        : ['databricks-count', 'databricks-count-denied'].includes(c.id) ? ['subagent', { agent: 'worker', task: serviceTasks.read }]
+        : c.id === 'repair-production-grant' ? ['replace_summary', {}]
+        : c.id === 'repair-staging-grant' ? ['subagent', { agent: 'oracle', task: serviceTasks.input }]
         : c.tally ? ['subagent', { agent: 'worker', task: queryTasks[c.tally === 'scratch' ? 'scratch' : 'none'] }] : null;
+      if (serviceCases.includes(c)) assert.ok(run === 'check' && arm === 'candidate' && offlineCall, 'Service cases require a candidate-only offline script');
       let projections = 0, transfers = 0, projectedWireBytes = 0, usage = [], final = '', problem, intercepted = false;
       const input = [{ role: 'developer', content: `Synthetic Pi decision fixture.\n\n<addendum>\n${f.messages[0].content}\n</addendum>\n\n<cwd>\n${cwd}\n</cwd>` }, userItem(f.messages[1].content)];
       const customTools = f.tools.map(({ function: fn }) => ({ ...fn, label: fn.name, execute: async (id, args) => {

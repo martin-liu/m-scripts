@@ -141,6 +141,7 @@ async function checkInstalled() {
     const instructions = payload[key].filter(m => ['system', 'developer'].includes(m.role)).map(text).join('\n');
     const bad = forbidden.exec(instructions);
     assert.ok(!bad, `Unexpected actor text in serialized instructions: ${bad && instructions.slice(bad.index - 35, bad.index + 45)}`);
+    assert.ok(!instructions.includes(readinessBody), 'Full readiness policy injected into serialized instructions');
     assert.deepEqual(payload[key].filter(m => m.role === 'user').map(text), expectedUsers, 'Changed caller text / unexpected user message');
     return instructions;
   }
@@ -149,10 +150,20 @@ async function checkInstalled() {
   const contracts = new Map();
   const reviewRoot = join(cfg, 'skills/agent-review');
   const promptRoot = join(cfg, 'agents/references');
+  const bind = source => {
+    const path = fs.realpathSync(source);
+    return `${path} sha256=${createHash('sha256').update(fs.readFileSync(path)).digest('hex')}`;
+  };
   const bindings = [join(reviewRoot, 'SKILL.md'), join(reviewRoot, 'references/review.md'),
-    ...['execution', 'coordination', 'advisory'].map(s => join(promptRoot, `${s}.md`))]
-    .map(p => fs.realpathSync(p)).map(path => `${path} sha256=${createHash('sha256').update(fs.readFileSync(path)).digest('hex')}`);
-  const reviewTask = `Review lane: assess the fixture unit using only these bound policies:\n${bindings.join('\n')}`;
+    ...['execution', 'coordination', 'advisory'].map(s => join(promptRoot, `${s}.md`))].map(bind);
+  const readinessPath = join(promptRoot, 'readiness.md'), readinessBinding = bind(readinessPath);
+  const readinessBody = fs.readFileSync(readinessPath, 'utf8').trim();
+  // Same route, lane and mode. These assignment excerpts exercise transport, not a model's choice of policy.
+  const delivery = (intendedOutcome, policyRefs) => `xdev Review, mode DELIVERY:\n${JSON.stringify({ basis: { intendedOutcome }, policyRefs })}`;
+  const reviewTasks = {
+    working: delivery('working: the fixture passes its local check', bindings),
+    readiness: delivery('readiness: assess the fixture candidate for merge', [...bindings, readinessBinding]),
+  };
   try {
     await parent.bindExtensions({ mode: 'print', onError: e => errors.push(e) });
     const extensions = parent.resourceLoader.getExtensions();
@@ -164,9 +175,10 @@ async function checkInstalled() {
       assert.ok(instructions.includes(fs.readFileSync(join(cfg, 'APPEND_SYSTEM.md'), 'utf8').trim()),
         'Managed orchestrator prompt missing or truncated in serialized instructions');
       assert.ok(parentIdentity.test(instructions), 'Missing default parent identity in serialized instructions');
+      assert.ok(instructions.includes('agents/references/readiness.md'), 'Missing readiness reference pointer in parent instructions');
       assert.ok(!instructions.includes('<active_agent '), 'Parent identified as a child');
-      assert.ok(instructions.includes('The managed parent and Worker prompts suffice for ordinary Direct work unless a binding instruction requires more.') &&
-        !instructions.includes('You are Worker.'), 'Wrong core for a cold Direct parent');
+      assert.ok(instructions.includes('subagent({ agent: "worker", task: target })') &&
+        !instructions.includes('You are Worker.'), 'Missing Worker dispatch or mixed role in cold parent');
       for (const file of ['execution.md', 'coordination.md']) {
         assert.ok(!instructions.includes(fs.readFileSync(join(promptRoot, file), 'utf8').trim()), `${file} was injected in full`);
       }
@@ -199,12 +211,15 @@ async function checkInstalled() {
       const { resolveSkillsWithFallback } = await sub('agents/skills');
       assert.deepEqual(resolveSkillsWithFallback(['agent-review'], cwd, cwd).resolved.map(s => s.path), [shadow]);
       const { flattenSubagentToolOptions } = await sub('extension/subagent-options');
-      const input = { agent: 'oracle', task: reviewTask };
-      assert.equal(await parent.extensionRunner.emitToolCall({ type: 'tool_call', toolName: 'subagent', toolCallId: 'review', input }), undefined);
-      const result = await lookup('oracle', flattenSubagentToolOptions(input));
-      assert.ok(result.ok, result.message);
-      assert.deepEqual(result.contract.skills.resolved, []);
-      contracts.set('review', result.contract);
+      for (const [target, task] of Object.entries(reviewTasks)) {
+        const input = { agent: 'oracle', task };
+        assert.equal(await parent.extensionRunner.emitToolCall({ type: 'tool_call', toolName: 'subagent', toolCallId: `review-${target}`, input }), undefined);
+        assert.equal(input.task, task);
+        const result = await lookup('oracle', flattenSubagentToolOptions(input));
+        assert.ok(result.ok, result.message);
+        assert.deepEqual(result.contract.skills.resolved, []);
+        contracts.set(target, result.contract);
+      }
       const body = fs.readFileSync(join(reviewRoot, 'SKILL.md'), 'utf8');
       for (const [ref, marker] of [['execution', '**P7**'], ['coordination', '**I4**'], ['advisory', 'ORACLE_ASSIGNMENT v2']]) {
         assert.ok(body.includes(`agents/references/${ref}.md`) && fs.readFileSync(join(promptRoot, `${ref}.md`), 'utf8').includes(marker), ref);
@@ -318,9 +333,10 @@ async function checkInstalled() {
   const { buildRunnerChildLaunch } = await sub('runs/background/runner-child-launch');
   const { buildEffectiveSystemPrompt } = await sub('runs/shared/effective-system-prompt');
   const { evaluateChildToolDiagnostic } = await sub('runs/shared/child-runtime-config');
-  const cases = [...roles.flatMap(role => ['foreground', 'runner'].map(mode => ({ role, mode }))), { role: 'oracle', mode: 'runner', review: true }];
-  for (const { role, mode, review } of cases) await test(`${role}/${mode}${review ? '/Review' : ''}: serialized child identity, boundary and caller guidance`, async () => {
-    const c = contracts.get(review ? 'review' : role), agent = agents.find(a => a.name === role), task = review ? reviewTask : quote;
+  const cases = [...roles.flatMap(role => ['foreground', 'runner'].map(mode => ({ role, mode }))),
+    ...Object.keys(reviewTasks).map(review => ({ role: 'oracle', mode: 'runner', review }))];
+  for (const { role, mode, review } of cases) await test(`${role}/${mode}${review ? `/DELIVERY/${review}` : ''}: serialized child identity, boundary and caller guidance`, async () => {
+    const c = contracts.get(review ?? role), agent = agents.find(a => a.name === role), task = review ? reviewTasks[review] : quote;
     assert.ok(c, `No guarded ${role} contract`);
     const runner = mode === 'runner';
     if (runner) process.env.PI_SUBAGENT_CHILD = '1'; else delete process.env.PI_SUBAGENT_CHILD;
@@ -333,6 +349,7 @@ async function checkInstalled() {
         session.prompt = async prompt => {
           try {
             assert.equal(prompt, `Task: ${task}`);
+            assert.equal(prompt.includes(readinessBinding), review === 'readiness', 'Readiness binding belongs only in the named readiness assignment');
             const expected = [prompt], queued = [];
             for (const action of ['steer', 'follow_up']) {
               await guide(action);
@@ -367,7 +384,7 @@ async function checkInstalled() {
       },
     }) });
     try {
-      const id = `sample-${role}-${mode}`, opts = { cwd, context: 'fresh', projectTrusted: true, parentSessionId: 'sample-parent', orchestratorIntercomTarget: 'sample-parent', agentContract: { version: 1 } };
+      const id = `sample-${role}-${mode}${review ? `-${review}` : ''}`, opts = { cwd, context: 'fresh', projectTrusted: true, parentSessionId: 'sample-parent', orchestratorIntercomTarget: 'sample-parent', agentContract: { version: 1 } };
       let result;
       if (runner) {
         const systemPrompt = buildEffectiveSystemPrompt({ agent, resolvedSkills: c.skills.resolved, cwd });

@@ -129,14 +129,9 @@ Allowed alternatives below are enums, not literal pipe strings.
 - **R11** A clear delivery assessment means DELIVERY mode, met preconditions, every material criterion satisfied and no blocking finding; the parent derives it from the result, never requests a ballot. BLOCKED_REVIEW cannot be clear. A deficient delivery assessment has unmet preconditions, unmet/unassessed material criteria or blocking findings.
 - **R12** Decisions use the shared structured rationale and remain recommendations, not acceptance criteria. Ordered nextActions cite real findings/decisions and nonempty instructions/predicates. STATIC/DESIGN allows remedy/validate/discover; DELIVERY or BLOCKED_REVIEW with deficiencies allows remedy only; clear DELIVERY allows reconcile only. Remedies cover implementation, validation, evidence repair or decision settlement, not a mandatory implementation over equivalent remedies. Actions are nonempty for deficient/blocked assessments and empty only when no action/advice applies.
 
-Judge the finish line in the assignment. For development, readiness-only concerns are nonblocking
-unless they also violate local acceptance or a binding invariant. For PR/release readiness, assess the
-whole integrated candidate against the applicable readiness criteria. Return material findings in one
-batch; do not repeat a usable assessment for advice or unchanged evidence. A confirmed-terminal call with no usable result may be replaced on the same eligible candidate under P21/R16, retaining history and expenditure. `DELIVERY` can assess a local xdev outcome;
-PR readiness does not imply production readiness. Put later-stage concerns in `residualRisks`, not
-blocking findings or required `nextActions`. Missing evidence required for that target blocks readiness
-even if local checks passed. On integration or reuse, match the assignment and its criteria to the
-current target; a clear assessment at a narrower target cannot establish a broader one.
+Judge the assigned finish line. Only for a named readiness decision (`basis.intendedOutcome` = `readiness: …`), read `agents/references/readiness.md` from the assignment's bound `policyRefs` before assessing it. If missing or stale, request the binding from the parent. A working `DELIVERY` Review judges local acceptance and binding invariants, not release readiness. Put concerns due only at a later stage in `residualRisks`, not blocking findings or required `nextActions`.
+
+Return material findings in one batch; do not repeat a usable assessment for advice or unchanged evidence. A confirmed-terminal call with no usable result may be replaced on the same eligible candidate under P21/R16, retaining history and expenditure. On integration or reuse, match the criteria to the current target; a clear narrower assessment cannot establish a broader one.
 
 Criteria violations are findings. An acceptable-but-improvable or unnecessary approach is
 a shared authorDecisionItems recommendation, never an invented blocking defect.
