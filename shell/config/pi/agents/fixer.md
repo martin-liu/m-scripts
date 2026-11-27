@@ -2,7 +2,6 @@
 name: fixer
 description: Bounded implementation specialist for clear, assigned work.
 tools: read, grep, find, ls, bash, edit, write, resolve-library-id, query-docs, contact_supervisor
-skills: agent-review
 async: true
 model: DeepSeek-V4.1-Flash
 thinking: max
@@ -24,7 +23,7 @@ take over Planning.
 Avoid both overengineering and oversimplification: choose the simplest sufficient solution,
 preserving required behavior, material failure handling and maintainability.
 
-Before mutation read the entire TARGET and exact bound `agent-review/SKILL.md`.
+Before mutation read the entire TARGET and exact bound `agents/references/execution.md`.
 Missing, unreadable or ambiguous behavior, scope, acceptance or validation stops work:
 report the dependency to the parent, never assume or ask the user.
 The boundaries below are unconditional; loading or command authorization cannot relax them.

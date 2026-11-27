@@ -41,7 +41,8 @@ Use `pi` to start it. This repo manages the upstream package
 `@earendil-works/pi-coding-agent`; it does not use OMP or any `@mariozechner`
 package. Configuration is symlinked into `~/.pi/agent`: `settings.json`,
 `models.json`, `APPEND_SYSTEM.md` (the default agent’s orchestrator prompt), and the `agents/`
-directory. Auth, project trust, sessions, and other runtime files stay local.
+directory. Pi and OpenCode share the references and templates under `~/.pi/agent/agents/`.
+Auth, project trust, sessions, and other runtime files stay local.
 The model endpoint is defined in `models.json` with the conventional gateway
 URL; the API key is read from the `LITELLM_PROXY_API_KEY` environment variable,
 so no secrets are stored.
@@ -66,7 +67,8 @@ wait is not proof that the child stopped. Automatic continuation has no turn-cou
 cap by default; `PI_MAX_CONTINUATIONS=0` disables it. Neither a wake nor a status
 grants authorization.
 
-The default Worker deadline is 30 minutes for the whole run, not 30 minutes of inactivity.
+The default Worker deadline is 30 minutes for the whole run, not an inactivity timeout.
+The deadline and checkpoint timers pause while the child is blocked on a supervisor reply.
 For a known long check, the parent can set `options.timeoutMs` and request a handoff before
 expiry with `options.checkpointBeforeDeadlineMs`. In `pi -p`, the host's separate wait for
 background work also defaults to 30 minutes. A longer child deadline does not extend that

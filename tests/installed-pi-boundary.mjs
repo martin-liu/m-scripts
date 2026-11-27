@@ -148,8 +148,10 @@ async function checkInstalled() {
   const { session: parent } = await pi.createAgentSession({ cwd, agentDir: cfg, sessionManager: pi.SessionManager.inMemory(cwd), modelRuntime: runtime, model: parentModel });
   const contracts = new Map();
   const reviewRoot = join(cfg, 'skills/agent-review');
-  const bindings = ['SKILL.md', ...['execution', 'coordination', 'advisory', 'review'].map(s => `references/${s}.md`)]
-    .map(s => fs.realpathSync(join(reviewRoot, s))).map(path => `${path} sha256=${createHash('sha256').update(fs.readFileSync(path)).digest('hex')}`);
+  const promptRoot = join(cfg, 'agents/references');
+  const bindings = [join(reviewRoot, 'SKILL.md'), join(reviewRoot, 'references/review.md'),
+    ...['execution', 'coordination', 'advisory'].map(s => join(promptRoot, `${s}.md`))]
+    .map(p => fs.realpathSync(p)).map(path => `${path} sha256=${createHash('sha256').update(fs.readFileSync(path)).digest('hex')}`);
   const reviewTask = `Review lane: assess the fixture unit using only these bound policies:\n${bindings.join('\n')}`;
   try {
     await parent.bindExtensions({ mode: 'print', onError: e => errors.push(e) });
@@ -166,7 +168,7 @@ async function checkInstalled() {
       assert.ok(instructions.includes('The managed parent and Worker prompts suffice for ordinary Direct work unless a binding instruction requires more.') &&
         !instructions.includes('You are Worker.'), 'Wrong core for a cold Direct parent');
       for (const file of ['execution.md', 'coordination.md']) {
-        assert.ok(!instructions.includes(fs.readFileSync(join(reviewRoot, 'references', file), 'utf8').trim()), `${file} was injected in full`);
+        assert.ok(!instructions.includes(fs.readFileSync(join(promptRoot, file), 'utf8').trim()), `${file} was injected in full`);
       }
       const catalog = instructions.match(/<advertised_subagents>([\s\S]*?)<\/advertised_subagents>/)?.[1];
       assert.deepEqual(Array.from(catalog?.matchAll(/<name>([^<]+)<\/name>/g) ?? [], m => m[1]), roles);
@@ -204,9 +206,10 @@ async function checkInstalled() {
       assert.deepEqual(result.contract.skills.resolved, []);
       contracts.set('review', result.contract);
       const body = fs.readFileSync(join(reviewRoot, 'SKILL.md'), 'utf8');
-      for (const [ref, marker] of [['execution', '**P7**'], ['coordination', '**I4**'], ['advisory', 'ORACLE_ASSIGNMENT v2'], ['review', 'REVIEW_SUBMISSION v2']]) {
-        assert.ok(body.includes(`agent-review/references/${ref}.md`) && fs.readFileSync(join(reviewRoot, `references/${ref}.md`), 'utf8').includes(marker), ref);
+      for (const [ref, marker] of [['execution', '**P7**'], ['coordination', '**I4**'], ['advisory', 'ORACLE_ASSIGNMENT v2']]) {
+        assert.ok(body.includes(`agents/references/${ref}.md`) && fs.readFileSync(join(promptRoot, `${ref}.md`), 'utf8').includes(marker), ref);
       }
+      assert.ok(body.includes('agent-review/references/review.md') && fs.readFileSync(join(reviewRoot, 'references/review.md'), 'utf8').includes('REVIEW_SUBMISSION v2'));
     });
     await test('direct async Worker keeps the native deadline or accepts a longer budget with a checkpoint', async () => {
       const { flattenSubagentToolOptions } = await sub('extension/subagent-options');
@@ -223,6 +226,47 @@ async function checkInstalled() {
         assert.deepEqual(resolveSingleAgentLaunchTimeout(params, params.async, configTimeout), { timeoutMs: minutes * 60_000 });
         assert.equal(params.checkpointBeforeDeadlineMs, options.checkpointBeforeDeadlineMs);
       }
+    });
+    await test('a pushed blocking ask is answered by request ID on the same child', async () => {
+      const { registerNativeSupervisorClient, createNativeSupervisorChannel } = await sub('intercom/native-supervisor-channel');
+      const runId = 'live-worker', owner = 'sample-parent', channelDir = join(root, 'supervisor-channel');
+      let ask, reply; const notices = [];
+      registerNativeSupervisorClient({ registerTool: tool => { ask = tool; } },
+        { channelDir, runId, agent: 'worker', childIndex: 0, orchestratorSessionId: owner });
+      const channel = createNativeSupervisorChannel({ registerTool: tool => { reply = tool; },
+        sendMessage: (message, options) => { notices.push({ message, options }); } },
+      { supervisorOwnerSessionId: owner, foregroundControls: new Map(), asyncJobs: new Map([[runId, { status: 'running' }]]) },
+      { getChannelDirs: () => ({ dirs: [channelDir] }) });
+      const stop = new AbortController();
+      const waiting = ask.execute('call-1', { reason: 'need_decision', message: 'Which fixture?' }, stop.signal);
+      try {
+        channel.start(); // Discover the actual child request once; no model, watcher or run launch.
+        assert.equal(notices.length, 1);
+        const [{ message: { details }, options }] = notices;
+        assert.equal(options.triggerTurn, true); assert.equal(details.runId, runId); assert.equal(details.expectsReply, true);
+        assert.equal(typeof details.requestId, 'string'); assert.ok(details.requestId); assert.notEqual(details.requestId, runId);
+        assert.equal(reply.name, 'subagent_supervisor');
+        const answer = { action: 'reply', message: 'Use the supplied fixture.' };
+        await assert.rejects(reply.execute('wrong-id', { ...answer, replyTo: runId }), /No pending supervisor request/);
+        const receipt = await reply.execute('right-id', { ...answer, replyTo: details.requestId });
+        assert.equal(receipt.details.runId, runId);
+        const result = await waiting;
+        assert.equal(result.details.requestId, details.requestId); assert.ok(result.content[0].text.includes(answer.message));
+      } finally { stop.abort(); await Promise.allSettled([waiting]); channel.dispose(); }
+    });
+    await test('the native timer excludes blocking supervisor calls, not ordinary tool time', async t => {
+      const { pauseForSupervisorWait, startPausableTimer } = await sub('runs/shared/supervisor-wait-timer');
+      t.mock.timers.enable({ apis: ['setTimeout'] });
+      let now = 0; t.mock.method(performance, 'now', () => now);
+      const advance = ms => { now += ms; t.mock.timers.tick(ms); };
+      const fired = [], timer = startPausableTimer(100, () => fired.push('timeout'));
+      const event = (type, toolCallId, reason) => pauseForSupervisorWait(timer, { type, toolCallId, toolName: 'contact_supervisor', args: { reason } });
+      event('tool_execution_start', 'progress', 'progress_update'); advance(30);
+      event('tool_execution_start', 'ask', 'need_decision'); advance(1000);
+      event('tool_execution_end', 'progress'); advance(1000);
+      assert.deepEqual(fired, []); assert.equal(timer.remainingMs(), 70);
+      event('tool_execution_end', 'ask'); advance(69); assert.deepEqual(fired, []);
+      advance(1); assert.deepEqual(fired, ['timeout']);
     });
     await test('an owned async Worker timeout requests one parent turn, not a parent abort', async () => {
       const { default: registerNotify } = await sub('runs/background/notify');
@@ -307,7 +351,7 @@ async function checkInstalled() {
             const roleBody = fs.readFileSync(join(cfg, 'agents', `${role}.md`), 'utf8').replace(/^---\n[\s\S]*?\n---\s*/, '').trim();
             assert.ok(instructions.includes(roleBody), `${role}/${mode}: managed role body missing or truncated`);
             assert.ok(!parentIdentity.test(instructions) && !instructions.includes('You, not Worker, submit now'), 'Parent-only instructions leaked into a child');
-            assert.ok(instructions.includes('agent-review/references/execution.md'));
+            assert.ok(instructions.includes('agents/references/execution.md'));
             assert.ok(!instructions.includes('Load before advisory dispatch or bounded implementation') && !instructions.includes('REVIEW_SUBMISSION v2'), 'Unbound Review trigger or protocol was injected');
             assert.ok(!instructions.includes('Project fixture body.'), 'Project skill body became policy');
             if (role === 'oracle') assert.match(instructions, /Only for a formal Review, also read `agent-review\/SKILL\.md`/);
@@ -386,6 +430,7 @@ async function checkInstalled() {
       assert.ok(!fs.existsSync(join(cfg, 'agents/fixer.md')) && !settings.subagents.agentOverrides?.fixer, 'Legacy file or visibility override remains');
     } else {
       assert.ok(legacy.ok, legacy.message); assert.equal(legacy.contract.agent.filePath, join(cfg, 'agents/fixer.md'));
+      assert.ok(!legacy.contract.skills.requested.includes('agent-review'), 'Retained execution role must not preload Review');
       console.log('Retained definition is hidden, NOT retired: fresh native lookup still accepts fixer.');
     }
   });

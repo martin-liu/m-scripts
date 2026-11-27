@@ -34,7 +34,7 @@ take over Planning.
 Avoid both overengineering and oversimplification: choose the simplest sufficient solution,
 preserving required behavior, material failure handling and maintainability.
 
-Before target-dependent inspection, validation or mutation read the entire TARGET and exact bound `agent-review/references/execution.md`.
+Before target-dependent inspection, validation or mutation read the entire TARGET and exact bound `agents/references/execution.md`.
 Missing, unreadable or ambiguous behavior, scope, acceptance or validation stops work:
 report the dependency to the parent, never assume or ask the user.
 The boundaries below are unconditional; loading or command authorization cannot relax them.

@@ -1,13 +1,14 @@
-// Pi 1.6.1. No arguments: closed. --check BASELINE_DIR: serialize matched cases, intercept before transfer.
+// Pi 1.6.1. No arguments: closed. --check BASELINE_DIR: serialize matched and candidate-only cases, intercept before transfer.
 // Separately authorized only: PI_ATTEMPT_LIVE=matched-synthetic-v1 PI_ATTEMPT_TOKEN=<gateway bearer>
-// node tests/pi-native-attempt.eval.mjs --live-matched BASELINE_DIR. No installed profile, prompt-file or URL override.
+// node tests/pi-native-attempt.eval.mjs --live-matched BASELINE_DIR. For only the two new candidate delegation probes,
+// use --live-delegation with separate PI_ATTEMPT_LIVE=delegation-synthetic-v1 consent. No profile, prompt-file or URL override.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { cases, fixture, grade, loadPolicy } from './pi-attempt-cases.mjs';
+import { cases, delegationCases, fixture, grade, loadPolicy, queryTasks, renameTasks, serviceCases, serviceTasks } from './pi-attempt-cases.mjs';
 
 const self = fileURLToPath(import.meta.url), repo = resolve(dirname(self), '..');
 export const endpoint = 'https://llmgateway.app.nand.ai/v1/responses'; // Independent of models.json and SDK.
@@ -16,7 +17,7 @@ const digest = b => createHash('sha256').update(b).digest('hex');
 const same = (actual, expected, why) => assert.ok(isDeepStrictEqual(actual, expected), why); // never print rejected bytes
 const pins = {
   baseline: ['40854d9470d2ef0b9521c690705a676acac2bbd8ca9a32002f95a704a549427a', '38cae65e9ee7979aa52de7b0a60d08b0f7941053188967ce6a75322feb3d3e79', '5c58a2da940460143197b6e0a52c5f9ce5a776adf85be92a440bd2bee7c9bac4', 'e1d2fd622aeafce6919210b194cbec637642fad953e62121ff923ac295e7ef90'],
-  candidate: ['0ca7c4b82add713627d815ee3b05b1f76704057f267c692343eb7c22099d0eef', '771c7f2dcc9bb9097fcde2da3b50161b33bd4e8393c6a3cc2fafd09ef7f66ac9', '1a04cf4f08c9678e2b4e4769443c0fb32ef49e24a098272711ad80ec997ebcfc', 'bb1d52019c592671a904f89a957e2dc3dd522a5ce842f30b976bf8d160e3b88d'],
+  candidate: ['152796b2923b6c260d80e8314207703fa546e58d5c1db2f946e6031906c28493', '41899e4f2d898e0002d834989f9e36bd3dc39ce42d5d8b1f4d68b9a06461820b', '9bf488d179c61e267c88386fb2f9c8b22710afd2092274e9eabbdf3a699db2ec', '94b7dcf3346355172671e009bef55df533433db8b7018640ed6aa03eda9098c7'],
 };
 function boundPolicy(dir, arm) {
   const root = fs.realpathSync(dir); let i = 0;
@@ -26,10 +27,21 @@ function boundPolicy(dir, arm) {
     const bytes = fs.readFileSync(path);
     assert.ok(digest(bytes) === pins[arm][i++], `Unapproved ${arm} policy revision (${rel})`);
     return bytes.toString('utf8');
-  });
+  }, arm);
+}
+// New service probes are candidate-only and never eligible for a live or loopback runner.
+export function selectedCases(option) {
+  if (option === '--check') return [...cases, ...delegationCases, ...serviceCases];
+  if (option === '--live-matched') return cases;
+  if (option === '--live-delegation') return delegationCases;
+  assert.fail('Unknown case set');
 }
 export function mode(args, consent) {
   if (!args.length) return 'closed';
+  if (args.length === 1 && args[0] === '--live-delegation') {
+    assert.ok(consent === 'delegation-synthetic-v1', 'Delegation inference not authorized');
+    return 'live';
+  }
   assert.ok(args.length === 2 && ['--check', '--live-matched'].includes(args[0]) && !args[1].startsWith('-'), 'Expected --check or --live-matched and a baseline directory');
   if (args[0] === '--check') return 'check';
   assert.ok(consent === 'matched-synthetic-v1', 'Matched live inference not authorized'); return 'live';
@@ -74,7 +86,9 @@ function installedSdk() {
 async function main(args) {
   const run = mode(args, process.env.PI_ATTEMPT_LIVE);
   if (run === 'closed') { console.log('Closed. --check BASELINE_DIR exercises the SDK without transfer.'); return; }
-  const policies = { baseline: boundPolicy(args[1], 'baseline'), candidate: boundPolicy(repo, 'candidate') };
+  const delegationOnly = args[0] === '--live-delegation';
+  const policies = { candidate: boundPolicy(repo, 'candidate') };
+  if (!delegationOnly) policies.baseline = boundPolicy(args[1], 'baseline');
   const cfg = rel => JSON.parse(fs.readFileSync(join(repo, 'shell/config/pi', rel), 'utf8'));
   const s = cfg('settings.json'), p = cfg('models.json').providers[provider];
   same([s.defaultProvider, s.defaultModel, s.defaultThinkingLevel, p.baseUrl + '/responses'], [provider, model, effort, endpoint], 'Unapproved Pi configuration');
@@ -110,7 +124,7 @@ async function main(args) {
     assert.ok(!fs.existsSync('/fixture/project'), 'Synthetic cwd unexpectedly exists');
     const settingsManager = pi.SettingsManager.inMemory({ defaultProvider: provider, defaultModel: model, defaultThinkingLevel: effort,
       retry: { enabled: false, provider: { maxRetries: 0, timeoutMs: 120000 } }, compaction: { enabled: false }, enableAnalytics: false, enableInstallTelemetry: false, cacheWarming: 'off' });
-    for (const [i, c] of cases.entries()) for (const arm of (i % 2 ? ['candidate', 'baseline'] : ['baseline', 'candidate'])) {
+    for (const [i, c] of selectedCases(args[0]).entries()) for (const arm of (!cases.includes(c) ? ['candidate'] : i % 2 ? ['candidate', 'baseline'] : ['baseline', 'candidate'])) {
       const f = fixture(c, policies[arm]), names = f.tools.map(t => t.function.name), sessionId = `fixture-${arm}-${c.id}`;
       const resourceLoader = new pi.DefaultResourceLoader({ cwd: tmp, agentDir, settingsManager, noExtensions: true, noContextFiles: true,
         noSkills: true, noThemes: true, noPromptTemplates: true, systemPrompt: 'Synthetic Pi decision fixture.', appendSystemPrompt: [],
@@ -118,7 +132,15 @@ async function main(args) {
       await resourceLoader.reload();
       for (const list of [resourceLoader.getExtensions().extensions, resourceLoader.getExtensions().errors, resourceLoader.getSkills().skills, resourceLoader.getAgentsFiles().agentsFiles]) assert.equal(list.length, 0);
       const sessionManager = pi.SessionManager.inMemory(cwd, { id: sessionId }), calls = new Map(), receipts = new Map(), attempted = [];
-      const offlineCall = c.id === 'terminal-error' ? ['submit_candidate', {}] : c.id === 'private-rename' ? ['subagent', { agent: 'worker', task: 'Direct: ' + c.request }] : null;
+      const offlineCall = c.id === 'terminal-error' ? ['submit_candidate', {}]
+        : c.id === 'rename-delegation' ? ['subagent', { agent: 'worker', task: renameTasks.complete }]
+        : c.id === 'private-rename' ? ['subagent', { agent: 'worker', task: 'Direct: ' + c.request }]
+        : c.id === 'proposal-scope' ? ['read_source', { path: 'proposal.md' }]
+        : c.id === 'launch-rejected' ? ['subagent', { ...f.messages[2].tool_calls[0].function.arguments, options: { toolBudget: { hard: 4, block: '*' } } }]
+        : c.id === 'launch-uncertain' ? ['lookup_child', {}]
+        : c.service && c.cold ? ['subagent', { agent: 'worker', task: serviceTasks.read }]
+        : c.service === 'write' ? (c.grant === 'production' ? ['replace_summary', {}] : ['subagent', { agent: 'oracle', task: serviceTasks.input }])
+        : c.tally ? ['subagent', { agent: 'worker', task: queryTasks[c.tally === 'scratch' ? 'scratch' : 'none'] }] : null;
       let projections = 0, transfers = 0, projectedWireBytes = 0, usage = [], final = '', problem, intercepted = false;
       const input = [{ role: 'developer', content: `Synthetic Pi decision fixture.\n\n<addendum>\n${f.messages[0].content}\n</addendum>\n\n<cwd>\n${cwd}\n</cwd>` }, userItem(f.messages[1].content)];
       const customTools = f.tools.map(({ function: fn }) => ({ ...fn, label: fn.name, execute: async (id, args) => {
@@ -140,7 +162,7 @@ async function main(args) {
           const { name, arguments: args } = f.messages[2].tool_calls[0].function, id = 'call_prepare', output = f.messages[3].content;
           seed.push({ role: 'assistant', api: parent.api, provider, model, stopReason: 'toolUse', timestamp: 0,
             usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { total: 0 } }, content: [{ type: 'toolCall', id, name, arguments: args }] },
-          { role: 'toolResult', toolCallId: id, toolName: name, content: block(output), isError: false, timestamp: 0 });
+          { role: 'toolResult', toolCallId: id, toolName: name, content: block(output), isError: f.messages[3].isError ?? false, timestamp: 0 });
           for (const m of seed) sessionManager.appendMessage(m); session.agent.state.messages = seed;
           input.push(...pair(id, name, args, output), userItem(f.messages[4].content));
         }
@@ -188,7 +210,8 @@ async function main(args) {
           same(f.trace, offlineCall ? c.trace : [], 'Offline tool round trip did not execute');
         }
         else {
-          same(attempted, f.trace, 'A model call did not execute');
+          // Transport sees the Worker launch; the grader also distinguishes which assignment it executed.
+          same(attempted, f.trace.map(t => t === 'worker:lookup' ? 'worker' : t), 'A model call did not execute');
           const last = session.messages.at(-1); assert.ok(last.role === 'assistant' && last.stopReason === 'stop', 'Provider did not return a terminal answer');
           final = text(last.content);
           if (Object.values(grade(c, f.trace, final)).includes(false)) process.exitCode = 1;

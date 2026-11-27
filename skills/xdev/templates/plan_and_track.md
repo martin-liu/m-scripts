@@ -1,126 +1,41 @@
-# Plan & Track: {Feature Name}
-**schema_version:** 3.2
-Lifecycle authority: `xdev/SKILL.md`; shared policy: `agent-review/references/execution.md` and `agent-review/references/coordination.md`;
-Review authority: `agent-review/references/review.md`.
-Setup notes (do not copy into live state):
-When creating a default locator, trim and lowercase the objective slug, replace each run
-of non-alphanumeric characters with one hyphen, then trim leading and trailing hyphens.
-For migration or malformed-state recovery, reconstruct changed anchor/cadence/recovery
-fields from authoritative instructions and evidence before dependent work. For a 3.0/3.1
-plan, retain policy-derived spent calls/limits as history, not xdev stop authority.
-Explicit user/host constraints remain binding; preserve the complete Review history (X2).
+# Plan & Track: {objective}
+**schema_version:** 3.4
 
-## State Locator
-- **Objective identity:**
-- **Resolved state file:** {exact path}
+<!-- Setup only; omit these instructions, examples, inapplicable fields and empty optional sections from live plans. Edit current fields in place; never write a work log. Nothing changed for the next reader? Do not write.
+For a default locator, trim and lowercase the slug, replace runs of non-alphanumeric characters with one hyphen, then trim leading and trailing hyphens.
+Migrate 3.2/3.3 at the next safe state write, in the same file: keep every todo and necessary binding; distill old notes into still-applicable environment facts or lessons and discard the chronology. Check against the original; if a binding or necessary fact would be lost, retain the original until resolved. Never reinitialize an existing plan.
+For migration or malformed state, reconstruct changed anchor/cadence/recovery fields from authoritative instructions and evidence before dependent work. For a 3.0/3.1 plan, retain policy-derived spent calls/limits as history, not xdev stop authority. Explicit user/host constraints remain binding; preserve the complete Review history by exact evidence reference or inline (X2). -->
 
-## Task Ledger
-| Logical task ID | Role/lane | Runtime transport ID | Generation | Scope and assignment ref | Status | Supersedes | Integration / linked next task | Durable terminal result/evidence | Replacement reason |
-|---|---|---|---|---|---|---|---|---|---|
+## Goal
+- **Objective ID / resolved state file / goal revision:**
+- **Original-outcome anchor:** {requested deliverable, working finish line or named readiness decision, non-goals; verbatim basis or exact permitted source}
+- **Goal status and basis:** {clear/clarified/open; sources for authoritative goal revisions only, not work iterations; initial clarification used and dependency/assessment/reply refs}
 
-## Authoritative Todo List
-Rows: `- [ ] TODO-{stable ID} — ...`, checked form `- [x]`.
-Each has type (implementation/correction/integration/required-validation/Review-action/
-closure-assessment), owner, bounded scope/authority reference, evidence,
-discharge revision/reference and lineage. Settlement distinguishes satisfaction from
-evidence-backed unmet/blocked work.
+## Requirements
+- Scope, grants, limits and exclusions; observable acceptance by criterion ID, materiality, authoritative basis, normal/error/invariant cases and todo IDs.
+- Required checks: name/ID, criterion, command/scenario, inputs, expected result, owner, cadence/due point, cost/duration and rerun trigger. For early expensive checks, say why cheaper evidence is insufficient. Deferred checks remain pending with their owner and due point.
+- For corpus claims only: class and scope, parent semantic baseline, exact rules/fixtures or population method as applicable; unresolved mismatches.
 
-## State
-- **State revision:**
-- **Lifecycle phase:** baseline / sprint / final validation / complete
+## Principles
+- Binding invariants and design boundaries. Keep adopted Planning result/decisions separate from user requirements: material assumptions, rationale, open choices and reconsideration triggers.
+
+## Environment Details
+- Only verified setup facts that change how to run, test or resume this objective. Point to the source of truth rather than copying config; no secrets or machine inventory. Replace stale values.
+
+## Key Learnings
+- Optional. Only a supported condition → action that changes remaining work and isn't already in a requirement, environment fact or todo. On each state write, combine overlapping rules and remove obsolete ones. No attempt notes, dates or running list of discoveries.
+
+## Todo List
+- [ ] TODO-{stable ID} — {type, owner, bounded action, scope/authority, dependency or lineage; keep unmet/blocked work unchecked}
+- [x] {settled ID or group of IDs} — {outcome and evidence mapping each ID to its discharge revision; not one row per attempt}
+
+## Latest State
+- **State revision / phase / current sprint:**
 - **Outcome:** active / delivered / conclusively blocked / unsuccessful
-- **Execution disposition:** continue / awaiting_user
-- **Closure candidate:** {terminal record reference or none}
-- **Current delivery-unit record:** {scope/eligibility/validation/integration authority}
-- **Snapshot ID:** {current product binding; final validation/assessment share final ID}
-- **Current sprint:**
-- **Next action and owner:**
-- **Pending tasks:** {ledger references or none}
-- **Integration:** {unit reference}
-- **Validation:** {due/deferred check names or IDs and evidence refs; outstanding checks are pending}
-- **Final Review:** {pending or result reference}
-
-## Coherent Baseline
-### Goal Understanding
-- **Goal statement / high-level outcome:** {requested deliverable and finish line: working outcome or readiness for a named decision}
-- **Objective / goal revision:**
-- **Basis:** {original request and later constraints/grants; verbatim if permitted, otherwise exact permitted reference and operative limits}
-- **Original-outcome anchor / non-goals / observable acceptance / material assumptions:**
-- **Goal revision/source history:** {only authoritative outcome changes; design is separate}
-- **Latest resume/milestone alignment:** {progress/next action versus original anchor}
-- **Goal status:** clear / clarified / open
-- **Initial clarification used:** {no or dependency/assessment/reply references}
-- **Material undecided questions / historical choices, not constraints:**
-
-### Target
-- **Scope / allowed files / exclusions:**
-- **Intended behavior / expected outputs:**
-- **Authoritative basis:**
-- **Planning result/decisions / reconsideration triggers:**
-- **Design / risk boundaries:**
-- **First working end-to-end slice / coherent delivery-unit boundaries:**
-- **Normal, boundary/error and regression/invariant cases:**
-| Criterion ID/materiality | Observable expectation | Authoritative basis | Result/evidence | Todo IDs |
-|---|---|---|---|---|
-| Assumption ID | Default/source | Consequence | Reconsideration/validation trigger | Status |
-|---|---|---|---|---|
-
-### Validation Strategy
-- **Final-validation execution owner:**
-Schedule each required deterministic check or faithful scenario once. Deferred checks stay pending with their owner and due point, never PASS.
-
-| Check name or ID / criterion | Exact command/scenario / inputs / expected | Owner | Cadence / due point | Cost/duration / why cheaper evidence cannot suffice if run early | Rerun trigger / evidence applicability |
-|---|---|---|---|---|---|
-
-- **Corpus claim class / claimed and automation scopes / exact rules / mismatches:**
-- **Semantic truth:** {parent contextual item-level baseline}
-- **Mechanical expectation:** {exact rule/invariant/fixture basis}
-- **Population support:** {defined population and independent method/exhaustive evidence}
-
-### Baseline Validation Evidence
-Record each execution once. Sprint and final evidence may reference its exact row and raw result;
-retain the original revision/snapshot and justify applicability to current inputs under P11, or rerun.
-
-| Revision | Execution snapshot / current applicability | Owner | Command/scenario/inputs / duration | Expected | Actual | PASS/FAIL/BLOCKED | Exit | Material raw reference |
-|---|---|---|---|---|---|---|---|---|
-
-## Sprint Records
-{Use `xdev/templates/sprint_block.md`; preserve historical snapshot bindings.}
-
-## Review Coverage Log
-Record each assessment once; an exact reference to an existing sprint assessment suffices. Preserve complete dispatch/finding lineage, not a lifetime Review allowance.
-
-| Review ID / ordinal | Stable outcome / covered unit/sprint IDs | Revision / owner / snapshot | Raw oracle-review-result / criterion evidence | Stable findings / prior resolutions | Parent integration / corrective batch / class strategy / progress ref | Optional advice disposition (accept/defer/reject with rationale) |
-|---|---|---|---|---|---|---|
-
-- **Latest coherent-boundary progress/recovery:** {criterion/class improvement or decisive new
-  evidence; failed mechanism and changed repair/validation; Planning result/trigger when needed;
-  viable materially distinct next action versus original-outcome anchor, with evidence refs}
-
-## Final Validation Evidence
-| Revision | Execution snapshot / current applicability | Owner | Command/scenario/inputs / duration | Expected | Actual | PASS/FAIL/BLOCKED | Exit | Material raw reference |
-|---|---|---|---|---|---|---|---|---|
-
-## Final Whole-State Review
-- **Final assessment:** {exact whole-state Review Coverage Log entry, or pending; reuse a covering sprint only when scope and evidence coincide}
-- **Covering delivery-unit eligibility and todo reconciliation:** {authoritative reference;
-  record independent facts only where final scope differs}
-- **Remaining authorized actions / blockers:** {evidence or none}
-
-## Terminal Decision Record
-- **Candidate ID / candidate revision / proposed Outcome:**
-- **Oracle logical task ID / generation:**
-- **Closure basis:** {coincident final assessment or bound closure assessment}
-- **Assessment conclusion / authoritative reference:**
-- **Reconciliation:** {baseline/criteria, sprints, generations/supersession, integration,
-  validation, findings, blockers/recovery, remaining actions, complete todos}
-- **Authoritative evidence / unmet criteria:**
-- **Materially distinct recovery courses / attempted results / evidence-backed exclusions:**
-- **Unresolved findings / unsuccessful basis:** {genuine recovery exhaustion, not count or impossibility}
-- **Remaining authorized actions / why no viable recovery remains:**
-- **Todo settlement:** {satisfied refs; unmet/blocked dependencies or exhausted-recovery basis;
-  designated assessment todo discharge revision/reference}
-- **Parent decision:** {Outcome, disposition, rationale, atomic integration revision}
-
-## History
-{Semantic/recovery-significant revisions and authoritative references only.}
+- **Execution disposition / next action and owner:** {include the blocker or confirmed wake when applicable}
+- **Current unit / snapshot:** {scope, integration, alignment to the goal; use `xdev/templates/sprint_block.md` here only when needed}
+- **Tasks:** {open or uncertain: logical ID/generation, role/lane, scope/assignment ref, status, run ID, supersession/reason, integration/result and linked next task. Once reconciled, keep required bindings with the settled todo, not a second task report.}
+- **Validation:** {update by check ID, not by run. Iteration-only feedback stays inline, no snapshot; keep the acceptance check pending. Show the current result or pending check, not an older PASS. For acceptance, assessment or reuse, bind the execution revision/snapshot, owner, inputs/command, duration, expected/actual, exit, PASS/FAIL/BLOCKED and material raw evidence ref; justify reuse under P11 or rerun.}
+- **Recovery, if needed:** {criterion/class improvement or decisive new evidence; failed mechanism, changed repair/check, remaining alternatives and next action}
+- **Review, when due:** {Review ID/ordinal, covered unit/sprints, revision/owner/snapshot, exact raw oracle-review-result and criterion evidence; stable findings, prior resolutions, integration/corrective batch/class strategy and optional advice disposition with rationale. Preserve complete dispatch/finding lineage once, by reference where available.}
+- **Final assessment / closure, when due:** {pending or exact whole-state Review ref; reuse a sprint only when scope and evidence coincide. Bind candidate ID/revision/proposed Outcome, Oracle task/generation, conclusion and assessment ref, reconciled todo settlement, unmet criteria/blockers, attempted/excluded recovery and remaining actions, parent decision/disposition and integration revision (X17–X24).}

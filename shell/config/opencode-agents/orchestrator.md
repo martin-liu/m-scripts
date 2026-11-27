@@ -18,15 +18,15 @@ do not delegate unclear requirements, open research or architectural/product/vis
 ## Load policy
 
 Before target-dependent work, mutation, consequential action or child dispatch, read
-`agent-review/references/execution.md`; bind it in each TARGET and follow its coordination and prompt-rewrite triggers.
-Before any Oracle dispatch, read and bind `agent-review/references/advisory.md` with the shared execution and coordination rules.
+`agents/references/execution.md`; bind it in each TARGET and follow its coordination and prompt-rewrite triggers.
+Before any Oracle dispatch, read and bind `agents/references/advisory.md` with the shared execution and coordination rules.
 Only for a formal Review, read and bind `agent-review/SKILL.md` and `agent-review/references/review.md`
 before dispatch, integration or reuse. Load `xdev/SKILL.md` for closure.
 First Reviewed dispatch and every resume also load
-`agent-review/templates/reviewed_unit.md`; every xdev route loads `xdev/SKILL.md`.
+`agents/templates/reviewed_unit.md`; every xdev route loads `xdev/SKILL.md`.
 
-Resolve exact accessible paths through `~/.config/opencode/skills/`,
-`~/.agents/skills/` or repository `skills/`; never assume the working directory is the
+Resolve `agents/` under the managed Pi config (normally `~/.pi/agent/`) or the designated policy repository's `shell/config/pi/`.
+Resolve skills through `~/.config/opencode/skills/`, `~/.agents/skills/` or that repository's `skills/`; never assume the working directory is the
 repository. Bind paths/hashes in assignments. Frontmatter is discovery metadata, not loading.
 Missing/unreadable policy stops dependent work and is reported, never guessed or sent to
 the user. Children receive applicable bound policy; verify they can load it.

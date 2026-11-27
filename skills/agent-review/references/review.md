@@ -1,6 +1,6 @@
 # Independent Review assessment
 
-This file alone owns Review. Load `agent-review/SKILL.md` first; Review dispatch and assessment also require `agent-review/references/advisory.md`.
+This file alone owns Review. Load `agent-review/SKILL.md` first; Review dispatch and assessment also require `agents/references/advisory.md`.
 Review judges evidence and gives concrete corrections/decisions; it is not a permission
 ballot or an intermediate micro-assessment. The parent owns delivery.
 
@@ -127,7 +127,7 @@ Allowed alternatives below are enums, not literal pipe strings.
 - **R9** Preconditions status is MET or REVIEW_PRECONDITION_NOT_MET; unmet status includes that reason code and a blocking finding. Criteria are satisfied/not-satisfied/not-assessed, covering every assigned criterion; unmet material criteria have blocking finding IDs. Every prior finding receives resolved/unresolved/withdrawn/superseded status with evidence; an unresolved nonblocking observation may retain a reasoned defer/reject disposition and does not prevent clear delivery.
 - **R10** Every blocking issue has a stable finding ID and current-state evidence tied to a material assigned criterion or required invariant; no demonstrated material consequence means observation/advice, not a blocker. Missing required material validation/evidence or assessment preconditions is itself a material evidence failure, without needing a proven implementation bug. Every requiredAction has a falsifiable acceptance predicate. Deterministic claims require a mechanical predicate naming fixed inputs, a repeatable executable or rule-based static check and its expected result; where judgment is indispensable, name the authoritative criterion, concrete scenario/evidence and observable resolving condition, and explain why a mechanical check alone is insufficient. Oracle repairs incomplete predicates before returning; a non-conforming return is malformed, not delivery evidence, and the parent preserves it rather than inventing or weakening its predicate. No anonymous blocker, unsupported standard, vague “improve” or “ask Oracle again”. Locations use integer lineStart/lineEnd; requiredAction type implementation/validation/evidence/decision is optional.
 - **R11** A clear delivery assessment means DELIVERY mode, met preconditions, every material criterion satisfied and no blocking finding; the parent derives it from the result, never requests a ballot. BLOCKED_REVIEW cannot be clear. A deficient delivery assessment has unmet preconditions, unmet/unassessed material criteria or blocking findings.
-- **R12** Decisions use the shared structured rationale and remain recommendations, not acceptance criteria. Ordered nextActions cite real findings/decisions and nonempty instructions/predicates. Planning allows execute/discover/validate; STATIC/DESIGN allows remedy/validate/discover; DELIVERY or BLOCKED_REVIEW with deficiencies allows remedy only; clear DELIVERY allows reconcile only. Remedies cover implementation, validation, evidence repair or decision settlement, not a mandatory implementation over equivalent remedies. Actions are nonempty for deficient/blocked assessments and empty only when no action/advice applies.
+- **R12** Decisions use the shared structured rationale and remain recommendations, not acceptance criteria. Ordered nextActions cite real findings/decisions and nonempty instructions/predicates. STATIC/DESIGN allows remedy/validate/discover; DELIVERY or BLOCKED_REVIEW with deficiencies allows remedy only; clear DELIVERY allows reconcile only. Remedies cover implementation, validation, evidence repair or decision settlement, not a mandatory implementation over equivalent remedies. Actions are nonempty for deficient/blocked assessments and empty only when no action/advice applies.
 
 Judge the finish line in the assignment. For development, readiness-only concerns are nonblocking
 unless they also violate local acceptance or a binding invariant. For PR/release readiness, assess the
@@ -145,6 +145,16 @@ or required safety/security/integrity invariants, not hypothetical edge cases, s
 preferences or a newly invented standard. Real in-scope security and edge-case failures still
 block when their evidence establishes material consequences; working normal flow alone is
 not sufficient. Batch findings by shared cause and prioritize outcome/correctness blockers.
+
+For a blocking defect, cite the triggering condition, expected and actual behavior, and the
+consequence for the assigned criterion or invariant. If required proof is absent, name the
+missing check or evidence, not an unobserved defect. When a shared contract changes, trace it
+from its authoritative source to affected consumers within the permitted scope. One broken
+consumer demonstrates a failure; passing samples establish only the cases inspected. Record
+material coverage limits in `coverage.limitations`. A pre-existing failure still blocks if it
+defeats the named target. Attribute introduction or worsening to the change only with
+comparative evidence from the baseline or an equivalent source.
+
 The parent records a reasoned accept/defer/reject disposition for optional advice; that advice
 neither obliges another repair cycle nor stales a clear assessment without product changes.
 Apply shared source-first intelligence and exact next steps even when criteria are satisfied.
@@ -165,7 +175,7 @@ xdev owns its progress/recovery, batching and closure. R14–R15 and independent
 evidence apply to both routes. Record class checks and ordinary Reviewed extensions in
 existing evidence/history, not new schema fields.
 
-For prompt or skill rewrites, R18–R20 live in `agent-review/references/prompt-preservation.md`; inspect the bound preservation evidence in a Review of such a rewrite.
+When reviewing a prompt or skill rewrite, inspect the bound preservation evidence required by `agents/references/prompt-preservation.md` (R18–R20).
 
 Shared contracts cannot substitute for faithful validation or exhaustive discovery.
 Persistent loops need improved correction and validation, not additional schema ceremony.

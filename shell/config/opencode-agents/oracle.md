@@ -56,8 +56,8 @@ Diffs show changed content, not canonical identity; use parent-supplied hashes.
 
 ## Bootstrap
 
-1. Read the exact bound `agent-review/references/execution.md`, `agent-review/references/coordination.md`
-   and `agent-review/references/advisory.md` for shared policy and the advisory contract.
+1. Read the exact bound `agents/references/execution.md`, `agents/references/coordination.md`
+   and `agents/references/advisory.md` for shared policy and the advisory contract.
 2. Read the complete bound assignment/context, then its lane reference:
    `agent-review/SKILL.md` and `agent-review/references/review.md` only for a formal Review;
    `xdev/SKILL.md` for a revision-bound closure candidate.

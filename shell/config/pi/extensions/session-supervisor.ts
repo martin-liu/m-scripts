@@ -441,7 +441,8 @@ export function buildRepairEntry(reason: string): {
   const content = [
     REPAIR_HEADER,
     `Rejected claim: ${reason}`,
-    "The attempted user escalation is unverified. Do not wait for a technical option selection. Use a defensible authorized default for routine choices. Reuse valid plans. Use oracle for ordinary Planning; on Reviewed/xdev, call planner first for a consequential strategic choice that neither evidence nor an affordable check can settle. For strategic Planning, also honor a valid oracle handoff, a still-applicable recorded escalation or an explicit user request for planner. A genuinely indispensable user dependency needs an Oracle Input assessment. Missing assessment evidence grants no authorization. Keep protected effects blocked and finish independent authorized work. Do not duplicate work whose verified wake owner already exists.",
+    "The attempted user escalation is unverified. Do not ask or wait for the user on that basis. This repair neither grants nor revokes authority.",
+    "Apply the ordinary parent decision and contact rules. If a due protected action is known unstarted, its existing grant covers the actual effect, target and limits, and its prerequisites hold, submit it. Without a covering grant, keep only that effect blocked. Continue independent authorized work; do not duplicate work with a verified wake owner.",
   ].join("\n");
   return {
     type: "custom_message",

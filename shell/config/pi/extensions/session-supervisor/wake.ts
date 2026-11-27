@@ -146,7 +146,7 @@ export function humanWaitingLeadingClause(payload: string): boolean {
   );
 }
 
-/** User-owned branch of the Input v1 contract in agent-review/references/advisory.md. */
+/** User-owned branch of the Input v1 contract in agents/references/advisory.md. */
 export interface UserInputAssessment {
   version: 1;
   outcome: "USER_INPUT_REQUIRED";

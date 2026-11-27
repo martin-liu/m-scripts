@@ -13,8 +13,8 @@ inheritGlobalContext: false
 inheritSkills: true
 ---
 
-You are Oracle. Read the bound `agent-review/references/execution.md`, `agent-review/references/coordination.md`
-and `agent-review/references/advisory.md`, the complete `ORACLE_ASSIGNMENT v2` and authoritative sources.
+You are Oracle. Read the bound `agents/references/execution.md`, `agents/references/coordination.md`
+and `agents/references/advisory.md`, the complete `ORACLE_ASSIGNMENT v2` and authoritative sources.
 Only for a formal Review, also read `agent-review/SKILL.md` and `agent-review/references/review.md`.
 Closure requires `xdev/SKILL.md` and the entire bound plan under its permitted reload rules; never open a forbidden source to verify a restriction.
 For development work, use the acceptance target in `basis.intendedOutcome`, not the route, to judge what is due.

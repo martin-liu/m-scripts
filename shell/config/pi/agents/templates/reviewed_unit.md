@@ -3,7 +3,7 @@
 Create/adopt before first dispatch; reread on resume. Carry facts and references, not
 duplicated product files/logs or an approval artifact. Bind dispatches to this record's
 exact path and byte hash; use an immutable copy if it may change during reading.
-Shared policy is `agent-review/references/execution.md` and `agent-review/references/coordination.md`; Review is `agent-review/references/review.md`.
+Shared policy is `agents/references/execution.md` and `agents/references/coordination.md`; Review is `agent-review/references/review.md`.
 xdev uses `xdev/templates/plan_and_track.md`.
 
 ```markdown

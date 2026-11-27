@@ -4993,15 +4993,20 @@ const boundaryCtx = (uuid, sessionFile, messages) => ({
 
 // --- 1. Valid user escalations: question accepted, no continuation, one notice --
 
-test("a verified user escalation notifies once and never continues", async () => {
-  const dir = makeAsyncDir({ dir: "/async/oracle-1", result: oracleResult({ dependencyId: "dep-1" }) });
+test("a missing grant permits contact only with a matching verified question", async () => {
+  const question = "May I submit the staging read with the stated cost cap?";
+  const dir = makeAsyncDir({ dir: "/async/oracle-1", result: oracleResult({ kind: "authorization", question,
+    dependency: "The due staging read lacks authorization.", whyAgentCannotResolve: "Only the user can grant that read." }) });
   const { pi, ctx } = armedObserved({ runs: [{ runId: "oracle-1", agent: "oracle", asyncDir: dir }] });
+  const settle = dependencyId => handlerFor(pi, "agent_before_settle")(boundaryEvent([assistant(
+    parentBlockedMessage("oracle-1", dependencyId, { questionLines: [question] }),
+  )]), ctx);
   const capture = captureStdout();
   try {
-    const result = await handlerFor(pi, "agent_before_settle")(
-      boundaryEvent([assistant(BLOCKED_USER("oracle-1", "dep-1"))]),
-      ctx,
-    );
+    const rejected = await settle("different-dependency");
+    assert.equal(rejected?.entries.at(-1).customType, mod.REPAIR_CUSTOM_TYPE);
+    assert.deepEqual(capture.chunks, [], "the same missing grant alone cannot authorize contact");
+    const result = await settle("dep-1");
     assert.equal(result, undefined, "a verified escalation grants no continuation");
     assert.deepEqual(capture.chunks, [OSC_NOTIFY]);
     // The settle repeats it; dedupe keeps it to one notice per epoch.
@@ -5013,7 +5018,7 @@ test("a verified user escalation notifies once and never continues", async () =>
 });
 
 for (const [label, toolText, finalText, mayAsk] of [
-  ["advisory contract example plus real answer", readFileSync(new URL("../skills/agent-review/references/advisory.md", import.meta.url), "utf8"), oracleResult(), true],
+  ["advisory contract example plus real answer", readFileSync(new URL("../shell/config/pi/agents/references/advisory.md", import.meta.url), "utf8"), oracleResult(), true],
   ["assessment only in a tool result", oracleResult(), "The parent can resolve this from the supplied criteria.", false],
 ]) {
   test(`contact uses only the terminal Oracle reply: ${label}`, async () => {
@@ -5382,12 +5387,12 @@ test("an ungated BLOCKED yields one repair bridge and no notification", async ()
     assert.equal(result.entries[0].customType, mod.REPAIR_CUSTOM_TYPE);
     assert.deepEqual(capture.chunks, [], "a successful proposal stays silent");
     const repair = result.entries[0].content;
-    assert.match(repair, /Do not wait for a technical option selection/);
-    assert.match(repair, /oracle for ordinary Planning/i);
-    assert.match(repair, /call planner first[^.]*consequential strategic choice[^.]*neither evidence nor an affordable check/i);
-    assert.doesNotMatch(repair, /planner only on a valid oracle handoff/i);
-    assert.match(repair, /indispensable user dependency needs an Oracle Input assessment/);
-    assert.match(repair, /Missing assessment evidence grants no authorization/);
+    assert.match(repair, /Do not ask or wait for the user on that basis/);
+    assert.match(repair, /ordinary parent decision and contact rules/);
+    assert.match(repair, /known unstarted[^.]*existing grant covers[^.]*prerequisites hold, submit it/);
+    assert.match(repair, /Without a covering grant, keep only that effect blocked/);
+    assert.match(repair, /do not duplicate work with a verified wake owner/i);
+    assert.doesNotMatch(repair, /\b(?:oracle|planner)\b/i, "the bridge must not maintain a second adviser policy");
   } finally {
     capture.restore();
   }
@@ -5404,7 +5409,7 @@ test("a CONTINUE whose payload leads with a human-wait clause receives decision 
     const bridge = result.entries.at(-1);
     assert.equal(bridge.customType, mod.REPAIR_CUSTOM_TYPE);
     assert.ok(!bridge.content.includes("Act on that step now."), "never re-issues the wait as an action");
-    assert.match(bridge.content, /Do not wait for a technical option selection/);
+    assert.match(bridge.content, /Do not ask or wait for the user on that basis/);
     assert.deepEqual(capture.chunks, []);
   } finally {
     capture.restore();

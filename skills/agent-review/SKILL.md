@@ -9,6 +9,6 @@ metadata:
 
 # Independent Review
 
-For a formal Review, the parent and assigned reviewer read the exact bound `agent-review/references/review.md` (eligibility, submission, result and correction). Use it with `agent-review/references/execution.md`, `agent-review/references/coordination.md` and `agent-review/references/advisory.md`; a Review never grants execution or contact permission. Resolve `agent-review/…` from an installed skill root or repository `skills/`, never relative to the current task record. Missing required policy stops dependent work; report it, never guess. Reload lost bindings on resume.
+For a formal Review, the parent and assigned reviewer read the exact bound `agent-review/references/review.md` for eligibility, submission, findings and correction. Use the assignment's bound `agents/references/execution.md`, `agents/references/coordination.md` and `agents/references/advisory.md`; a Review never grants permission to execute or contact the user.
 
-For an older non-Review assignment, read the bound `agent-review/references/execution.md`. Non-Review advisers also need the bound coordination and advisory references; if missing, have the parent reissue the assignment. Do not load the Review protocol for ordinary execution or advice.
+Resolve this skill from the managed skill root or the designated repository's `skills/`; resolve `agents/` under the managed Pi config (normally `~/.pi/agent/`) or that repository's `shell/config/pi/`. Never resolve from a task record. If a required binding is missing or stale, report it and pause the dependent Review until restored, including on resume.
